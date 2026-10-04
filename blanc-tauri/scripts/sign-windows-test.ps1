@@ -28,11 +28,20 @@ if (-not $signtool) {
 }
 Write-Host "==> Using signtool: $signtool"
 
-# Sign all executables in target dir
-$filesToSign = Get-ChildItem -Path $TargetDir -Recurse -Include "*.exe", "*.msi"
+# Only sign primary app binary and bundle installers (skip intermediate build/deps artifacts)
+$filesToSign = @()
+$mainExe = Join-Path $TargetDir "blanc-tauri.exe"
+if (Test-Path $mainExe) {
+    $filesToSign += Get-Item $mainExe
+}
+$bundleDir = Join-Path $TargetDir "bundle"
+if (Test-Path $bundleDir) {
+    $filesToSign += Get-ChildItem -Path $bundleDir -Recurse -Include "*.exe", "*.msi"
+}
+
 foreach ($file in $filesToSign) {
     Write-Host "==> Signing $($file.FullName)..."
-    & $signtool sign /f $pfxPath /p "BlancTestPassword123!" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /v $file.FullName
+    & $signtool sign /f $pfxPath /p "BlancTestPassword123!" /fd SHA256 /v $file.FullName
     & $signtool verify /pa /v $file.FullName
 }
 
