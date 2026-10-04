@@ -225,16 +225,30 @@ jobs:
         run: |
           npx @tauri-apps/cli android build --ci --target ${{ matrix.tauri_target }} --apk --split-per-abi
 
-      - name: Sign APK with Release Keystore
+      - name: Align and Sign APK with apksigner (v2 & v3 Signature Schemes)
         working-directory: blanc-tauri
         run: |
+          BUILD_TOOLS_DIR=$(ls -d /usr/local/lib/android/sdk/build-tools/* | sort -V | tail -n 1)
+          ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"
+          APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
+
           find src-tauri/gen/android -name "*.apk" | while read -r apk; do
-            echo "Signing $apk..."
-            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
-              -keystore keystore/release.keystore \
-              -storepass "BlancAndroidPass2026!" \
-              -keypass "BlancAndroidPass2026!" \
-              "$apk" blanc-release || true
+            echo "Aligning $apk..."
+            "$ZIPALIGN" -p -f 4 "$apk" "${apk}.aligned"
+            mv "${apk}.aligned" "$apk"
+
+            echo "Signing $apk with apksigner (v1, v2, v3)..."
+            "$APKSIGNER" sign \
+              --ks keystore/release.keystore \
+              --ks-pass "pass:BlancAndroidPass2026!" \
+              --key-pass "pass:BlancAndroidPass2026!" \
+              --ks-key-alias blanc-release \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              "$apk"
+
+            "$APKSIGNER" verify --verbose "$apk"
           done
 
       - name: Upload Signed Split APK (${{ matrix.abi }})
