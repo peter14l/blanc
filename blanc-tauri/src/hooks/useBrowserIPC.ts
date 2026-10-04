@@ -447,6 +447,37 @@ export function useBrowserIPC(): BrowserIPCContextType {
     setTabs([freshTab]);
   }, [isTauriAvailable, tabs]);
 
+  // Reopen closed tab
+  const reopenClosedTab = useCallback(async (): Promise<void> => {
+    if (isTauriAvailable) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const reopened = await invoke<any>('reopen_closed_tab', {
+          entryId: 'last',
+          window: 'main',
+        });
+        if (reopened) {
+          const tab: Tab = {
+            id: reopened.id,
+            url: reopened.url,
+            title: reopened.title || 'Restored Tab',
+            is_active: true,
+            is_loading: false,
+            blocked_trackers: 0,
+            can_go_back: reopened.can_go_back ?? false,
+            can_go_forward: reopened.can_go_forward ?? false,
+          };
+          setTabs((prev) => [
+            ...prev.map((t) => ({ ...t, is_active: false })),
+            tab,
+          ]);
+        }
+      } catch (err) {
+        console.warn('[useBrowserIPC] Tauri reopen_closed_tab failed:', err);
+      }
+    }
+  }, [isTauriAvailable]);
+
   // Switch tab
   const switchTab = useCallback(
     async (tabId: string): Promise<void> => {
@@ -488,7 +519,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
             // Use configured search engine
             const engine = settings.searchEngine;
             if (engine === 'Google') {
-              cleanUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanUrl)}`;
+              cleanUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanUrl)}&igu=1`;
             } else if (engine === 'Bing') {
               cleanUrl = `https://www.bing.com/search?q=${encodeURIComponent(cleanUrl)}`;
             } else if (engine === 'Ecosia') {
@@ -714,6 +745,109 @@ export function useBrowserIPC(): BrowserIPCContextType {
     setIsTabSwitcherOpen((prev) => (open !== undefined ? open : !prev));
   }, []);
 
+  const setViewport = useCallback(
+    async (x: number, y: number, width: number, height: number, hidden: boolean): Promise<void> => {
+      if (isTauriAvailable) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('set_viewport', {
+            x: Math.round(x),
+            y: Math.round(y),
+            width: Math.max(1, Math.round(width)),
+            height: Math.max(1, Math.round(height)),
+            hidden,
+          });
+        } catch (err) {
+          console.warn('[useBrowserIPC] Tauri set_viewport failed:', err);
+        }
+      }
+    },
+    [isTauriAvailable]
+  );
+
+  // Listen for native webview tab navigation events
+  useEffect(() => {
+    if (!isTauriAvailable) return;
+    let unlisten: (() => void) | undefined;
+    let isMounted = true;
+
+    import('@tauri-apps/api/event').then(({ listen }) => {
+      if (!isMounted) return;
+
+      // Listen for authoritative state projections from Rust
+      listen<any>('blanc:state-updated', (event) => {
+        const proj = event.payload;
+        if (proj && Array.isArray(proj.windows)) {
+          const mainWin = proj.windows.find((w: any) => w.label === 'main') || proj.windows[0];
+          if (mainWin && Array.isArray(mainWin.tabs) && mainWin.tabs.length > 0) {
+            setTabs(
+              mainWin.tabs.map((t: any) => ({
+                id: t.id,
+                url: t.url,
+                title: t.title,
+                is_active: t.id === mainWin.activeTabId,
+                is_loading: t.loading ?? false,
+                blocked_trackers: t.blocked ?? 0,
+                can_go_back: t.can_go_back ?? false,
+                can_go_forward: t.can_go_forward ?? false,
+                favicon: t.favicon,
+              }))
+            );
+          }
+          if (typeof proj.totalBlocked === 'number') {
+            setAdblockStats((prev) => ({
+              ...prev,
+              totalBlocked: proj.totalBlocked,
+            }));
+          }
+        }
+      }).then((fn) => {
+        if (!unlisten) unlisten = fn;
+        else {
+          const prev = unlisten;
+          unlisten = () => { prev(); fn(); };
+        }
+      }).catch((e) => {
+        console.warn('[useBrowserIPC] Failed to listen to blanc:state-updated:', e);
+      });
+
+      listen<{ tab_id: string; url?: string; title?: string }>('tab-navigated', (event) => {
+        const { tab_id, url, title } = event.payload;
+        setTabs((prev) =>
+          prev.map((t) => {
+            if (t.id === tab_id) {
+              const updatedUrl = url || t.url;
+              const updatedTitle = title || (url ? getTabTitleFromUrl(url) : t.title);
+              return {
+                ...t,
+                url: updatedUrl,
+                title: updatedTitle,
+                is_loading: false,
+              };
+            }
+            return t;
+          })
+        );
+        if (url && !url.startsWith('blanc://') && !url.startsWith('about:')) {
+          addHistoryEntry({ url, title: title || getTabTitleFromUrl(url) });
+        }
+      }).then((fn) => {
+        if (!unlisten) unlisten = fn;
+        else {
+          const prev = unlisten;
+          unlisten = () => { prev(); fn(); };
+        }
+      }).catch((e) => {
+        console.warn('[useBrowserIPC] Failed to listen to tab-navigated:', e);
+      });
+    }).catch(() => {});
+
+    return () => {
+      isMounted = false;
+      if (unlisten) unlisten();
+    };
+  }, [isTauriAvailable, addHistoryEntry]);
+
   // Poll or sync initial state
   useEffect(() => {
     if (isTauriAvailable) {
@@ -735,6 +869,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
     createTab,
     closeTab,
     closeAllTabs,
+    reopenClosedTab,
     switchTab,
     navigate,
     reloadTab,
@@ -746,6 +881,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
     closeWindow,
     toggleQuickSwitcher,
     toggleTabSwitcher,
+    setViewport,
     history,
     addHistoryEntry,
     removeHistoryEntry,

@@ -1,13 +1,17 @@
 {
   "name": "blanc-tauri",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "npm run test:unit",
+    "test:unit": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "lint": "tsc --noEmit",
+    "substrate:check": "cargo check --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

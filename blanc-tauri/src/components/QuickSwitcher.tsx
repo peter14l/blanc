@@ -14,6 +14,9 @@ import {
   Sunrise,
   Layers,
   Terminal,
+  Download,
+  Keyboard,
+  Activity,
 } from 'lucide-react';
 import {
   Tab,
@@ -107,6 +110,27 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
         desc: 'Open saved bookmarks (blanc://bookmarks)',
         icon: 'bookmark',
         action: () => onNavigate('blanc://bookmarks'),
+      },
+      {
+        cmd: '/downloads',
+        title: 'Downloads',
+        desc: 'Open downloads manager (blanc://downloads)',
+        icon: 'download',
+        action: () => onNavigate('blanc://downloads'),
+      },
+      {
+        cmd: '/shortcuts',
+        title: 'Shortcuts',
+        desc: 'Open keyboard shortcuts guide (blanc://shortcuts)',
+        icon: 'keyboard',
+        action: () => onNavigate('blanc://shortcuts'),
+      },
+      {
+        cmd: '/diagnostics',
+        title: 'Diagnostics',
+        desc: 'Inspect engine state and audit reports (blanc://diagnostics)',
+        icon: 'activity',
+        action: () => onNavigate('blanc://diagnostics'),
       },
       {
         cmd: '/clear',
@@ -486,6 +510,9 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
                           {item.icon === 'history' && <History className="w-3.5 h-3.5" />}
                           {item.icon === 'settings' && <Settings className="w-3.5 h-3.5" />}
                           {item.icon === 'bookmark' && <BookmarkIcon className="w-3.5 h-3.5" />}
+                          {item.icon === 'download' && <Download className="w-3.5 h-3.5" />}
+                          {item.icon === 'keyboard' && <Keyboard className="w-3.5 h-3.5" />}
+                          {item.icon === 'activity' && <Activity className="w-3.5 h-3.5" />}
                           {item.icon === 'trash' && <Trash2 className="w-3.5 h-3.5" />}
                           {item.icon === 'moon' && <Moon className="w-3.5 h-3.5" />}
                           {item.icon === 'sun' && <Sun className="w-3.5 h-3.5" />}

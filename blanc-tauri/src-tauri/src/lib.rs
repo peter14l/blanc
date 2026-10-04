@@ -1,57 +1,142 @@
 pub mod adblock;
+pub mod credentials;
+pub mod downloads;
+pub mod mica;
+pub mod model;
+pub mod navigation;
+pub mod patron;
+pub mod permissions;
+pub mod sleep;
 pub mod state;
 pub mod storage;
+pub mod store;
+pub mod sync;
 pub mod webview;
+pub mod workspaces;
 
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager, State, WindowEvent};
-use state::{BrowserState, Tab};
-use storage::{Bookmark, HistoryEntry, StorageManager, UserSettings};
-use adblock::AdblockEngine;
+use tauri::{AppHandle, Emitter, Manager, State};
+use state::BrowserState;
+use model::{GroupRecord, StateProjection, TabRecord, WindowProjection, PERSONAL_PROFILE};
+use storage::{Bookmark, Favorite, HistoryEntry, HistoryPage, StorageManager, UserSettings};
+use adblock::{AdblockEngine, BlockingStatus};
+use permissions::{PermissionBroker, PermissionDecision, PermissionDecisionRecord, PermissionResource};
+use downloads::{DownloadItem, DownloadManager};
+use workspaces::{ProfileRecord, WorkspaceRecord, WorkspacesManager};
+use patron::{PatronState, PatronStatus};
+use credentials::{CredentialBroker, FillStatus};
+use sync::{SyncEligibility, SyncableData, validate_sync_payload};
 
 pub struct AppState {
     pub browser: Mutex<BrowserState>,
     pub storage: StorageManager,
     pub adblock: Mutex<AdblockEngine>,
+    pub permissions: Mutex<PermissionBroker>,
+    pub downloads: Mutex<DownloadManager>,
+    pub workspaces: Mutex<WorkspacesManager>,
+    pub patron: Mutex<PatronState>,
+    pub credentials: Mutex<CredentialBroker>,
+    /// Last page-card rectangle reported by the shell (logical px); None until first report.
+    pub viewport: Mutex<Option<webview::Viewport>>,
 }
+
+fn emit_state_projection(app: &AppHandle, browser: &BrowserState) {
+    let proj = browser.projection();
+    let _ = app.emit("blanc:state-updated", proj);
+}
+
+// -----------------------------------------------------------------------------
+// STATE & WINDOW PROJECTIONS
+// -----------------------------------------------------------------------------
+
+#[tauri::command]
+fn get_state_projection(state: State<'_, AppState>) -> Result<StateProjection, String> {
+    let browser = state.browser.lock().map_err(|e| e.to_string())?;
+    Ok(browser.projection())
+}
+
+#[tauri::command]
+fn get_window_projection(
+    state: State<'_, AppState>,
+    window: Option<String>,
+) -> Result<Option<WindowProjection>, String> {
+    let browser = state.browser.lock().map_err(|e| e.to_string())?;
+    let label = window.as_deref().unwrap_or("main");
+    Ok(browser.window_projection(label))
+}
+
+#[tauri::command]
+fn list_windows(state: State<'_, AppState>) -> Result<Vec<WindowProjection>, String> {
+    let browser = state.browser.lock().map_err(|e| e.to_string())?;
+    Ok(browser.projection().windows)
+}
+
+#[tauri::command]
+fn get_tabs(
+    state: State<'_, AppState>,
+    window: Option<String>,
+) -> Result<Vec<TabRecord>, String> {
+    let browser = state.browser.lock().map_err(|e| e.to_string())?;
+    let label = window.as_deref().unwrap_or("main");
+    Ok(browser.get_tabs_for_window(label))
+}
+
+#[tauri::command]
+fn get_active_tab(
+    state: State<'_, AppState>,
+    window: Option<String>,
+) -> Result<Option<TabRecord>, String> {
+    let browser = state.browser.lock().map_err(|e| e.to_string())?;
+    let label = window.as_deref().unwrap_or("main");
+    Ok(browser.get_active_tab_for_window(label))
+}
+
+// -----------------------------------------------------------------------------
+// TAB COMMANDS
+// -----------------------------------------------------------------------------
 
 #[tauri::command]
 fn create_tab(
     app: AppHandle,
     state: State<'_, AppState>,
+    window: Option<String>,
     url: Option<String>,
-) -> Result<Tab, String> {
-    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
-    let previous_active = browser.active_tab_id.clone();
-    let tab = browser.add_tab(url.clone());
+    private: Option<bool>,
+    group: Option<String>,
+) -> Result<TabRecord, String> {
+    let window_label = window.unwrap_or_else(|| "main".to_string());
+    let is_private = private.unwrap_or(false);
+
+    let (tab, prev_active) = {
+        let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+        let prev = browser
+            .windows
+            .get(&window_label)
+            .and_then(|w| w.active_tab_id.clone());
+        let tab = browser.create_tab(&window_label, url, is_private, group)?;
+        emit_state_projection(&app, &browser);
+        (tab, prev)
+    };
+
     let tab_id = tab.id.clone();
     let target_url = tab.url.clone();
 
-    // Default window dimensions if not queryable
-    let (win_width, win_height) = if let Some(main_win) = app.get_webview_window("main") {
-        if let Ok(size) = main_win.inner_size() {
-            (size.width, size.height)
-        } else {
-            (1280, 800)
-        }
-    } else {
-        (1280, 800)
-    };
-
     // Hide previous webview if any
-    if let Some(prev_id) = previous_active.as_deref() {
-        if let Some(prev_wv) = app.get_webview_window(prev_id) {
+    if let Some(prev_id) = prev_active.as_deref() {
+        if let Some(prev_wv) = app.get_webview(prev_id) {
             let _ = prev_wv.hide();
         }
     }
 
     // Spawn child webview if not an internal blanc:// page
     if !target_url.starts_with("blanc://") && target_url != "about:blank" {
-        let _ = webview::create_tab_webview(&app, &tab_id, &target_url, win_width, win_height);
+        if let Err(err) = webview::create_tab_webview(&app, &tab_id, &target_url) {
+            eprintln!("[blanc] create_tab_webview failed: {}", err);
+        }
     }
 
-    // Automatically record history
-    if !target_url.starts_with("blanc://") && target_url != "about:blank" {
+    // Automatically record history (non-private only)
+    if !tab.is_private() && !target_url.starts_with("blanc://") && target_url != "about:blank" {
         let _ = state.storage.add_history(target_url, tab.title.clone());
     }
 
@@ -63,18 +148,39 @@ fn close_tab(
     app: AppHandle,
     state: State<'_, AppState>,
     tab_id: String,
-) -> Result<String, String> {
-    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+) -> Result<Option<TabRecord>, String> {
     let _ = webview::close_tab_webview(&app, &tab_id);
 
-    browser.remove_tab(&tab_id);
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    let next_active = browser.close_tab(&tab_id)?;
+    emit_state_projection(&app, &browser);
 
-    // If there is a new active tab, show it
-    if let Some(active_id) = browser.active_tab_id.as_deref() {
-        let _ = webview::switch_tab_webview(&app, active_id, None);
+    // If there is a new active tab, show its webview
+    if let Some(ref active_tab) = next_active {
+        let _ = webview::switch_tab_webview(&app, &active_tab.id, None);
     }
 
-    Ok(tab_id)
+    Ok(next_active)
+}
+
+#[tauri::command]
+fn close_all_tabs(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    window: Option<String>,
+) -> Result<(), String> {
+    let window_label = window.unwrap_or_else(|| "main".to_string());
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+
+    if let Some(w) = browser.windows.get(&window_label) {
+        for id in &w.tab_order {
+            let _ = webview::close_tab_webview(&app, id);
+        }
+    }
+
+    browser.close_all_tabs(&window_label)?;
+    emit_state_projection(&app, &browser);
+    Ok(())
 }
 
 #[tauri::command]
@@ -84,11 +190,21 @@ fn switch_tab(
     tab_id: String,
 ) -> Result<(), String> {
     let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
-    let previous_id = browser.active_tab_id.clone();
+    let window_label = browser
+        .tabs
+        .get(&tab_id)
+        .map(|t| t.window_id.clone())
+        .ok_or_else(|| format!("Tab '{}' not found", tab_id))?;
 
-    browser.set_active_tab(&tab_id)?;
-    let _ = webview::switch_tab_webview(&app, &tab_id, previous_id.as_deref());
+    let prev_id = browser
+        .windows
+        .get(&window_label)
+        .and_then(|w| w.active_tab_id.clone());
 
+    browser.switch_tab(&tab_id)?;
+    emit_state_projection(&app, &browser);
+
+    let _ = webview::switch_tab_webview(&app, &tab_id, prev_id.as_deref());
     Ok(())
 }
 
@@ -98,61 +214,107 @@ fn navigate(
     state: State<'_, AppState>,
     tab_id: String,
     url: String,
+    _private: Option<bool>,
+) -> Result<(), String> {
+    let search_engine = state.storage.load().settings.search_engine;
+    let target_url = navigation::normalize_navigation_target(&url, &search_engine)?;
+
+    let decision = navigation::admit_top_level_navigation(&target_url);
+
+    match decision {
+        navigation::NavigationDecision::Allow { url: allowed_url } => {
+            let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+            browser.update_tab_navigation(&tab_id, Some(allowed_url.clone()), None)?;
+
+            // Check if URL is an ad/tracker
+            {
+                let adblock = state.adblock.lock().map_err(|e| e.to_string())?;
+                if adblock.is_blocked(&allowed_url) {
+                    let _ = browser.increment_tab_blocked(&tab_id, 1);
+                }
+            }
+            emit_state_projection(&app, &browser);
+
+            if !allowed_url.starts_with("blanc://") && allowed_url != "about:blank" {
+                if app.get_webview(&tab_id).is_none() {
+                    if let Err(err) = webview::create_tab_webview(&app, &tab_id, &allowed_url) {
+                        eprintln!("[blanc] create_tab_webview failed: {}", err);
+                    }
+                } else {
+                    webview::navigate_webview(&app, &tab_id, &allowed_url)?;
+                }
+                let _ = state.storage.add_history(allowed_url, "".to_string());
+            } else if let Some(wv) = app.get_webview(&tab_id) {
+                let _ = wv.hide();
+            }
+        }
+        navigation::NavigationDecision::ShowInternal { url: internal_url, .. } => {
+            let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+            browser.update_tab_navigation(&tab_id, Some(internal_url), None)?;
+            emit_state_projection(&app, &browser);
+
+            if let Some(wv) = app.get_webview(&tab_id) {
+                let _ = wv.hide();
+            }
+        }
+        navigation::NavigationDecision::OpenExternal { url: ext_url, .. } => {
+            #[cfg(desktop)]
+            {
+                #[cfg(target_os = "windows")]
+                let _ = std::process::Command::new("cmd").args(["/C", "start", "", &ext_url]).spawn();
+                #[cfg(target_os = "macos")]
+                let _ = std::process::Command::new("open").arg(&ext_url).spawn();
+                #[cfg(target_os = "linux")]
+                let _ = std::process::Command::new("xdg-open").arg(&ext_url).spawn();
+            }
+        }
+        navigation::NavigationDecision::Deny { reason } => {
+            return Err(reason);
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn duplicate_tab(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tab_id: String,
+) -> Result<TabRecord, String> {
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    let dup = browser.duplicate_tab(&tab_id)?;
+    emit_state_projection(&app, &browser);
+
+    if !dup.url.starts_with("blanc://") && dup.url != "about:blank" {
+        let _ = webview::create_tab_webview(&app, &dup.id, &dup.url);
+    }
+    Ok(dup)
+}
+
+#[tauri::command]
+fn set_tab_pinned(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tab_id: String,
+    pinned: bool,
 ) -> Result<(), String> {
     let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
-    
-    // Normalize input (search query vs. URL vs. internal page)
-    let target_url = if url.starts_with("blanc://") || url.starts_with("about:") {
-        url
-    } else if url.starts_with("http://") || url.starts_with("https://") {
-        url
-    } else if url.contains('.') && !url.contains(' ') {
-        format!("https://{}", url)
-    } else {
-        let settings = state.storage.load().settings;
-        match settings.search_engine.as_str() {
-            "google" => format!("https://www.google.com/search?q={}", urlencoding::encode(&url)),
-            "bing" => format!("https://www.bing.com/search?q={}", urlencoding::encode(&url)),
-            "ecosia" => format!("https://www.ecosia.org/search?q={}", urlencoding::encode(&url)),
-            "kagi" => format!("https://kagi.com/search?q={}", urlencoding::encode(&url)),
-            _ => format!("https://duckduckgo.com/?q={}", urlencoding::encode(&url)),
-        }
-    };
+    browser.set_tab_pinned(&tab_id, pinned)?;
+    emit_state_projection(&app, &browser);
+    Ok(())
+}
 
-    browser.update_tab_url(&tab_id, target_url.clone())?;
-
-    // Check if URL is an ad/tracker
-    {
-        let adblock = state.adblock.lock().map_err(|e| e.to_string())?;
-        if adblock.is_blocked(&target_url) {
-            let _ = browser.increment_trackers(&tab_id, 1);
-        }
-    }
-
-    if !target_url.starts_with("blanc://") && target_url != "about:blank" {
-        // If webview doesn't exist yet for this tab, create it
-        if app.get_webview_window(&tab_id).is_none() {
-            let (win_width, win_height) = if let Some(main_win) = app.get_webview_window("main") {
-                if let Ok(size) = main_win.inner_size() {
-                    (size.width, size.height)
-                } else {
-                    (1280, 800)
-                }
-            } else {
-                (1280, 800)
-            };
-            let _ = webview::create_tab_webview(&app, &tab_id, &target_url, win_width, win_height);
-        } else {
-            webview::navigate_webview(&app, &tab_id, &target_url)?;
-        }
-        let _ = state.storage.add_history(target_url, "".to_string());
-    } else {
-        // If internal page, hide child webview so React UI shows internal page
-        if let Some(wv) = app.get_webview_window(&tab_id) {
-            let _ = wv.hide();
-        }
-    }
-
+#[tauri::command]
+fn set_tab_muted(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tab_id: String,
+    muted: bool,
+) -> Result<(), String> {
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    browser.set_tab_muted(&tab_id, muted)?;
+    emit_state_projection(&app, &browser);
     Ok(())
 }
 
@@ -171,30 +333,158 @@ fn go_forward(app: AppHandle, tab_id: String) -> Result<(), String> {
     webview::go_forward_webview(&app, &tab_id)
 }
 
-#[tauri::command]
-fn get_tabs(state: State<'_, AppState>) -> Result<Vec<Tab>, String> {
-    let browser = state.browser.lock().map_err(|e| e.to_string())?;
-    Ok(browser.get_tabs())
-}
+// -----------------------------------------------------------------------------
+// TAB GROUPS
+// -----------------------------------------------------------------------------
 
 #[tauri::command]
-fn get_active_tab(state: State<'_, AppState>) -> Result<Option<Tab>, String> {
-    let browser = state.browser.lock().map_err(|e| e.to_string())?;
-    Ok(browser.get_active_tab())
-}
-
-#[tauri::command]
-fn update_window_bounds(
+fn create_group(
     app: AppHandle,
     state: State<'_, AppState>,
-    width: u32,
-    height: u32,
+    window: Option<String>,
+    name: String,
+) -> Result<GroupRecord, String> {
+    let window_label = window.unwrap_or_else(|| "main".to_string());
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    let group = browser.create_group(&window_label, name)?;
+    emit_state_projection(&app, &browser);
+    Ok(group)
+}
+
+#[tauri::command]
+fn rename_group(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    group_id: String,
+    name: String,
 ) -> Result<(), String> {
-    let browser = state.browser.lock().map_err(|e| e.to_string())?;
-    if let Some(active_id) = browser.active_tab_id.as_deref() {
-        webview::resize_active_webview(&app, active_id, width, height)?;
-    }
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    browser.rename_group(&group_id, name)?;
+    emit_state_projection(&app, &browser);
     Ok(())
+}
+
+#[tauri::command]
+fn set_group_collapsed(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    group_id: String,
+    collapsed: bool,
+) -> Result<(), String> {
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    browser.set_group_collapsed(&group_id, collapsed)?;
+    emit_state_projection(&app, &browser);
+    Ok(())
+}
+
+#[tauri::command]
+fn move_tab_to_group(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tab_id: String,
+    group: Option<String>,
+) -> Result<(), String> {
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    browser.move_tab_to_group(&tab_id, group)?;
+    emit_state_projection(&app, &browser);
+    Ok(())
+}
+
+#[tauri::command]
+fn close_group(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    group_id: String,
+) -> Result<(), String> {
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    browser.close_group(&group_id)?;
+    emit_state_projection(&app, &browser);
+    Ok(())
+}
+
+// -----------------------------------------------------------------------------
+// CLOSED TABS RECOVERY
+// -----------------------------------------------------------------------------
+
+#[tauri::command]
+fn reopen_closed_tab(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    entry_id: Option<String>,
+    window: Option<String>,
+) -> Result<Option<TabRecord>, String> {
+    let window_label = window.unwrap_or_else(|| "main".to_string());
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    let tab = match entry_id {
+        Some(ref id) if !id.is_empty() && id != "last" => {
+            browser.reopen_closed_tab(id, &window_label)?
+        }
+        _ => browser.reopen_last_closed_tab(&window_label)?,
+    };
+    emit_state_projection(&app, &browser);
+
+    if let Some(ref t) = tab {
+        if !t.url.starts_with("blanc://") && t.url != "about:blank" {
+            let _ = webview::create_tab_webview(&app, &t.id, &t.url);
+        }
+    }
+    Ok(tab)
+}
+
+#[tauri::command]
+fn forget_closed_tab(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    entry_id: String,
+) -> Result<(), String> {
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    browser.forget_closed_tab(&entry_id)?;
+    emit_state_projection(&app, &browser);
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_closed_tabs(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    window: Option<String>,
+) -> Result<(), String> {
+    let window_label = window.unwrap_or_else(|| "main".to_string());
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    browser.clear_closed_tabs(&window_label)?;
+    emit_state_projection(&app, &browser);
+    Ok(())
+}
+
+// -----------------------------------------------------------------------------
+// VIEWPORT & WINDOWS
+// -----------------------------------------------------------------------------
+
+#[tauri::command]
+fn set_viewport(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    hidden: bool,
+) -> Result<(), String> {
+    let viewport = webview::Viewport {
+        x,
+        y,
+        width: width.max(1.0),
+        height: height.max(1.0),
+    };
+    *state.viewport.lock().map_err(|e| e.to_string())? = Some(viewport);
+
+    let active_id = state
+        .browser
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get_window("main")
+        .and_then(|w| w.active_tab_id.clone());
+    webview::apply_viewport(&app, active_id.as_deref(), viewport, hidden)
 }
 
 #[tauri::command]
@@ -234,10 +524,25 @@ fn close_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-// STORAGE COMMANDS
+// -----------------------------------------------------------------------------
+// STORAGE COMMANDS (HISTORY, BOOKMARKS, FAVORITES, SETTINGS)
+// -----------------------------------------------------------------------------
+
 #[tauri::command]
 fn get_history(state: State<'_, AppState>) -> Result<Vec<HistoryEntry>, String> {
     Ok(state.storage.load().history)
+}
+
+#[tauri::command]
+fn history_list(
+    state: State<'_, AppState>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+    query: Option<String>,
+) -> Result<HistoryPage, String> {
+    let lim = limit.unwrap_or(50);
+    let off = offset.unwrap_or(0);
+    Ok(state.storage.history_list(lim, off, query))
 }
 
 #[tauri::command]
@@ -247,6 +552,20 @@ fn add_history_entry(
     title: String,
 ) -> Result<HistoryEntry, String> {
     state.storage.add_history(url, title)
+}
+
+#[tauri::command]
+fn history_record(
+    state: State<'_, AppState>,
+    url: String,
+    title: String,
+) -> Result<HistoryEntry, String> {
+    state.storage.add_history(url, title)
+}
+
+#[tauri::command]
+fn history_remove(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.storage.history_remove(&id)
 }
 
 #[tauri::command]
@@ -270,6 +589,30 @@ fn remove_bookmark(state: State<'_, AppState>, id: String) -> Result<(), String>
 }
 
 #[tauri::command]
+fn favorites_list(state: State<'_, AppState>) -> Result<Vec<Favorite>, String> {
+    Ok(state.storage.favorites_list())
+}
+
+#[tauri::command]
+fn favorites_add(state: State<'_, AppState>, favorite: Favorite) -> Result<Favorite, String> {
+    state.storage.favorites_add(favorite)
+}
+
+#[tauri::command]
+fn favorites_update(
+    state: State<'_, AppState>,
+    id: String,
+    favorite: Favorite,
+) -> Result<Favorite, String> {
+    state.storage.favorites_update(&id, favorite)
+}
+
+#[tauri::command]
+fn favorites_remove(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.storage.favorites_remove(&id)
+}
+
+#[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> Result<UserSettings, String> {
     Ok(state.storage.load().settings)
 }
@@ -282,84 +625,421 @@ fn save_settings(
     state.storage.save_settings(settings)
 }
 
-// ADBLOCK COMMANDS
-#[derive(serde::Serialize)]
-struct AdblockStatsPayload {
-    total_blocked: u64,
-    enabled: bool,
-}
-
 #[tauri::command]
-fn get_adblock_stats(state: State<'_, AppState>) -> Result<AdblockStatsPayload, String> {
-    let adblock = state.adblock.lock().map_err(|e| e.to_string())?;
-    Ok(AdblockStatsPayload {
-        total_blocked: adblock.get_total_blocked(),
-        enabled: adblock.is_enabled(),
+fn get_sync_eligibility() -> Result<SyncEligibility, String> {
+    Ok(SyncEligibility {
+        eligible: true,
+        reason: None,
     })
 }
 
 #[tauri::command]
-fn toggle_adblock(state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
-    let mut adblock = state.adblock.lock().map_err(|e| e.to_string())?;
-    adblock.set_enabled(enabled);
-    Ok(enabled)
+fn sync_get_payload(
+    state: State<'_, AppState>,
+    profile_id: Option<String>,
+) -> Result<SyncableData, String> {
+    let profile = profile_id.unwrap_or_else(|| PERSONAL_PROFILE.to_string());
+    let favs = state.storage.favorites_list();
+    let settings = state.storage.load().settings;
+    let workspaces = state
+        .workspaces
+        .lock()
+        .map_err(|e| e.to_string())?
+        .list_workspaces(&profile);
+
+    let payload = SyncableData::new(profile, favs, settings, workspaces);
+    validate_sync_payload(&payload).map_err(|e| e.to_string())?;
+    Ok(payload)
 }
+
+// -----------------------------------------------------------------------------
+// ADBLOCK COMMANDS
+// -----------------------------------------------------------------------------
+
+#[tauri::command]
+fn adblock_status(state: State<'_, AppState>) -> Result<BlockingStatus, String> {
+    let adblock = state.adblock.lock().map_err(|e| e.to_string())?;
+    Ok(adblock.get_status())
+}
+
+#[tauri::command]
+fn get_adblock_stats(state: State<'_, AppState>) -> Result<BlockingStatus, String> {
+    let adblock = state.adblock.lock().map_err(|e| e.to_string())?;
+    Ok(adblock.get_status())
+}
+
+#[tauri::command]
+fn toggle_adblock(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<BlockingStatus, String> {
+    let status = {
+        let mut adblock = state.adblock.lock().map_err(|e| e.to_string())?;
+        adblock.set_enabled(enabled);
+        adblock.get_status()
+    };
+    {
+        let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+        browser.adblock_enabled = enabled;
+        emit_state_projection(&app, &browser);
+    }
+    Ok(status)
+}
+
+#[tauri::command]
+fn adblock_add_exception(state: State<'_, AppState>, hostname: String) -> Result<(), String> {
+    let mut adblock = state.adblock.lock().map_err(|e| e.to_string())?;
+    adblock.add_exception(&hostname);
+    Ok(())
+}
+
+#[tauri::command]
+fn adblock_remove_exception(state: State<'_, AppState>, hostname: String) -> Result<(), String> {
+    let mut adblock = state.adblock.lock().map_err(|e| e.to_string())?;
+    adblock.remove_exception(&hostname);
+    Ok(())
+}
+
+#[tauri::command]
+fn adblock_except_active(state: State<'_, AppState>, url: String) -> Result<bool, String> {
+    let adblock = state.adblock.lock().map_err(|e| e.to_string())?;
+    Ok(adblock.is_url_excepted(&url))
+}
+
+// -----------------------------------------------------------------------------
+// PERMISSIONS COMMANDS
+// -----------------------------------------------------------------------------
+
+#[tauri::command]
+fn permission_list_decisions(
+    state: State<'_, AppState>,
+    profile_id: Option<String>,
+) -> Result<Vec<PermissionDecisionRecord>, String> {
+    let profile = profile_id.as_deref().unwrap_or(PERSONAL_PROFILE);
+    let perms = state.permissions.lock().map_err(|e| e.to_string())?;
+    Ok(perms.list_decisions(profile))
+}
+
+#[tauri::command]
+fn permission_set_decision(
+    state: State<'_, AppState>,
+    profile_id: Option<String>,
+    origin: String,
+    resource: String,
+    decision: String,
+) -> Result<(), String> {
+    let profile = profile_id.as_deref().unwrap_or(PERSONAL_PROFILE);
+    let perm_res = PermissionResource::from_str_name(&resource);
+    let perm_dec = match decision.to_lowercase().as_str() {
+        "allow" => PermissionDecision::Allow,
+        "block" | "deny" => PermissionDecision::Block,
+        _ => PermissionDecision::Ask,
+    };
+
+    let mut perms = state.permissions.lock().map_err(|e| e.to_string())?;
+    perms.set_decision(profile, origin, perm_res, perm_dec);
+    Ok(())
+}
+
+#[tauri::command]
+fn permission_respond(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    allow: bool,
+    remember: bool,
+) -> Result<PermissionDecisionRecord, String> {
+    let mut perms = state.permissions.lock().map_err(|e| e.to_string())?;
+    let record = perms.resolve_request(&id, allow, remember, false, PERSONAL_PROFILE)?;
+    let _ = app.emit("blanc:permission-resolved", &record);
+    Ok(record)
+}
+
+// -----------------------------------------------------------------------------
+// DOWNLOADS COMMANDS
+// -----------------------------------------------------------------------------
+
+#[tauri::command]
+fn downloads_list(
+    state: State<'_, AppState>,
+    profile_id: Option<String>,
+    include_private: Option<bool>,
+) -> Result<Vec<DownloadItem>, String> {
+    let profile = profile_id.as_deref().unwrap_or(PERSONAL_PROFILE);
+    let priv_allowed = include_private.unwrap_or(false);
+    let dm = state.downloads.lock().map_err(|e| e.to_string())?;
+    Ok(dm.list_downloads(profile, priv_allowed))
+}
+
+#[tauri::command]
+fn downloads_open(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let dm = state.downloads.lock().map_err(|e| e.to_string())?;
+    let item = dm.get_download(&id).ok_or_else(|| format!("Download '{}' not found", id))?;
+
+    #[cfg(desktop)]
+    {
+        #[cfg(target_os = "windows")]
+        let _ = std::process::Command::new("cmd").args(["/C", "start", "", &item.target_path]).spawn();
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open").arg(&item.target_path).spawn();
+        #[cfg(target_os = "linux")]
+        let _ = std::process::Command::new("xdg-open").arg(&item.target_path).spawn();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn downloads_show_in_folder(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let dm = state.downloads.lock().map_err(|e| e.to_string())?;
+    let item = dm.get_download(&id).ok_or_else(|| format!("Download '{}' not found", id))?;
+
+    #[cfg(desktop)]
+    {
+        #[cfg(target_os = "windows")]
+        let _ = std::process::Command::new("explorer").args(["/select,", &item.target_path]).spawn();
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open").args(["-R", &item.target_path]).spawn();
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(parent) = std::path::Path::new(&item.target_path).parent() {
+                let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn downloads_cancel(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Option<DownloadItem>, String> {
+    let mut dm = state.downloads.lock().map_err(|e| e.to_string())?;
+    let cancelled = dm.cancel_download(&id);
+    if let Some(ref item) = cancelled {
+        let _ = app.emit("blanc:download-updated", item);
+    }
+    Ok(cancelled)
+}
+
+#[tauri::command]
+fn downloads_clear_completed(state: State<'_, AppState>) -> Result<(), String> {
+    let mut dm = state.downloads.lock().map_err(|e| e.to_string())?;
+    dm.clear_completed();
+    Ok(())
+}
+
+// -----------------------------------------------------------------------------
+// WORKSPACES & PROFILES COMMANDS
+// -----------------------------------------------------------------------------
+
+#[tauri::command]
+fn workspace_create(
+    state: State<'_, AppState>,
+    profile_id: Option<String>,
+    name: String,
+    urls: Option<Vec<String>>,
+) -> Result<WorkspaceRecord, String> {
+    let profile = profile_id.as_deref().unwrap_or(PERSONAL_PROFILE);
+    let mut mgr = state.workspaces.lock().map_err(|e| e.to_string())?;
+    mgr.create_workspace(profile, name, urls.unwrap_or_default())
+}
+
+#[tauri::command]
+fn workspace_rename(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+) -> Result<WorkspaceRecord, String> {
+    let mut mgr = state.workspaces.lock().map_err(|e| e.to_string())?;
+    mgr.rename_workspace(&id, name)
+}
+
+#[tauri::command]
+fn workspace_update_tabs(
+    state: State<'_, AppState>,
+    id: String,
+    urls: Vec<String>,
+    active_index: usize,
+) -> Result<WorkspaceRecord, String> {
+    let mut mgr = state.workspaces.lock().map_err(|e| e.to_string())?;
+    mgr.update_workspace_tabs(&id, urls, active_index)
+}
+
+#[tauri::command]
+fn workspace_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let mut mgr = state.workspaces.lock().map_err(|e| e.to_string())?;
+    mgr.delete_workspace(&id)
+}
+
+#[tauri::command]
+fn workspace_list(
+    state: State<'_, AppState>,
+    profile_id: Option<String>,
+) -> Result<Vec<WorkspaceRecord>, String> {
+    let profile = profile_id.as_deref().unwrap_or(PERSONAL_PROFILE);
+    let mgr = state.workspaces.lock().map_err(|e| e.to_string())?;
+    Ok(mgr.list_workspaces(profile))
+}
+
+#[tauri::command]
+fn profile_create(state: State<'_, AppState>, name: String) -> Result<ProfileRecord, String> {
+    let mut mgr = state.workspaces.lock().map_err(|e| e.to_string())?;
+    mgr.create_profile(name)
+}
+
+#[tauri::command]
+fn profile_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let mut mgr = state.workspaces.lock().map_err(|e| e.to_string())?;
+    mgr.delete_profile(&id)
+}
+
+#[tauri::command]
+fn profile_list(state: State<'_, AppState>) -> Result<Vec<ProfileRecord>, String> {
+    let mgr = state.workspaces.lock().map_err(|e| e.to_string())?;
+    Ok(mgr.list_profiles())
+}
+
+// -----------------------------------------------------------------------------
+// PATRON COMMANDS
+// -----------------------------------------------------------------------------
+
+#[tauri::command]
+fn patron_get_status(state: State<'_, AppState>) -> Result<PatronStatus, String> {
+    let patron = state.patron.lock().map_err(|e| e.to_string())?;
+    Ok(patron.get_status())
+}
+
+#[tauri::command]
+fn patron_activate(state: State<'_, AppState>, key: String) -> Result<PatronStatus, String> {
+    let mut patron = state.patron.lock().map_err(|e| e.to_string())?;
+    patron.activate(&key)
+}
+
+#[tauri::command]
+fn patron_deactivate(state: State<'_, AppState>) -> Result<PatronStatus, String> {
+    let mut patron = state.patron.lock().map_err(|e| e.to_string())?;
+    Ok(patron.deactivate())
+}
+
+// -----------------------------------------------------------------------------
+// CREDENTIAL COMMANDS
+// -----------------------------------------------------------------------------
+
+#[tauri::command]
+fn credential_check(state: State<'_, AppState>, origin: String) -> Result<FillStatus, String> {
+    let broker = state.credentials.lock().map_err(|e| e.to_string())?;
+    Ok(broker.check_available(&origin))
+}
+
+#[tauri::command]
+fn credential_trigger_fill(
+    state: State<'_, AppState>,
+    origin: String,
+) -> Result<FillStatus, String> {
+    let mut broker = state.credentials.lock().map_err(|e| e.to_string())?;
+    Ok(broker.trigger_fill(&origin))
+}
+
+// -----------------------------------------------------------------------------
+// RUNNER ENTRY POINT
+// -----------------------------------------------------------------------------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let storage = StorageManager::new();
-    let initial_browser = BrowserState::new();
+    let initial_browser = BrowserState::with_default_window();
 
     let initial_state = AppState {
         browser: Mutex::new(initial_browser),
         storage,
         adblock: Mutex::new(AdblockEngine::new()),
+        permissions: Mutex::new(PermissionBroker::new()),
+        downloads: Mutex::new(DownloadManager::new()),
+        workspaces: Mutex::new(WorkspacesManager::new()),
+        patron: Mutex::new(PatronState::new()),
+        credentials: Mutex::new(CredentialBroker::new()),
+        viewport: Mutex::new(None),
     };
 
     tauri::Builder::default()
         .manage(initial_state)
         .invoke_handler(tauri::generate_handler![
+            get_state_projection,
+            get_window_projection,
+            list_windows,
+            get_tabs,
+            get_active_tab,
             create_tab,
             close_tab,
+            close_all_tabs,
             switch_tab,
             navigate,
+            duplicate_tab,
+            set_tab_pinned,
+            set_tab_muted,
             reload_tab,
             go_back,
             go_forward,
-            get_tabs,
-            get_active_tab,
-            update_window_bounds,
+            create_group,
+            rename_group,
+            set_group_collapsed,
+            move_tab_to_group,
+            close_group,
+            reopen_closed_tab,
+            forget_closed_tab,
+            clear_closed_tabs,
+            set_viewport,
             minimize_window,
             maximize_window,
             close_window,
             get_history,
+            history_list,
             add_history_entry,
+            history_record,
+            history_remove,
             clear_history,
             get_bookmarks,
             add_bookmark,
             remove_bookmark,
+            favorites_list,
+            favorites_add,
+            favorites_update,
+            favorites_remove,
             get_settings,
             save_settings,
+            get_sync_eligibility,
+            sync_get_payload,
+            adblock_status,
             get_adblock_stats,
             toggle_adblock,
+            adblock_add_exception,
+            adblock_remove_exception,
+            adblock_except_active,
+            permission_list_decisions,
+            permission_set_decision,
+            permission_respond,
+            downloads_list,
+            downloads_open,
+            downloads_show_in_folder,
+            downloads_cancel,
+            downloads_clear_completed,
+            workspace_create,
+            workspace_rename,
+            workspace_update_tabs,
+            workspace_delete,
+            workspace_list,
+            profile_create,
+            profile_delete,
+            profile_list,
+            patron_get_status,
+            patron_activate,
+            patron_deactivate,
+            credential_check,
+            credential_trigger_fill,
         ])
-        .on_window_event(|window, event| {
-            if let WindowEvent::Resized(size) = event {
-                let app = window.app_handle();
-                if let Some(state) = app.try_state::<AppState>() {
-                    if let Ok(browser) = state.browser.lock() {
-                        if let Some(active_id) = browser.active_tab_id.as_deref() {
-                            let _ = webview::resize_active_webview(
-                                app,
-                                active_id,
-                                size.width,
-                                size.height,
-                            );
-                        }
-                    }
-                }
-            }
-        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

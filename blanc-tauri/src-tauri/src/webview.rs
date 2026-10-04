@@ -1,61 +1,163 @@
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager};
 
-/// Computes dynamic bounds for the child webview according to VISION.md Section 3.B:
-/// X = 16px, Y = 80px (below the floating pill offset),
-/// Width = Window_Width - 32px, Height = Window_Height - 96px.
-pub fn calculate_webview_bounds(window_width: u32, window_height: u32) -> (i32, i32, u32, u32) {
-    let x = 16;
-    let y = 80;
-    let width = window_width.saturating_sub(32);
-    let height = window_height.saturating_sub(96);
-    (x, y, width, height)
+#[cfg(desktop)]
+use tauri::{webview::WebviewBuilder, WebviewUrl};
+
+use crate::AppState;
+
+/// Rectangle (logical pixels, relative to the main window's client area) that the
+/// native page view should cover. The React shell measures its viewport card and
+/// reports it through `set_viewport`, so the page always sits exactly under the pill.
+#[derive(Debug, Clone, Copy)]
+pub struct Viewport {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
-/// Spawns a new native child webview attached to the main window
-pub fn create_tab_webview(
-    app: &AppHandle,
-    tab_id: &str,
-    target_url: &str,
-    window_width: u32,
-    window_height: u32,
-) -> Result<(), String> {
+/// Emitted to the shell whenever a native page navigates or changes its title.
+#[derive(Clone, Serialize)]
+pub struct TabNavigated {
+    pub tab_id: String,
+    pub url: Option<String>,
+    pub title: Option<String>,
+}
+
+/// Matches the shell layout (16px side gutters, 74px top strip, 16px bottom gutter)
+/// until the frontend reports real measurements.
+fn fallback_viewport(app: &AppHandle) -> Viewport {
+    let (w, h) = app
+        .get_window("main")
+        .and_then(|win| {
+            let scale = win.scale_factor().ok()?;
+            let size = win.inner_size().ok()?.to_logical::<f64>(scale);
+            Some((size.width, size.height))
+        })
+        .unwrap_or((1280.0, 800.0));
+    Viewport {
+        x: 16.0,
+        y: 74.0,
+        width: (w - 32.0).max(1.0),
+        height: (h - 90.0).max(1.0),
+    }
+}
+
+pub fn current_viewport(app: &AppHandle) -> Viewport {
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(guard) = state.viewport.lock() {
+            if let Some(v) = *guard {
+                return v;
+            }
+        }
+    }
+    fallback_viewport(app)
+}
+
+/// Spawns a native page view embedded in the main window (desktop only).
+///
+/// It is a *child webview* of the main window, not a separate OS window: it moves,
+/// resizes and minimizes with Blanc and is positioned relative to the window.
+#[cfg(desktop)]
+pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Result<(), String> {
     let parsed_url: url::Url = target_url
         .parse()
-        .or_else(|_| "about:blank".parse())
         .map_err(|e| format!("Invalid URL: {}", e))?;
+    let window = app
+        .get_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
+    let v = current_viewport(app);
 
-    let (x, y, width, height) = calculate_webview_bounds(window_width, window_height);
+    let nav_app = app.clone();
+    let nav_id = tab_id.to_string();
+    let title_app = app.clone();
+    let title_id = tab_id.to_string();
 
-    let mut builder = WebviewWindowBuilder::new(app, tab_id, WebviewUrl::External(parsed_url))
-        .title("Blanc Webview");
+    let builder = WebviewBuilder::new(tab_id, WebviewUrl::External(parsed_url))
+        .on_navigation(move |url| {
+            let _ = nav_app.emit(
+                "tab-navigated",
+                TabNavigated {
+                    tab_id: nav_id.clone(),
+                    url: Some(url.to_string()),
+                    title: None,
+                },
+            );
+            true
+        })
+        .on_document_title_changed(move |_webview, title| {
+            let _ = title_app.emit(
+                "tab-navigated",
+                TabNavigated {
+                    tab_id: title_id.clone(),
+                    url: None,
+                    title: Some(title),
+                },
+            );
+        });
 
-    #[cfg(desktop)]
-    {
-        builder = builder.decorations(false);
-    }
-
-    let _window = builder
-        .position(x as f64, y as f64)
-        .inner_size(width as f64, height as f64)
-        .build()
+    window
+        .add_child(
+            builder,
+            LogicalPosition::new(v.x, v.y),
+            LogicalSize::new(v.width, v.height),
+        )
         .map_err(|e| format!("Failed to create child webview: {}", e))?;
 
     Ok(())
 }
 
-/// Toggles visibility between tabs without reloading the page DOM
+/// Android/iOS cannot host extra webviews from Rust; the shell drives a native
+/// Android `WebView` through the `BlancNative` bridge instead (see MainActivity.kt).
+#[cfg(not(desktop))]
+pub fn create_tab_webview(_app: &AppHandle, _tab_id: &str, _target_url: &str) -> Result<(), String> {
+    Ok(())
+}
+
+/// Applies the reported viewport to the active tab's webview and hides every other
+/// page view. `hidden` is true while an overlay (switcher, quick search) is open or
+/// the active tab is an internal page, so React UI is never covered by a native view.
+pub fn apply_viewport(
+    app: &AppHandle,
+    active_tab_id: Option<&str>,
+    viewport: Viewport,
+    hidden: bool,
+) -> Result<(), String> {
+    for (label, wv) in app.webviews() {
+        if label == "main" {
+            continue;
+        }
+        if Some(label.as_str()) == active_tab_id && !hidden {
+            wv.set_position(LogicalPosition::new(viewport.x, viewport.y))
+                .map_err(|e| format!("Failed to set webview position: {}", e))?;
+            wv.set_size(LogicalSize::new(viewport.width, viewport.height))
+                .map_err(|e| format!("Failed to set webview size: {}", e))?;
+            wv.show()
+                .map_err(|e| format!("Failed to show webview: {}", e))?;
+        } else {
+            let _ = wv.hide();
+        }
+    }
+    Ok(())
+}
+
+/// Shows the given tab's webview and hides all the others without reloading pages.
 pub fn switch_tab_webview(
     app: &AppHandle,
     active_tab_id: &str,
     previous_tab_id: Option<&str>,
 ) -> Result<(), String> {
     if let Some(prev_id) = previous_tab_id {
-        if let Some(prev_wv) = app.get_webview_window(prev_id) {
+        if let Some(prev_wv) = app.get_webview(prev_id) {
             let _ = prev_wv.hide();
         }
     }
 
-    if let Some(active_wv) = app.get_webview_window(active_tab_id) {
+    if let Some(active_wv) = app.get_webview(active_tab_id) {
+        let v = current_viewport(app);
+        let _ = active_wv.set_position(LogicalPosition::new(v.x, v.y));
+        let _ = active_wv.set_size(LogicalSize::new(v.width, v.height));
         active_wv
             .show()
             .map_err(|e| format!("Failed to show webview: {}", e))?;
@@ -68,7 +170,7 @@ pub fn switch_tab_webview(
 
 /// Closes and destroys the child webview instance
 pub fn close_tab_webview(app: &AppHandle, tab_id: &str) -> Result<(), String> {
-    if let Some(wv) = app.get_webview_window(tab_id) {
+    if let Some(wv) = app.get_webview(tab_id) {
         wv.close()
             .map_err(|e| format!("Failed to close child webview: {}", e))?;
     }
@@ -77,11 +179,13 @@ pub fn close_tab_webview(app: &AppHandle, tab_id: &str) -> Result<(), String> {
 
 /// Navigates the child webview to the specified URL
 pub fn navigate_webview(app: &AppHandle, tab_id: &str, url: &str) -> Result<(), String> {
-    if let Some(wv) = app.get_webview_window(tab_id) {
-        let script = format!("window.location.href = {};", serde_json::to_string(url).unwrap_or_default());
-        wv.eval(&script)
-            .map_err(|e| format!("Failed to evaluate navigation script: {}", e))?;
-        Ok(())
+    if let Some(wv) = app.get_webview(tab_id) {
+        match url.parse::<url::Url>() {
+            Ok(parsed) => wv
+                .navigate(parsed)
+                .map_err(|e| format!("Failed to navigate: {}", e)),
+            Err(_) => Err(format!("Invalid URL: {}", url)),
+        }
     } else {
         Err(format!("Webview for tab '{}' not found", tab_id))
     }
@@ -89,8 +193,8 @@ pub fn navigate_webview(app: &AppHandle, tab_id: &str, url: &str) -> Result<(), 
 
 /// Reloads the web page in the specified tab webview
 pub fn reload_webview(app: &AppHandle, tab_id: &str) -> Result<(), String> {
-    if let Some(wv) = app.get_webview_window(tab_id) {
-        wv.eval("window.location.reload();")
+    if let Some(wv) = app.get_webview(tab_id) {
+        wv.reload()
             .map_err(|e| format!("Failed to reload: {}", e))?;
         Ok(())
     } else {
@@ -100,7 +204,7 @@ pub fn reload_webview(app: &AppHandle, tab_id: &str) -> Result<(), String> {
 
 /// Navigates backwards in the webview session history
 pub fn go_back_webview(app: &AppHandle, tab_id: &str) -> Result<(), String> {
-    if let Some(wv) = app.get_webview_window(tab_id) {
+    if let Some(wv) = app.get_webview(tab_id) {
         wv.eval("window.history.back();")
             .map_err(|e| format!("Failed to go back: {}", e))?;
         Ok(())
@@ -111,30 +215,11 @@ pub fn go_back_webview(app: &AppHandle, tab_id: &str) -> Result<(), String> {
 
 /// Navigates forward in the webview session history
 pub fn go_forward_webview(app: &AppHandle, tab_id: &str) -> Result<(), String> {
-    if let Some(wv) = app.get_webview_window(tab_id) {
+    if let Some(wv) = app.get_webview(tab_id) {
         wv.eval("window.history.forward();")
             .map_err(|e| format!("Failed to go forward: {}", e))?;
         Ok(())
     } else {
         Err(format!("Webview for tab '{}' not found", tab_id))
-    }
-}
-
-/// Resizes the active child webview when the window dimensions change
-pub fn resize_active_webview(
-    app: &AppHandle,
-    active_tab_id: &str,
-    window_width: u32,
-    window_height: u32,
-) -> Result<(), String> {
-    if let Some(wv) = app.get_webview_window(active_tab_id) {
-        let (x, y, width, height) = calculate_webview_bounds(window_width, window_height);
-        wv.set_position(LogicalPosition::new(x as f64, y as f64))
-            .map_err(|e| format!("Failed to set webview position: {}", e))?;
-        wv.set_size(LogicalSize::new(width as f64, height as f64))
-            .map_err(|e| format!("Failed to set webview size: {}", e))?;
-        Ok(())
-    } else {
-        Ok(()) // Active webview might not be spawned yet
     }
 }

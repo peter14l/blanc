@@ -86,6 +86,7 @@ export interface BrowserIPCContextType {
   createTab: (url?: string) => Promise<Tab>;
   closeTab: (tabId: string) => Promise<void>;
   closeAllTabs: () => Promise<void>;
+  reopenClosedTab: () => Promise<void>;
   switchTab: (tabId: string) => Promise<void>;
   navigate: (tabId: string, url: string) => Promise<void>;
   reloadTab: (tabId: string) => Promise<void>;
@@ -101,6 +102,7 @@ export interface BrowserIPCContextType {
   // Dialogs / Overlays
   toggleQuickSwitcher: (open?: boolean) => void;
   toggleTabSwitcher: (open?: boolean) => void;
+  setViewport: (x: number, y: number, width: number, height: number, hidden: boolean) => Promise<void>;
 
   // History
   history: HistoryEntry[];
