@@ -199,14 +199,18 @@ fn update_window_bounds(
 
 #[tauri::command]
 fn minimize_window(app: AppHandle) -> Result<(), String> {
+    #[cfg(desktop)]
     if let Some(window) = app.get_webview_window("main") {
         window.minimize().map_err(|e| e.to_string())?;
     }
+    #[cfg(not(desktop))]
+    let _ = app;
     Ok(())
 }
 
 #[tauri::command]
 fn maximize_window(app: AppHandle) -> Result<(), String> {
+    #[cfg(desktop)]
     if let Some(window) = app.get_webview_window("main") {
         if window.is_maximized().unwrap_or(false) {
             window.unmaximize().map_err(|e| e.to_string())?;
@@ -214,14 +218,19 @@ fn maximize_window(app: AppHandle) -> Result<(), String> {
             window.maximize().map_err(|e| e.to_string())?;
         }
     }
+    #[cfg(not(desktop))]
+    let _ = app;
     Ok(())
 }
 
 #[tauri::command]
 fn close_window(app: AppHandle) -> Result<(), String> {
+    #[cfg(desktop)]
     if let Some(window) = app.get_webview_window("main") {
         window.close().map_err(|e| e.to_string())?;
     }
+    #[cfg(not(desktop))]
+    let _ = app;
     Ok(())
 }
 

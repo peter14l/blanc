@@ -26,9 +26,15 @@ pub fn create_tab_webview(
 
     let (x, y, width, height) = calculate_webview_bounds(window_width, window_height);
 
-    let _window = WebviewWindowBuilder::new(app, tab_id, WebviewUrl::External(parsed_url))
-        .title("Blanc Webview")
-        .decorations(false)
+    let mut builder = WebviewWindowBuilder::new(app, tab_id, WebviewUrl::External(parsed_url))
+        .title("Blanc Webview");
+
+    #[cfg(desktop)]
+    {
+        builder = builder.decorations(false);
+    }
+
+    let _window = builder
         .position(x as f64, y as f64)
         .inner_size(width as f64, height as f64)
         .build()
