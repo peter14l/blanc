@@ -1,4 +1,5 @@
 use serde::Serialize;
+#[allow(unused_imports)]
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager};
 
 #[cfg(desktop)]
@@ -118,6 +119,7 @@ pub fn create_tab_webview(_app: &AppHandle, _tab_id: &str, _target_url: &str) ->
 /// Applies the reported viewport to the active tab's webview and hides every other
 /// page view. `hidden` is true while an overlay (switcher, quick search) is open or
 /// the active tab is an internal page, so React UI is never covered by a native view.
+#[cfg(desktop)]
 pub fn apply_viewport(
     app: &AppHandle,
     active_tab_id: Option<&str>,
@@ -142,7 +144,18 @@ pub fn apply_viewport(
     Ok(())
 }
 
+#[cfg(not(desktop))]
+pub fn apply_viewport(
+    _app: &AppHandle,
+    _active_tab_id: Option<&str>,
+    _viewport: Viewport,
+    _hidden: bool,
+) -> Result<(), String> {
+    Ok(())
+}
+
 /// Shows the given tab's webview and hides all the others without reloading pages.
+#[cfg(desktop)]
 pub fn switch_tab_webview(
     app: &AppHandle,
     active_tab_id: &str,
@@ -168,12 +181,27 @@ pub fn switch_tab_webview(
     }
 }
 
+#[cfg(not(desktop))]
+pub fn switch_tab_webview(
+    _app: &AppHandle,
+    _active_tab_id: &str,
+    _previous_tab_id: Option<&str>,
+) -> Result<(), String> {
+    Ok(())
+}
+
 /// Closes and destroys the child webview instance
+#[cfg(desktop)]
 pub fn close_tab_webview(app: &AppHandle, tab_id: &str) -> Result<(), String> {
     if let Some(wv) = app.get_webview(tab_id) {
         wv.close()
             .map_err(|e| format!("Failed to close child webview: {}", e))?;
     }
+    Ok(())
+}
+
+#[cfg(not(desktop))]
+pub fn close_tab_webview(_app: &AppHandle, _tab_id: &str) -> Result<(), String> {
     Ok(())
 }
 

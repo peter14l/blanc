@@ -282,10 +282,11 @@ where
 
         let temp = self.temp_path();
         write_owner_only(&temp, &bytes)?;
-        // Flush file contents to disk before the rename becomes visible.
-        let file = OpenOptions::new().read(true).open(&temp)?;
-        file.sync_all()?;
-        drop(file);
+
+        #[cfg(windows)]
+        if self.path.exists() {
+            let _ = fs::remove_file(&self.path);
+        }
 
         fs::rename(&temp, &self.path)?;
         // Without this the rename itself can be lost on a power failure.
@@ -341,6 +342,7 @@ fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
     }
     let mut file = options.open(path)?;
     file.write_all(bytes)?;
+    file.sync_all()?;
     Ok(())
 }
 

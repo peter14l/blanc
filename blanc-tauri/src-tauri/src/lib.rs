@@ -122,6 +122,7 @@ fn create_tab(
     let target_url = tab.url.clone();
 
     // Hide previous webview if any
+    #[cfg(desktop)]
     if let Some(prev_id) = prev_active.as_deref() {
         if let Some(prev_wv) = app.get_webview(prev_id) {
             let _ = prev_wv.hide();
@@ -244,8 +245,11 @@ fn navigate(
                     webview::navigate_webview(&app, &tab_id, &allowed_url)?;
                 }
                 let _ = state.storage.add_history(allowed_url, "".to_string());
-            } else if let Some(wv) = app.get_webview(&tab_id) {
-                let _ = wv.hide();
+            } else {
+                #[cfg(desktop)]
+                if let Some(wv) = app.get_webview(&tab_id) {
+                    let _ = wv.hide();
+                }
             }
         }
         navigation::NavigationDecision::ShowInternal { url: internal_url, .. } => {
@@ -253,6 +257,7 @@ fn navigate(
             browser.update_tab_navigation(&tab_id, Some(internal_url), None)?;
             emit_state_projection(&app, &browser);
 
+            #[cfg(desktop)]
             if let Some(wv) = app.get_webview(&tab_id) {
                 let _ = wv.hide();
             }
@@ -775,16 +780,16 @@ fn downloads_list(
 #[tauri::command]
 fn downloads_open(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let dm = state.downloads.lock().map_err(|e| e.to_string())?;
-    let item = dm.get_download(&id).ok_or_else(|| format!("Download '{}' not found", id))?;
+    let _item = dm.get_download(&id).ok_or_else(|| format!("Download '{}' not found", id))?;
 
     #[cfg(desktop)]
     {
         #[cfg(target_os = "windows")]
-        let _ = std::process::Command::new("cmd").args(["/C", "start", "", &item.target_path]).spawn();
+        let _ = std::process::Command::new("cmd").args(["/C", "start", "", &_item.target_path]).spawn();
         #[cfg(target_os = "macos")]
-        let _ = std::process::Command::new("open").arg(&item.target_path).spawn();
+        let _ = std::process::Command::new("open").arg(&_item.target_path).spawn();
         #[cfg(target_os = "linux")]
-        let _ = std::process::Command::new("xdg-open").arg(&item.target_path).spawn();
+        let _ = std::process::Command::new("xdg-open").arg(&_item.target_path).spawn();
     }
     Ok(())
 }
@@ -792,17 +797,17 @@ fn downloads_open(state: State<'_, AppState>, id: String) -> Result<(), String> 
 #[tauri::command]
 fn downloads_show_in_folder(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let dm = state.downloads.lock().map_err(|e| e.to_string())?;
-    let item = dm.get_download(&id).ok_or_else(|| format!("Download '{}' not found", id))?;
+    let _item = dm.get_download(&id).ok_or_else(|| format!("Download '{}' not found", id))?;
 
     #[cfg(desktop)]
     {
         #[cfg(target_os = "windows")]
-        let _ = std::process::Command::new("explorer").args(["/select,", &item.target_path]).spawn();
+        let _ = std::process::Command::new("explorer").args(["/select,", &_item.target_path]).spawn();
         #[cfg(target_os = "macos")]
-        let _ = std::process::Command::new("open").args(["-R", &item.target_path]).spawn();
+        let _ = std::process::Command::new("open").args(["-R", &_item.target_path]).spawn();
         #[cfg(target_os = "linux")]
         {
-            if let Some(parent) = std::path::Path::new(&item.target_path).parent() {
+            if let Some(parent) = std::path::Path::new(&_item.target_path).parent() {
                 let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
             }
         }
