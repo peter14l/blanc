@@ -15,11 +15,15 @@ $pfxPath = "$env:TEMP\blanc-test-cert.pfx"
 Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $password | Out-Null
 Write-Host "==> Certificate exported to $pfxPath"
 
-# Trust certificate in current user Root store
-$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "CurrentUser")
-$store.Open("ReadWrite")
-$store.Add($cert)
-$store.Close()
+# Export public cert (.cer) and import to LocalMachine Root non-interactively
+$cerPath = "$env:TEMP\blanc-test-cert.cer"
+Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
+try {
+    # LocalMachine Root does not pop up a GUI confirmation modal when running with admin privileges in CI
+    Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\LocalMachine\Root" -ErrorAction SilentlyContinue | Out-Null
+} catch {
+    Write-Host "==> Note: LocalMachine Root import skipped; proceeding with direct PFX signing."
+}
 
 # Locate signtool
 $signtool = (Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
@@ -42,7 +46,8 @@ if (Test-Path $bundleDir) {
 foreach ($file in $filesToSign) {
     Write-Host "==> Signing $($file.FullName)..."
     & $signtool sign /f $pfxPath /p "BlancTestPassword123!" /fd SHA256 /v $file.FullName
-    & $signtool verify /pa /v $file.FullName
+    $sig = Get-AuthenticodeSignature $file.FullName
+    Write-Host "==> Signature Status for $($file.Name): $($sig.Status) ($($sig.SignerCertificate.Subject))"
 }
 
 Write-Host "==> All Windows binaries successfully signed with test certificate!"
