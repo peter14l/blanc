@@ -24,25 +24,35 @@ if [ ! -f "$KEYSTORE_PATH" ]; then
     -dname "CN=Blanc Browser, O=Bananify Creative, C=US"
 fi
 
-# 2. Build for each target ABI
+# 2. Build and sign for each target ABI
 TARGETS=(
-  "aarch64-linux-android:arm64-v8a"
-  "armv7-linux-androideabi:armeabi-v7a"
-  "x86_64-linux-android:x86_64"
-  "i686-linux-android:x86"
+  "aarch64:arm64-v8a"
+  "armv7:armeabi-v7a"
+  "x86_64:x86_64"
+  "i686:x86"
 )
 
-OUTPUT_DIR="$PWD/src-tauri/gen/android/app/build/outputs/apk/release"
+OUTPUT_DIR="$PWD/src-tauri/gen/android/app/build/outputs/apk"
 mkdir -p "$OUTPUT_DIR"
 
 for entry in "${TARGETS[@]}"; do
-  RUST_TARGET="${entry%%:*}"
+  TAURI_TARGET="${entry%%:*}"
   ABI_NAME="${entry##*:}"
   
-  echo "==> Building for ABI: $ABI_NAME (Target: $RUST_TARGET)..."
-  npx @tauri-apps/cli android build --target "$RUST_TARGET" --apk || {
+  echo "==> Building for ABI: $ABI_NAME (Tauri Target: $TAURI_TARGET)..."
+  npx @tauri-apps/cli android build --ci --target "$TAURI_TARGET" --apk --split-per-abi || {
     echo "Warning: Full Gradle build requires Android SDK/NDK environment."
   }
+done
+
+echo "==> Signing generated split APKs..."
+find "$OUTPUT_DIR" -name "*.apk" 2>/dev/null | while read -r apk; do
+  echo "Signing $apk..."
+  jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+    -keystore "$KEYSTORE_PATH" \
+    -storepass "$KEYSTORE_PASS" \
+    -keypass "$KEYSTORE_PASS" \
+    "$apk" "$ALIAS_NAME" || true
 done
 
 echo "==> Android release signing & ABI splits configuration ready."

@@ -296,6 +296,7 @@ fn toggle_adblock(state: State<'_, AppState>, enabled: bool) -> Result<bool, Str
     Ok(enabled)
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let storage = StorageManager::new();
     let initial_browser = BrowserState::new();

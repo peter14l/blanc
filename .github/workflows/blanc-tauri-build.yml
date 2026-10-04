@@ -54,7 +54,7 @@ jobs:
         with:
           name: blanc-tauri-windows-x64-signed
           path: |
-            blanc-tauri/src-tauri/target/release/bundle/nsis/*.exe
+            blanc-tauri/src-tauri/target/release/bundle/**
             blanc-tauri/src-tauri/target/release/*.exe
           if-no-files-found: warn
 
@@ -123,10 +123,8 @@ jobs:
         with:
           name: ${{ matrix.artifact-name }}
           path: |
-            blanc-tauri/src-tauri/target/release/bundle/
-            blanc-tauri/src-tauri/target/release/*.AppImage
-            blanc-tauri/src-tauri/target/release/*.deb
-            blanc-tauri/src-tauri/target/release/*.dmg
+            blanc-tauri/src-tauri/target/release/bundle/**
+            blanc-tauri/src-tauri/target/release/blanc-tauri*
           if-no-files-found: warn
 
   build-android-splits:
@@ -137,12 +135,16 @@ jobs:
       matrix:
         include:
           - target: 'aarch64-linux-android'
+            tauri_target: 'aarch64'
             abi: 'arm64-v8a'
           - target: 'armv7-linux-androideabi'
+            tauri_target: 'armv7'
             abi: 'armeabi-v7a'
           - target: 'x86_64-linux-android'
+            tauri_target: 'x86_64'
             abi: 'x86_64'
           - target: 'i686-linux-android'
+            tauri_target: 'i686'
             abi: 'x86'
 
     steps:
@@ -162,13 +164,25 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Setup Android SDK & NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install NDK
+      - name: Setup Android SDK & NDK Environment
         run: |
-          sdkmanager --install "ndk;25.2.9519653"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
+
+          NDK_PATH=$(find /usr/local/lib/android/sdk/ndk -maxdepth 1 -mindepth 1 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$NDK_PATH" ]; then
+            echo "Installing NDK via sdkmanager..."
+            yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
+            /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "ndk;26.3.11579264" || /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "ndk;25.2.9519653"
+            NDK_PATH=$(find /usr/local/lib/android/sdk/ndk -maxdepth 1 -mindepth 1 2>/dev/null | sort -V | tail -n 1)
+          fi
+          echo "Discovered NDK at: $NDK_PATH"
+          echo "NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Install Rust Toolchain & Target
         uses: dtolnay/rust-toolchain@stable
@@ -201,18 +215,19 @@ jobs:
         working-directory: blanc-tauri
         run: |
           if [ ! -d "src-tauri/gen/android" ] || [ ! -f "src-tauri/gen/android/build.gradle.kts" ]; then
-            npx @tauri-apps/cli android init || true
+            npx @tauri-apps/cli android init --ci || true
+            chmod +x src-tauri/gen/android/gradlew 2>/dev/null || true
           fi
 
       - name: Build Android APK for ABI (${{ matrix.abi }})
         working-directory: blanc-tauri
         run: |
-          npx @tauri-apps/cli android build --target ${{ matrix.target }} --apk || true
+          npx @tauri-apps/cli android build --ci --target ${{ matrix.tauri_target }} --apk --split-per-abi
 
       - name: Sign APK with Release Keystore
         working-directory: blanc-tauri
         run: |
-          find src-tauri/gen/android -name "*.apk" | while read apk; do
+          find src-tauri/gen/android -name "*.apk" | while read -r apk; do
             echo "Signing $apk..."
             jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
               -keystore src-tauri/gen/android/release.keystore \
