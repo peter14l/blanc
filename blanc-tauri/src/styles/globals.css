@@ -1,0 +1,134 @@
+@import "./tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    background: transparent;
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  input, button {
+    font-family: inherit;
+    font-size: inherit;
+  }
+
+  /* Tauri drag region support - only active in native desktop shell */
+  body.is-tauri [data-tauri-drag-region] {
+    -webkit-app-region: drag;
+  }
+
+  /* Non-draggable interactive controls inside drag region */
+  body.is-tauri button,
+  body.is-tauri input,
+  body.is-tauri a,
+  body.is-tauri [role="button"],
+  body.is-tauri .no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
+
+@layer components {
+  /* Blanc Glassmorphic Island Styles */
+  .glass-island {
+    background-color: var(--island-resting-surface);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    box-shadow: var(--shadow-island-resting);
+    border: 1px solid var(--border);
+  }
+
+  .glass-panel {
+    background-color: var(--surface-raised);
+    backdrop-filter: blur(24px) saturate(190%);
+    -webkit-backdrop-filter: blur(24px) saturate(190%);
+    box-shadow: var(--shadow-popover);
+    border: 1px solid var(--border);
+  }
+
+  .glass-pill {
+    background-color: var(--surface);
+    box-shadow: var(--shadow-pill);
+    border: 1px solid var(--border);
+  }
+}
+
+/* Animations */
+@keyframes fadeInScale {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeInScale 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 1.5s ease-in-out infinite;
+}
+
+/* Custom minimal scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
