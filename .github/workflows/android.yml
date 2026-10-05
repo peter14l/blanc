@@ -43,8 +43,12 @@ jobs:
           build-tools-version: '34.0.0'
           cmdline-tools-version: 'latest'
           emulator: false
-          # Don't install deprecated 'tools' package
-          # The cmdline-tools 'latest' includes everything needed
+          # Explicitly specify packages to avoid deprecated 'tools'
+          packages: |
+            platforms;android-34
+            build-tools;34.0.0
+            ndk;27.0.12077973
+            platform-tools
 
       - name: Grant execute permission for gradlew
         run: chmod +x blanc-android/gradlew
