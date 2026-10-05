@@ -6,6 +6,7 @@ pub mod model;
 pub mod navigation;
 pub mod patron;
 pub mod permissions;
+pub mod proxy;
 pub mod sleep;
 pub mod state;
 pub mod storage;
@@ -26,6 +27,7 @@ use workspaces::{ProfileRecord, WorkspaceRecord, WorkspacesManager};
 use patron::{PatronState, PatronStatus};
 use credentials::{CredentialBroker, FillStatus};
 use sync::{SyncEligibility, SyncableData, validate_sync_payload};
+use proxy::proxy_fetch;
 
 pub struct AppState {
     pub browser: Mutex<BrowserState>,
@@ -336,6 +338,40 @@ fn go_back(app: AppHandle, tab_id: String) -> Result<(), String> {
 #[tauri::command]
 fn go_forward(app: AppHandle, tab_id: String) -> Result<(), String> {
     webview::go_forward_webview(&app, &tab_id)
+}
+
+// -----------------------------------------------------------------------------
+// MOBILE MAIN WEBVIEW NAVIGATION
+// -----------------------------------------------------------------------------
+
+#[tauri::command]
+fn mobile_navigate(app: AppHandle, url: String) -> Result<(), String> {
+    webview::mobile_navigate_webview(&app, &url)
+}
+
+#[tauri::command]
+fn mobile_reload(app: AppHandle) -> Result<(), String> {
+    webview::mobile_reload_webview(&app)
+}
+
+#[tauri::command]
+fn mobile_go_back(app: AppHandle) -> Result<(), String> {
+    webview::mobile_go_back_webview(&app)
+}
+
+#[tauri::command]
+fn mobile_go_forward(app: AppHandle) -> Result<(), String> {
+    webview::mobile_go_forward_webview(&app)
+}
+
+#[tauri::command]
+fn mobile_can_go_back(app: AppHandle) -> Result<bool, String> {
+    webview::mobile_can_go_back(&app)
+}
+
+#[tauri::command]
+fn mobile_can_go_forward(app: AppHandle) -> Result<bool, String> {
+    webview::mobile_can_go_forward(&app)
 }
 
 // -----------------------------------------------------------------------------
@@ -988,6 +1024,12 @@ pub fn run() {
             reload_tab,
             go_back,
             go_forward,
+            mobile_navigate,
+            mobile_reload,
+            mobile_go_back,
+            mobile_go_forward,
+            mobile_can_go_back,
+            mobile_can_go_forward,
             create_group,
             rename_group,
             set_group_collapsed,
@@ -1044,6 +1086,7 @@ pub fn run() {
             patron_deactivate,
             credential_check,
             credential_trigger_fill,
+            proxy_fetch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

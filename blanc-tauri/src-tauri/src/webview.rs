@@ -251,3 +251,126 @@ pub fn go_forward_webview(app: &AppHandle, tab_id: &str) -> Result<(), String> {
         Err(format!("Webview for tab '{}' not found", tab_id))
     }
 }
+
+/// Mobile-specific: Navigate the main WebView (the app's primary WebView on Android/iOS)
+#[cfg(not(desktop))]
+pub fn mobile_navigate_webview(app: &AppHandle, url: &str) -> Result<(), String> {
+    // On mobile, the main WebView is the primary one - try to get it
+    if let Some(wv) = app.get_webview("main") {
+        match url.parse::<url::Url>() {
+            Ok(parsed) => wv
+                .navigate(parsed)
+                .map_err(|e| format!("Failed to navigate main webview: {}", e)),
+            Err(_) => Err(format!("Invalid URL: {}", url)),
+        }
+    } else {
+        // Fallback: try to get any webview (the main app webview)
+        for (_, wv) in app.webviews() {
+            match url.parse::<url::Url>() {
+                Ok(parsed) => {
+                    return wv
+                        .navigate(parsed)
+                        .map_err(|e| format!("Failed to navigate main webview: {}", e));
+                }
+                Err(_) => return Err(format!("Invalid URL: {}", url)),
+            }
+        }
+        Err("Main webview not found".to_string())
+    }
+}
+
+/// Mobile-specific: Reload the main WebView
+#[cfg(not(desktop))]
+pub fn mobile_reload_webview(app: &AppHandle) -> Result<(), String> {
+    if let Some(wv) = app.get_webview("main") {
+        wv.reload()
+            .map_err(|e| format!("Failed to reload main webview: {}", e))?;
+        Ok(())
+    } else {
+        for (_, wv) in app.webviews() {
+            wv.reload()
+                .map_err(|e| format!("Failed to reload main webview: {}", e))?;
+            return Ok(());
+        }
+        Err("Main webview not found".to_string())
+    }
+}
+
+/// Mobile-specific: Go back in the main WebView history
+#[cfg(not(desktop))]
+pub fn mobile_go_back_webview(app: &AppHandle) -> Result<(), String> {
+    if let Some(wv) = app.get_webview("main") {
+        wv.eval("window.history.back();")
+            .map_err(|e| format!("Failed to go back: {}", e))?;
+        Ok(())
+    } else {
+        for (_, wv) in app.webviews() {
+            wv.eval("window.history.back();")
+                .map_err(|e| format!("Failed to go back: {}", e))?;
+            return Ok(());
+        }
+        Err("Main webview not found".to_string())
+    }
+}
+
+/// Mobile-specific: Go forward in the main WebView history
+#[cfg(not(desktop))]
+pub fn mobile_go_forward_webview(app: &AppHandle) -> Result<(), String> {
+    if let Some(wv) = app.get_webview("main") {
+        wv.eval("window.history.forward();")
+            .map_err(|e| format!("Failed to go forward: {}", e))?;
+        Ok(())
+    } else {
+        for (_, wv) in app.webviews() {
+            wv.eval("window.history.forward();")
+                .map_err(|e| format!("Failed to go forward: {}", e))?;
+            return Ok(());
+        }
+        Err("Main webview not found".to_string())
+    }
+}
+
+/// Mobile-specific: Check if main WebView can go back
+#[cfg(not(desktop))]
+pub fn mobile_can_go_back(app: &AppHandle) -> Result<bool, String> {
+    // This would need JavaScript injection to check history.length > 1
+    // For now, return true to enable the button
+    Ok(true)
+}
+
+/// Mobile-specific: Check if main WebView can go forward
+#[cfg(not(desktop))]
+pub fn mobile_can_go_forward(app: &AppHandle) -> Result<bool, String> {
+    Ok(true)
+}
+
+// Desktop stubs for mobile functions
+#[cfg(desktop)]
+pub fn mobile_navigate_webview(_app: &AppHandle, _url: &str) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(desktop)]
+pub fn mobile_reload_webview(_app: &AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(desktop)]
+pub fn mobile_go_back_webview(_app: &AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(desktop)]
+pub fn mobile_go_forward_webview(_app: &AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(desktop)]
+pub fn mobile_can_go_back(_app: &AppHandle) -> Result<bool, String> {
+    Ok(false)
+}
+
+#[cfg(desktop)]
+pub fn mobile_can_go_forward(_app: &AppHandle) -> Result<bool, String> {
+    Ok(false)
+}

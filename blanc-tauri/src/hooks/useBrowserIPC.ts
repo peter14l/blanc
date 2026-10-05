@@ -14,6 +14,15 @@ const isTauri = (): boolean => {
   return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 };
 
+// Check if running in a mobile Tauri environment (Android/iOS)
+const isTauriMobile = (): boolean => {
+  if (!isTauri()) return false;
+  // On mobile, there's no window management like desktop
+  // The app runs in a single WebView
+  const ua = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod/i.test(ua);
+};
+
 // Storage Keys
 const STORAGE_KEYS = {
   TABS: 'blanc_tabs',
@@ -340,6 +349,23 @@ export function useBrowserIPC(): BrowserIPCContextType {
     return url.replace(/^https?:\/\//, '').split('/')[0] || url;
   };
 
+  // Check if input looks like a URL/hostname (matches Rust is_likely_url logic)
+  const isLikelyUrl = (input: string): boolean => {
+    const trimmed = input.trim();
+    if (!trimmed || trimmed.includes(' ')) return false;
+    if (trimmed === 'localhost' || trimmed.startsWith('localhost:')) return true;
+    // IPv4 address
+    const parts = trimmed.split('.');
+    if (parts.length === 4 && parts.every(p => !isNaN(parseInt(p, 10)) && parseInt(p, 10) >= 0 && parseInt(p, 10) <= 255)) return true;
+    // Check domain syntax: at least 2 parts, valid TLD
+    const host = trimmed.split('/')[0].split(':')[0];
+    const hostParts = host.split('.');
+    if (hostParts.length < 2) return false;
+    const tld = hostParts[hostParts.length - 1];
+    if (tld.length < 2 || !/^[a-zA-Z]+$/.test(tld)) return false;
+    return hostParts.every(p => p.length > 0 && /^[a-zA-Z0-9-]+$/.test(p));
+  };
+
   // Create a new tab
   const createTab = useCallback(
     async (url?: string): Promise<Tab> => {
@@ -513,7 +539,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
 
       if (!isInternal) {
         if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-          if (cleanUrl.includes('.') && !cleanUrl.includes(' ')) {
+          if (isLikelyUrl(cleanUrl)) {
             cleanUrl = `https://${cleanUrl}`;
           } else {
             // Use configured search engine
@@ -765,6 +791,65 @@ export function useBrowserIPC(): BrowserIPCContextType {
     [isTauriAvailable]
   );
 
+  // Mobile-specific navigation (for Android/iOS where there's a single main WebView)
+  const isTauriMobileAvailable = useMemo(() => isTauriMobile(), []);
+
+  const mobileNavigate = useCallback(
+    async (url: string): Promise<void> => {
+      if (isTauriMobileAvailable) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('mobile_navigate', { url });
+        } catch (err) {
+          console.warn('[useBrowserIPC] Tauri mobile_navigate failed:', err);
+        }
+      }
+    },
+    [isTauriMobileAvailable]
+  );
+
+  const mobileReload = useCallback(
+    async (): Promise<void> => {
+      if (isTauriMobileAvailable) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('mobile_reload');
+        } catch (err) {
+          console.warn('[useBrowserIPC] Tauri mobile_reload failed:', err);
+        }
+      }
+    },
+    [isTauriMobileAvailable]
+  );
+
+  const mobileGoBack = useCallback(
+    async (): Promise<void> => {
+      if (isTauriMobileAvailable) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('mobile_go_back');
+        } catch (err) {
+          console.warn('[useBrowserIPC] Tauri mobile_go_back failed:', err);
+        }
+      }
+    },
+    [isTauriMobileAvailable]
+  );
+
+  const mobileGoForward = useCallback(
+    async (): Promise<void> => {
+      if (isTauriMobileAvailable) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('mobile_go_forward');
+        } catch (err) {
+          console.warn('[useBrowserIPC] Tauri mobile_go_forward failed:', err);
+        }
+      }
+    },
+    [isTauriMobileAvailable]
+  );
+
   // Listen for native webview tab navigation events
   useEffect(() => {
     if (!isTauriAvailable) return;
@@ -866,6 +951,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
     isQuickSwitcherOpen,
     isTabSwitcherOpen,
     isTauriAvailable,
+    isTauriMobileAvailable,
     createTab,
     closeTab,
     closeAllTabs,
@@ -875,6 +961,10 @@ export function useBrowserIPC(): BrowserIPCContextType {
     reloadTab,
     goBack,
     goForward,
+    mobileNavigate,
+    mobileReload,
+    mobileGoBack,
+    mobileGoForward,
     getTabs,
     minimizeWindow,
     maximizeWindow,

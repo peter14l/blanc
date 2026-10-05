@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -31,9 +31,6 @@ interface MobileBrowserProps {
   bookmarks: BookmarkType[];
   favorites: Favorite[];
   onNavigate: (url: string) => void;
-  onReload: () => void;
-  onGoBack: () => void;
-  onGoForward: () => void;
   onCreateTab: (url?: string) => void;
   onCloseTab: (id: string) => void;
   onCloseAllTabs: () => void;
@@ -58,9 +55,6 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
   bookmarks,
   favorites,
   onNavigate,
-  onReload,
-  onGoBack,
-  onGoForward,
   onCreateTab,
   onCloseTab,
   onCloseAllTabs,
@@ -80,6 +74,7 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
   const [isTabsOpen, setIsTabsOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const activeUrl = activeTab?.url || 'blanc://newtab';
   const isNewTab = activeUrl === 'blanc://newtab' || activeUrl === 'about:blank' || !activeUrl;
@@ -90,6 +85,7 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
 
   const { content, loading: pageLoading, isDirect, directSrc } = useWebPageLoader(activeUrl);
 
+  // Listen for navigation messages from iframes (YouTube hub, search results, etc.)
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
       if (e.data && e.data.type === 'BLANC_NAV' && typeof e.data.url === 'string') {
@@ -100,12 +96,14 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
     return () => window.removeEventListener('message', handleMessage);
   }, [onNavigate]);
 
+  // Sync URL input when active tab changes
   useEffect(() => {
     if (!isEditingUrl && activeTab) {
       setUrlInput(activeTab.url === 'blanc://newtab' ? '' : activeTab.url);
     }
   }, [activeTab, isEditingUrl]);
 
+  // Focus URL input when editing
   useEffect(() => {
     if (isEditingUrl) {
       inputRef.current?.focus();
@@ -113,14 +111,16 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
     }
   }, [isEditingUrl]);
 
-  const handleSubmitUrl = (e: React.FormEvent) => {
+  // Handle URL form submission
+  const handleSubmitUrl = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (urlInput.trim()) {
       onNavigate(urlInput.trim());
       setIsEditingUrl(false);
     }
-  };
+  }, [urlInput, onNavigate]);
 
+  // Get clean domain for display
   const getCleanDomain = (url: string) => {
     if (url.startsWith('blanc://')) {
       return url.replace('blanc://', '').toUpperCase();
@@ -131,6 +131,72 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
       return url;
     }
   };
+
+  // Mobile-specific navigation handlers that work with iframe + React state
+  const handleGoBack = useCallback(() => {
+    if (!activeTab) return;
+    
+    // Use the tab's history array maintained by useBrowserIPC
+    const hist = (activeTab as any).history || [];
+    const idx = (activeTab as any).historyIndex ?? 0;
+    
+    if (idx > 0) {
+      const nextIdx = idx - 1;
+      const targetUrl = hist[nextIdx];
+      
+      // Navigate via React state (updates tab URL, triggers iframe reload)
+      onNavigate(targetUrl);
+    }
+    // Also try iframe history.back() for direct iframes as fallback
+    else if (iframeRef.current && isDirect) {
+      try {
+        iframeRef.current.contentWindow?.history.back();
+      } catch (e) {
+        // Cross-origin iframe - can't access history
+      }
+    }
+  }, [activeTab, isDirect, onNavigate]);
+
+  const handleGoForward = useCallback(() => {
+    if (!activeTab) return;
+    
+    const hist = (activeTab as any).history || [];
+    const idx = (activeTab as any).historyIndex ?? 0;
+    
+    if (idx < hist.length - 1) {
+      const nextIdx = idx + 1;
+      const targetUrl = hist[nextIdx];
+      
+      onNavigate(targetUrl);
+    }
+    else if (iframeRef.current && isDirect) {
+      try {
+        iframeRef.current.contentWindow?.history.forward();
+      } catch (e) {
+        // Cross-origin iframe - can't access history
+      }
+    }
+  }, [activeTab, isDirect, onNavigate]);
+
+  const handleReload = useCallback(() => {
+    if (iframeRef.current) {
+      if (isDirect) {
+        iframeRef.current.src = iframeRef.current.src; // Force reload
+      } else {
+        iframeRef.current.contentWindow?.location.reload();
+      }
+    }
+    // No fallback needed - iframe ref handles reload
+  }, [isDirect]);
+
+  // Determine if back/forward should be enabled
+  const canGoBack = activeTab 
+    ? ((activeTab as any).historyIndex ?? 0) > 0 || (isDirect && iframeRef.current)
+    : false;
+  
+  const canGoForward = activeTab
+    ? ((activeTab as any).historyIndex ?? 0) < (((activeTab as any).history || []).length - 1) || (isDirect && iframeRef.current)
+    : false;
 
   return (
     <div className="fixed inset-0 w-full h-full bg-[#0a0a0a] text-white flex flex-col overflow-hidden select-none touch-manipulation">
@@ -200,7 +266,7 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
               <History className="w-4 h-4" />
             </button>
             <button
-              onClick={onReload}
+              onClick={handleReload}
               title="Reload Page"
               className="p-2 rounded-xl text-white/70 active:text-white active:bg-white/10"
             >
@@ -305,6 +371,7 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
               </div>
             ) : content ? (
               <iframe
+                ref={iframeRef}
                 key={'content-' + activeTab?.id + '-' + activeTab?.url}
                 srcDoc={content}
                 title={activeTab?.title || 'Web Page'}
@@ -313,6 +380,7 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
               />
             ) : (
               <iframe
+                ref={iframeRef}
                 key={'direct-' + activeTab?.id + '-' + directSrc}
                 src={directSrc}
                 title={activeTab?.title || 'Web Page'}
@@ -328,8 +396,8 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
       <footer className="w-full shrink-0 bg-[#121212]/98 backdrop-blur-md border-t border-white/10 z-30 pb-safe">
         <div className="h-14 px-4 flex items-center justify-around">
           <button
-            onClick={onGoBack}
-            disabled={!activeTab?.can_go_back}
+            onClick={handleGoBack}
+            disabled={!canGoBack}
             className="p-2 text-white/70 active:text-white disabled:opacity-25"
             title="Back"
           >
@@ -337,8 +405,8 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
           </button>
 
           <button
-            onClick={onGoForward}
-            disabled={!activeTab?.can_go_forward}
+            onClick={handleGoForward}
+            disabled={!canGoForward}
             className="p-2 text-white/70 active:text-white disabled:opacity-25"
             title="Forward"
           >

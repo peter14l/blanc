@@ -264,15 +264,6 @@ export const App: React.FC = () => {
           if (activeTab) navigate(activeTab.id, url);
           else createTab(url);
         }}
-        onReload={() => {
-          if (activeTab) reloadTab(activeTab.id);
-        }}
-        onGoBack={() => {
-          if (activeTab) goBack(activeTab.id);
-        }}
-        onGoForward={() => {
-          if (activeTab) goForward(activeTab.id);
-        }}
         onCreateTab={createTab}
         onCloseTab={closeTab}
         onCloseAllTabs={closeAllTabs}

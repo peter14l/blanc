@@ -51,7 +51,87 @@ export function useWebPageLoader(url?: string): WebPageResult {
       return;
     }
 
-    // 2. Direct framing allowed by the site
+    // 2. Search Engines: Use iframe-friendly versions
+    // DuckDuckGo Lite (allows framing, no JS required)
+    if (/duckduckgo\.com/i.test(url)) {
+      let searchQuery = '';
+      try {
+        searchQuery = new URL(url).searchParams.get('q') || '';
+      } catch {
+        const match = url.match(/[?&]q=([^&]+)/);
+        if (match && match[1]) searchQuery = decodeURIComponent(match[1]);
+      }
+      if (searchQuery) {
+        setIsDirect(true);
+        setDirectSrc(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(searchQuery)}`);
+        setContent(null);
+        setLoading(false);
+        setError(null);
+        return;
+      }
+    }
+
+    // Bing: Use lite version if available, otherwise proxy
+    if (/bing\.com/i.test(url) && url.includes('/search')) {
+      let searchQuery = '';
+      try {
+        searchQuery = new URL(url).searchParams.get('q') || '';
+      } catch {
+        const match = url.match(/[?&]q=([^&]+)/);
+        if (match && match[1]) searchQuery = decodeURIComponent(match[1]);
+      }
+      if (searchQuery) {
+        // Bing doesn't have a great lite version, try the mobile version
+        setIsDirect(true);
+        setDirectSrc(`https://www.bing.com/search?q=${encodeURIComponent(searchQuery)}&form=MOZLBR&pc=MOZI`);
+        setContent(null);
+        setLoading(false);
+        setError(null);
+        return;
+      }
+    }
+
+    // Ecosia: Check if it allows framing
+    if (/ecosia\.org/i.test(url)) {
+      let searchQuery = '';
+      try {
+        searchQuery = new URL(url).searchParams.get('q') || '';
+      } catch {
+        const match = url.match(/[?&]q=([^&]+)/);
+        if (match && match[1]) searchQuery = decodeURIComponent(match[1]);
+      }
+      if (searchQuery) {
+        // Ecosia may allow framing, try direct first
+        setIsDirect(true);
+        setDirectSrc(url);
+        setContent(null);
+        setLoading(false);
+        setError(null);
+        return;
+      }
+    }
+
+    // Kagi: Use their embed-friendly version if available
+    if (/kagi\.com/i.test(url)) {
+      let searchQuery = '';
+      try {
+        searchQuery = new URL(url).searchParams.get('q') || '';
+      } catch {
+        const match = url.match(/[?&]q=([^&]+)/);
+        if (match && match[1]) searchQuery = decodeURIComponent(match[1]);
+      }
+      if (searchQuery) {
+        // Kagi has a simple HTML version
+        setIsDirect(true);
+        setDirectSrc(`https://kagi.com/search?q=${encodeURIComponent(searchQuery)}&format=html`);
+        setContent(null);
+        setLoading(false);
+        setError(null);
+        return;
+      }
+    }
+
+    // 3. Direct framing allowed by the site
     const allowsDirect = /wikipedia\.org|archive\.org|w3schools\.com|example\.com/i.test(url);
     if (allowsDirect) {
       setIsDirect(true);
@@ -135,36 +215,65 @@ export function useWebPageLoader(url?: string): WebPageResult {
     setError(null);
     setIsDirect(false);
 
-    // 3. Fallback to local /api/proxy endpoint (supported by Vite server)
-    const localProxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+    // 3. Try Tauri proxy command first (works in production builds)
+    // Then fall back to local /api/proxy endpoint (Vite dev server)
+    const tryTauriProxy = async (): Promise<string | null> => {
+      if (typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const html = await invoke<string>('proxy_fetch', { url });
+          return html;
+        } catch (e) {
+          console.warn('[useWebPageLoader] Tauri proxy_fetch failed:', e);
+        }
+      }
+      return null;
+    };
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    fetch(localProxyUrl, { signal: controller.signal })
-      .then(async (res) => {
+    const tryLocalProxy = async (): Promise<string | null> => {
+      const localProxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      try {
+        const res = await fetch(localProxyUrl, { signal: controller.signal });
         clearTimeout(timeoutId);
         if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-        const html = await res.text();
-        if (isCancelled) return;
+        return await res.text();
+      } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
+      }
+    };
 
+    const loadViaProxy = async () => {
+      // Try Tauri first (production), then local proxy (dev)
+      let html = await tryTauriProxy();
+      if (!html) {
+        try {
+          html = await tryLocalProxy();
+        } catch (err) {
+          console.warn('[useWebPageLoader] Local proxy fetch failed:', err);
+        }
+      }
+
+      if (isCancelled) return;
+
+      if (html) {
         setContent(html);
         setLoading(false);
-      })
-      .catch((err) => {
-        clearTimeout(timeoutId);
-        if (isCancelled) return;
-        console.warn('[useWebPageLoader] Local proxy fetch failed, falling back to direct:', err);
+      } else {
+        console.warn('[useWebPageLoader] All proxy methods failed, falling back to direct');
         setIsDirect(true);
         setDirectSrc(url);
         setContent(null);
         setLoading(false);
-      });
+      }
+    };
+
+    loadViaProxy();
 
     return () => {
       isCancelled = true;
-      clearTimeout(timeoutId);
-      controller.abort();
     };
   }, [url]);
 

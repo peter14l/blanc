@@ -81,6 +81,7 @@ export interface BrowserIPCContextType {
   isQuickSwitcherOpen: boolean;
   isTabSwitcherOpen: boolean;
   isTauriAvailable: boolean;
+  isTauriMobileAvailable: boolean;
 
   // Tabs
   createTab: (url?: string) => Promise<Tab>;
@@ -93,6 +94,12 @@ export interface BrowserIPCContextType {
   goBack: (tabId: string) => Promise<void>;
   goForward: (tabId: string) => Promise<void>;
   getTabs: () => Promise<Tab[]>;
+
+  // Mobile Navigation (single main WebView on Android/iOS)
+  mobileNavigate: (url: string) => Promise<void>;
+  mobileReload: () => Promise<void>;
+  mobileGoBack: () => Promise<void>;
+  mobileGoForward: () => Promise<void>;
 
   // Window Controls
   minimizeWindow: () => Promise<void>;
