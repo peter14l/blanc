@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager};
 #[cfg(desktop)]
 use tauri::{webview::WebviewBuilder, WebviewUrl};
 
-use crate::AppState;
+use crate::{AppState, PermissionResource};
 
 /// Rectangle (logical pixels, relative to the main window's client area) that the
 /// native page view should cover. The React shell measures its viewport card and
