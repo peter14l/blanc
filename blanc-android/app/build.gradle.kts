@@ -38,13 +38,13 @@ android {
         }
     }
 
-    // Split APKs per ABI for smaller downloads
-    splits {
+    // Split APKs per ABI for smaller downloads (Kotlin DSL)
+    configure<com.android.build.api.dsl.Splits> {
         abi {
-            enable = true
+            isEnable = true
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
-            universalApk = false
+            isUniversalApk = false
         }
     }
 
