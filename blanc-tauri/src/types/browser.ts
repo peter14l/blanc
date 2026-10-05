@@ -102,6 +102,9 @@ export interface BrowserIPCContextType {
   mobileGoBack: () => Promise<void>;
   mobileGoForward: () => Promise<void>;
 
+  // Find in Page
+  findInPage: (query: string, forward: boolean) => Promise<{ match_count: number; current_index: number } | null>;
+
   // Window Controls
   minimizeWindow: () => Promise<void>;
   maximizeWindow: () => Promise<void>;

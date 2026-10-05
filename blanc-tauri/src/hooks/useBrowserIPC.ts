@@ -850,6 +850,21 @@ export function useBrowserIPC(): BrowserIPCContextType {
     [isTauriMobileAvailable]
   );
 
+  const findInPage = useCallback(
+    async (query: string, forward: boolean): Promise<{ match_count: number; current_index: number } | null> => {
+      if (!isTauriAvailable) return null;
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const result = await invoke<{ match_count: number; current_index: number }>('find_in_page', { query, forward });
+        return result;
+      } catch (err) {
+        console.warn('[useBrowserIPC] Tauri find_in_page failed:', err);
+        return null;
+      }
+    },
+    [isTauriAvailable]
+  );
+
   // Listen for native webview tab navigation events
   useEffect(() => {
     if (!isTauriAvailable) return;
@@ -967,6 +982,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
     mobileReload,
     mobileGoBack,
     mobileGoForward,
+    findInPage,
     getTabs,
     minimizeWindow,
     maximizeWindow,

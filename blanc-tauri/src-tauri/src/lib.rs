@@ -384,6 +384,16 @@ fn mobile_can_go_forward(app: AppHandle) -> Result<bool, String> {
     webview::mobile_can_go_forward(&app)
 }
 
+#[tauri::command]
+fn find_in_page(
+    app: AppHandle,
+    tab_id: String,
+    query: String,
+    forward: bool,
+) -> Result<webview::FindResult, String> {
+    webview::find_in_page(&app, &tab_id, &query, forward)
+}
+
 // -----------------------------------------------------------------------------
 // TAB GROUPS
 // -----------------------------------------------------------------------------
@@ -1040,6 +1050,7 @@ pub fn run() {
             mobile_go_forward,
             mobile_can_go_back,
             mobile_can_go_forward,
+            find_in_page,
             create_group,
             rename_group,
             set_group_collapsed,

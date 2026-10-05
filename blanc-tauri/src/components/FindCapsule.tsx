@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { useBrowserIPC } from '../hooks/useBrowserIPC';
 
 interface FindCapsuleProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ export const FindCapsule: React.FC<FindCapsuleProps> = ({ isOpen, onClose }) => 
   const [matchCount, setMatchCount] = useState<number>(0);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { findInPage } = useBrowserIPC();
 
   useEffect(() => {
     if (isOpen) {
@@ -25,21 +27,20 @@ export const FindCapsule: React.FC<FindCapsuleProps> = ({ isOpen, onClose }) => 
     }
   }, [isOpen]);
 
-  const handleFind = (forward: boolean) => {
+  const handleFind = useCallback(async (forward: boolean) => {
     if (!query) return;
-    if (typeof window !== 'undefined' && 'find' in window) {
-      const found = (window as any).find(query, false, !forward, true, false, true, false);
-      if (found) {
-        setCurrentIndex((prev) => {
-          if (forward) {
-            return matchCount > 0 ? (prev % matchCount) + 1 : 1;
-          } else {
-            return prev > 1 ? prev - 1 : matchCount || 1;
-          }
-        });
+    if (!findInPage) return;
+    
+    try {
+      const result = await findInPage(query, forward);
+      if (result) {
+        setMatchCount(result.match_count);
+        setCurrentIndex(result.current_index);
       }
+    } catch (err) {
+      console.warn('[FindCapsule] Find in page failed:', err);
     }
-  };
+  }, [query, findInPage]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
@@ -48,28 +49,6 @@ export const FindCapsule: React.FC<FindCapsuleProps> = ({ isOpen, onClose }) => 
     } else if (e.key === 'Enter') {
       e.preventDefault();
       handleFind(!e.shiftKey);
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setQuery(val);
-    if (!val) {
-      setMatchCount(0);
-      setCurrentIndex(0);
-      return;
-    }
-
-    // Try finding first occurrence
-    if (typeof window !== 'undefined' && 'find' in window) {
-      const found = (window as any).find(val, false, false, true, false, true, false);
-      if (found) {
-        setMatchCount(1);
-        setCurrentIndex(1);
-      } else {
-        setMatchCount(0);
-        setCurrentIndex(0);
-      }
     }
   };
 
@@ -83,7 +62,7 @@ export const FindCapsule: React.FC<FindCapsuleProps> = ({ isOpen, onClose }) => 
           ref={inputRef}
           type="text"
           value={query}
-          onChange={handleChange}
+          onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Find in page"
           className="w-36 bg-transparent text-white placeholder-white/30 text-[13px] outline-none border-none py-1"

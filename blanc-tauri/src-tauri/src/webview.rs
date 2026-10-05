@@ -342,6 +342,10 @@ pub fn mobile_can_go_back(app: &AppHandle) -> Result<bool, String> {
 #[cfg(not(desktop))]
 pub fn mobile_can_go_forward(app: &AppHandle) -> Result<bool, String> {
     Ok(true)
+/// Mobile-specific: Check if main WebView can go forward
+#[cfg(not(desktop))]
+pub fn mobile_can_go_forward(app: &AppHandle) -> Result<bool, String> {
+    Ok(true)
 }
 
 // Desktop stubs for mobile functions
@@ -373,4 +377,185 @@ pub fn mobile_can_go_back(_app: &AppHandle) -> Result<bool, String> {
 #[cfg(desktop)]
 pub fn mobile_can_go_forward(_app: &AppHandle) -> Result<bool, String> {
     Ok(false)
+}
+
+// -----------------------------------------------------------------------------
+// FIND IN PAGE
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FindResult {
+    pub match_count: u32,
+    pub current_index: u32,
+}
+
+#[cfg(desktop)]
+pub fn find_in_page(
+    app: &AppHandle,
+    tab_id: &str,
+    query: &str,
+    forward: bool,
+) -> Result<FindResult, String> {
+    if let Some(wv) = app.get_webview(tab_id) {
+        wv.eval(&format!(
+            r#"
+                (function() {{
+                    const query = {query:?};
+                    const forward = {forward:?};
+                    const selector = 'body';
+                    const element = document.querySelector(selector);
+                    if (!element) return {{ match_count: 0, current_index: 0 }};
+                    
+                    // Use TextFinder API if available (Chrome/Edge)
+                    if (window.find) {{
+                        const found = window.find(query, false, !forward, true, false, true, false);
+                        return {{ match_count: found ? 1 : 0, current_index: found ? 1 : 0 }};
+                    }}
+                    
+                    // Fallback: use Selection/Range API
+                    const selection = window.getSelection();
+                    const range = document.createRange();
+                    const walker = document.createTreeWalker(
+                        document.body,
+                        NodeFilter.SHOW_TEXT,
+                        null,
+                        false
+                    );
+                    
+                    let matchCount = 0;
+                    let currentIndex = 0;
+                    let currentMatch = null;
+                    let foundForward = false;
+                    
+                    const textNodes = [];
+                    while (walker.nextNode()) {{
+                        const node = walker.currentNode;
+                        if (node.textContent.includes(query)) {{
+                            textNodes.push(node);
+                        }}
+                    }}
+                    
+                    if (textNodes.length === 0) {{
+                        return {{ match_count: 0, current_index: 0 }};
+                    }}
+                    
+                    matchCount = textNodes.length;
+                    
+                    // Find current match based on selection
+                    if (selection.rangeCount > 0) {{
+                        const selRange = selection.getRangeAt(0);
+                        for (let i = 0; i < textNodes.length; i++) {{
+                            range.selectNodeContents(textNodes[i]);
+                            if (range.compareBoundaryPoints(Range.END_TO_END, selRange) <= 0) {{
+                                currentIndex = i + 1;
+                            }}
+                        }}
+                    }}
+                    
+                    let targetIndex = forward ? currentIndex : currentIndex - 2;
+                    if (targetIndex < 0) targetIndex = textNodes.length - 1;
+                    if (targetIndex >= textNodes.length) targetIndex = 0;
+                    
+                    currentMatch = textNodes[targetIndex];
+                    range.selectNodeContents(currentMatch);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    
+                    return {{ match_count: matchCount, current_index: targetIndex + 1 }};
+                }})();
+            "#,
+            query = query,
+            forward = forward
+        ))
+        .map_err(|e| format!("Find in page failed: {}", e))?;
+        // The eval returns a Result<String, String> with JSON string
+        // Parse the JSON response
+        let result_str = wv
+            .eval(&format!(
+                r#"
+                    (function() {{
+                        const query = {query:?};
+                        const forward = {forward:?};
+                        
+                        const queryLower = query.toLowerCase();
+                        let matchCount = 0;
+                        let currentIndex = 0;
+                        
+                        // Find all text nodes containing the query
+                        const walker = document.createTreeWalker(
+                            document.body,
+                            NodeFilter.SHOW_TEXT,
+                            null,
+                            false
+                        );
+                        
+                        const textNodes = [];
+                        while (walker.nextNode()) {{
+                            const node = walker.currentNode;
+                            if (node.textContent.toLowerCase().includes(queryLower)) {{
+                                textNodes.push(node);
+                            }}
+                        }}
+                        
+                        matchCount = textNodes.length;
+                        
+                        if (matchCount === 0) {{
+                            return {{ match_count: 0, current_index: 0 }};
+                        }}
+                        
+                        // Get current selection to determine current index
+                        const selection = window.getSelection();
+                        let currentIndex = 0;
+                        
+                        if (selection.rangeCount > 0) {{
+                            const selRange = selection.getRangeAt(0);
+                            for (let i = 0; i < textNodes.length; i++) {{
+                                const range = document.createRange();
+                                range.selectNodeContents(textNodes[i]);
+                                if (range.compareBoundaryPoints(Range.END_TO_END, selRange) <= 0) {{
+                                    currentIndex = i + 1;
+                                }}
+                            }}
+                        }}
+                        
+                        let targetIndex = forward ? currentIndex : currentIndex - 2;
+                        if (targetIndex < 0) targetIndex = textNodes.length - 1;
+                        if (targetIndex >= textNodes.length) targetIndex = 0;
+                        
+                        // Select the target match
+                        const range = document.createRange();
+                        range.selectNodeContents(textNodes[targetIndex]);
+                        const selection = window.getSelection();
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                        
+                        // Scroll into view
+                        textNodes[targetIndex].scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                        
+                        return JSON.stringify({{
+                            match_count: textNodes.length,
+                            current_index: targetIndex + 1
+                        }});
+                    }})();
+                "#
+            ))
+            .map_err(|e| format!("Find in page failed: {}", e))?;
+        
+        // Parse the JSON response
+        let result: FindResult = serde_json::from_str(&result_str)
+            .map_err(|e| format!("Failed to parse find result: {}", e))?;
+        Ok(result)
+    }
+
+#[cfg(not(desktop))]
+pub fn find_in_page(
+    _app: &AppHandle,
+    _tab_id: &str,
+    _query: &str,
+    _forward: bool,
+) -> Result<FindResult, String> {
+    Ok(FindResult {
+        match_count: 0,
+        current_index: 0,
+    })
 }
