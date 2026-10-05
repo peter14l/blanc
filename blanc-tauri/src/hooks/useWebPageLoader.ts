@@ -51,87 +51,89 @@ export function useWebPageLoader(url?: string): WebPageResult {
       return;
     }
 
-    // 2. Search Engines: Use iframe-friendly versions
-    // DuckDuckGo Lite (allows framing, no JS required)
-    if (/duckduckgo\.com/i.test(url)) {
-      let searchQuery = '';
-      try {
-        searchQuery = new URL(url).searchParams.get('q') || '';
-      } catch {
-        const match = url.match(/[?&]q=([^&]+)/);
-        if (match && match[1]) searchQuery = decodeURIComponent(match[1]);
+    // 2. Google with igu=1 allows direct iframe embedding
+    if (/google\.[a-z.]+(\/|$)/i.test(url)) {
+      let googleUrl = url;
+      if (!googleUrl.includes('igu=1')) {
+        googleUrl += (googleUrl.includes('?') ? '&' : '?') + 'igu=1';
       }
-      if (searchQuery) {
+      setIsDirect(true);
+      setDirectSrc(googleUrl);
+      setContent(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    // 3. YouTube Special Handling:
+    // YouTube blocks direct site framing (X-Frame-Options: SAMEORIGIN & TrustedTypes CORS),
+    // but official embeds (youtube-nocookie.com/embed) are 100% frameable and playable.
+    if (/youtube\.com|youtu\.be/i.test(url)) {
+      let videoId = '';
+      let searchQuery = '';
+
+      if (url.includes('watch?v=')) {
+        videoId = url.split('watch?v=')[1]?.split('&')[0]?.split('#')[0] || '';
+      } else if (url.includes('youtu.be/')) {
+        videoId = url.split('youtu.be/')[1]?.split('?')[0]?.split('#')[0] || '';
+      } else if (url.includes('/shorts/')) {
+        videoId = url.split('/shorts/')[1]?.split('?')[0]?.split('#')[0] || '';
+      } else if (url.includes('/embed/')) {
+        videoId = url.split('/embed/')[1]?.split('?')[0]?.split('#')[0] || '';
+      } else if (url.includes('search_query=')) {
+        try {
+          searchQuery = new URL(url).searchParams.get('search_query') || '';
+        } catch {
+          const match = url.match(/search_query=([^&]+)/);
+          if (match && match[1]) searchQuery = decodeURIComponent(match[1]);
+        }
+      }
+
+      // Single Video -> Direct Playable Embed
+      if (videoId) {
         setIsDirect(true);
-        setDirectSrc(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(searchQuery)}`);
+        setDirectSrc(`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`);
         setContent(null);
         setLoading(false);
         setError(null);
         return;
       }
-    }
 
-    // Bing: Use lite version if available, otherwise proxy
-    if (/bing\.com/i.test(url) && url.includes('/search')) {
-      let searchQuery = '';
-      try {
-        searchQuery = new URL(url).searchParams.get('q') || '';
-      } catch {
-        const match = url.match(/[?&]q=([^&]+)/);
-        if (match && match[1]) searchQuery = decodeURIComponent(match[1]);
-      }
+      // Search Query -> Fetch real video results and render interactive YouTube Search Results Page
       if (searchQuery) {
-        // Bing doesn't have a great lite version, try the mobile version
-        setIsDirect(true);
-        setDirectSrc(`https://www.bing.com/search?q=${encodeURIComponent(searchQuery)}&form=MOZLBR&pc=MOZI`);
-        setContent(null);
-        setLoading(false);
+        let isCancelled = false;
+        setIsDirect(false);
+        setLoading(true);
         setError(null);
-        return;
+
+        fetch(`/api/yt-search?q=${encodeURIComponent(searchQuery)}`)
+          .then((r) => r.json())
+          .then((data) => {
+            if (isCancelled) return;
+            setContent(renderYouTubeSearchResults(searchQuery, data.results || []));
+            setLoading(false);
+          })
+          .catch((err) => {
+            if (isCancelled) return;
+            console.warn('[useWebPageLoader] yt-search error, using fallback:', err);
+            setContent(renderYouTubeSearchResults(searchQuery, []));
+            setLoading(false);
+          });
+
+        return () => {
+          isCancelled = true;
+        };
       }
+
+      // YouTube Home or Channel -> Interactive Blanc YouTube Hub
+      setContent(renderYouTubeHub(url));
+      setIsDirect(false);
+      setLoading(false);
+      setError(null);
+      return;
     }
 
-    // Ecosia: Check if it allows framing
-    if (/ecosia\.org/i.test(url)) {
-      let searchQuery = '';
-      try {
-        searchQuery = new URL(url).searchParams.get('q') || '';
-      } catch {
-        const match = url.match(/[?&]q=([^&]+)/);
-        if (match && match[1]) searchQuery = decodeURIComponent(match[1]);
-      }
-      if (searchQuery) {
-        // Ecosia may allow framing, try direct first
-        setIsDirect(true);
-        setDirectSrc(url);
-        setContent(null);
-        setLoading(false);
-        setError(null);
-        return;
-      }
-    }
-
-    // Kagi: Use their embed-friendly version if available
-    if (/kagi\.com/i.test(url)) {
-      let searchQuery = '';
-      try {
-        searchQuery = new URL(url).searchParams.get('q') || '';
-      } catch {
-        const match = url.match(/[?&]q=([^&]+)/);
-        if (match && match[1]) searchQuery = decodeURIComponent(match[1]);
-      }
-      if (searchQuery) {
-        // Kagi has a simple HTML version
-        setIsDirect(true);
-        setDirectSrc(`https://kagi.com/search?q=${encodeURIComponent(searchQuery)}&format=html`);
-        setContent(null);
-        setLoading(false);
-        setError(null);
-        return;
-      }
-    }
-
-    // 3. Direct framing allowed by the site
+    // 4. Direct framing allowed by the site
     const allowsDirect = /wikipedia\.org|archive\.org|w3schools\.com|example\.com/i.test(url);
     if (allowsDirect) {
       setIsDirect(true);
@@ -141,6 +143,9 @@ export function useWebPageLoader(url?: string): WebPageResult {
       setError(null);
       return;
     }
+
+    // 5. All other sites (including search engines) -> Try proxy chain
+    // The proxy (Tauri in prod, Vite in dev) handles iframe-friendly rewrites
 
     // 3. YouTube Special Handling:
     // YouTube blocks direct site framing (X-Frame-Options: SAMEORIGIN & TrustedTypes CORS),

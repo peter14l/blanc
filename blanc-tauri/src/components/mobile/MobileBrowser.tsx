@@ -284,7 +284,7 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
       </header>
 
       {/* FULL-BLEED MOBILE VIEWPORT (No floating desktop cards or black margins) */}
-      <main className="flex-1 w-full h-full relative overflow-hidden bg-[#0d0d0d] pb-20">
+      <main className="flex-1 w-full h-full relative overflow-hidden bg-[#0d0d0d] pb-24">
         {/* Internal: New Tab Page */}
         {isNewTab && (
           <div className="w-full h-full overflow-y-auto">
@@ -393,50 +393,50 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
       </main>
 
       {/* MOBILE BOTTOM NAVIGATION BAR (Floating pill) */}
-      <footer className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 pb-safe">
-        <div className="bg-[#121212]/98 backdrop-blur-md border border-white/10 rounded-full px-3 py-2 flex items-center justify-center space-x-1 shadow-2xl">
+      <footer className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 pb-safe">
+        <div className="border border-white/10 rounded-full px-5 py-3 flex items-center justify-center space-x-2 shadow-2xl">
           <button
             onClick={handleGoBack}
             disabled={!canGoBack}
-            className="p-2 text-white/70 active:text-white disabled:opacity-25"
+            className="p-3 text-white/70 active:text-white disabled:opacity-25"
             title="Back"
           >
-            <ChevronLeft className="w-6 h-6" />
+            <ChevronLeft className="w-7 h-7" />
           </button>
 
           <button
             onClick={handleGoForward}
             disabled={!canGoForward}
-            className="p-2 text-white/70 active:text-white disabled:opacity-25"
+            className="p-3 text-white/70 active:text-white disabled:opacity-25"
             title="Forward"
           >
-            <ChevronRight className="w-6 h-6" />
+            <ChevronRight className="w-7 h-7" />
           </button>
 
           <button
             onClick={() => onCreateTab('blanc://newtab')}
-            className="p-2.5 bg-[#d4ad66] hover:bg-[#c29c55] active:scale-95 text-black rounded-full shadow-lg transition-transform"
+            className="p-3 bg-[#d4ad66] hover:bg-[#c29c55] active:scale-95 text-black rounded-full shadow-lg transition-transform"
             title="New Tab"
           >
-            <Plus className="w-5 h-5 stroke-[2.5]" />
+            <Plus className="w-6 h-6 stroke-[2.5]" />
           </button>
 
           <button
             onClick={() => setIsTabsOpen(true)}
-            className="relative p-2 text-white/70 active:text-white"
+            className="relative p-3 text-white/70 active:text-white"
             title="Tabs"
           >
-            <div className="w-6 h-6 border-2 border-current rounded-md flex items-center justify-center font-mono text-[11px] font-bold">
+            <div className="w-7 h-7 border-2 border-current rounded-md flex items-center justify-center font-mono text-[12px] font-bold">
               {tabs.length}
             </div>
           </button>
 
           <button
             onClick={() => onNavigate('blanc://newtab')}
-            className="p-2 text-white/70 active:text-white"
+            className="p-3 text-white/70 active:text-white"
             title="Home"
           >
-            <Globe className="w-6 h-6" />
+            <Globe className="w-7 h-7" />
           </button>
         </div>
       </footer>
