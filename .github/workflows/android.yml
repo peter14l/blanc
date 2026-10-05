@@ -63,6 +63,16 @@ jobs:
         working-directory: blanc-android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
+      - name: Build Release APK
+        if: env.KEYSTORE_PASSWORD != ''
+        working-directory: blanc-android
+        env:
+          KEYSTORE_PATH: ${{ secrets.KEYSTORE_PATH }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
       - name: Run Unit Tests
         working-directory: blanc-android
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
@@ -78,6 +88,14 @@ jobs:
           name: blanc-debug-apk
           path: blanc-android/app/build/outputs/apk/debug/*.apk
           retention-days: 7
+
+      - name: Upload Release APK
+        if: success() && env.KEYSTORE_PASSWORD != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: blanc-release-apk
+          path: blanc-android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
 
       - name: Upload Lint Report
         if: always()
@@ -113,9 +131,10 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           api-level: 34
-          ndk-version: 27.0.12077973
           build-tools-version: '34.0.0'
           cmdline-tools-version: 'latest'
+          emulator: false
+          packages: "platforms;android-34 build-tools;34.0.0 platform-tools"
 
       - name: Grant execute permission for gradlew
         run: chmod +x blanc-android/gradlew
@@ -130,26 +149,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Build Release AAB
+      - name: Build Signed Release APK
         working-directory: blanc-android
         env:
           KEYSTORE_PATH: ${{ secrets.KEYSTORE_PATH }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew bundleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Upload Release AAB
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: blanc-release-aab
-          path: blanc-android/app/build/outputs/bundle/release/*.aab
+          name: blanc-release-apk
+          path: blanc-android/app/build/outputs/apk/release/*.apk
           retention-days: 30
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: blanc-android/app/build/outputs/bundle/release/*.aab
+          files: blanc-android/app/build/outputs/apk/release/*.apk
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
