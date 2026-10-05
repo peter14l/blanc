@@ -38,8 +38,8 @@ android {
         }
     }
 
-    // Split APKs per ABI for smaller downloads (Kotlin DSL)
-    configure<com.android.build.api.dsl.Splits> {
+    // Split APKs per ABI for smaller downloads.
+    splits {
         abi {
             isEnable = true
             reset()
