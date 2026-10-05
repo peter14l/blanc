@@ -284,7 +284,7 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
       </header>
 
       {/* FULL-BLEED MOBILE VIEWPORT (No floating desktop cards or black margins) */}
-      <main className="flex-1 w-full h-full relative overflow-hidden bg-[#0d0d0d]">
+      <main className="flex-1 w-full h-full relative overflow-hidden bg-[#0d0d0d] pb-20">
         {/* Internal: New Tab Page */}
         {isNewTab && (
           <div className="w-full h-full overflow-y-auto">
@@ -392,9 +392,9 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
         )}
       </main>
 
-      {/* MOBILE BOTTOM NAVIGATION BAR (Thumb-friendly controls) */}
-      <footer className="w-full shrink-0 bg-[#121212]/98 backdrop-blur-md border-t border-white/10 z-30 pb-safe">
-        <div className="h-14 px-4 flex items-center justify-around">
+      {/* MOBILE BOTTOM NAVIGATION BAR (Floating pill) */}
+      <footer className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 pb-safe">
+        <div className="bg-[#121212]/98 backdrop-blur-md border border-white/10 rounded-full px-3 py-2 flex items-center justify-center space-x-1 shadow-2xl">
           <button
             onClick={handleGoBack}
             disabled={!canGoBack}
