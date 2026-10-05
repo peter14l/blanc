@@ -236,6 +236,21 @@ impl StorageManager {
         self.save(&data)
     }
 
+    pub fn update_bookmark(&self, id: &str, bookmark: Bookmark) -> Result<Bookmark, String> {
+        let mut data = self.load();
+        if let Some(existing) = data.bookmarks.iter_mut().find(|b| b.id == id) {
+            existing.title = bookmark.title.clone();
+            existing.url = bookmark.url.clone();
+            existing.folder = bookmark.folder.clone();
+            existing.tags = bookmark.tags.clone();
+            existing.favicon = bookmark.favicon.clone();
+            let updated = existing.clone();
+            self.save(&data)?;
+            return Ok(updated);
+        }
+        Err(format!("Bookmark '{}' not found", id))
+    }
+
     // -------------------------------------------------------------------------
     // FAVORITES
     // -------------------------------------------------------------------------

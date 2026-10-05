@@ -1,0 +1,312 @@
+<resources>
+    <!-- Base Theme -->
+    <style name="Theme.Blanc" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- System bars -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        
+        <!-- Surface colors -->
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorSurfaceVariant">@color/surface_variant</item>
+        <item name="colorSurfaceContainer">@color/surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/surface_container_highest</item>
+        
+        <!-- Primary -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryContainer">@color/primary_container</item>
+        <item name="colorOnPrimary">@color/on_primary</item>
+        <item name="colorOnPrimaryContainer">@color/on_primary_container</item>
+        
+        <!-- Secondary -->
+        <item name="colorSecondary">@color/secondary</item>
+        <item name="colorSecondaryContainer">@color/secondary_container</item>
+        <item name="colorOnSecondary">@color/on_secondary</item>
+        <item name="colorOnSecondaryContainer">@color/on_secondary_container</item>
+        
+        <!-- Tertiary -->
+        <item name="colorTertiary">@color/tertiary</item>
+        <item name="colorTertiaryContainer">@color/tertiary_container</item>
+        <item name="colorOnTertiary">@color/on_tertiary</item>
+        <item name="colorOnTertiaryContainer">@color/on_tertiary_container</item>
+        
+        <!-- Error -->
+        <item name="colorError">@color/error</item>
+        <item name="colorErrorContainer">@color/error_container</item>
+        <item name="colorOnError">@color/on_error</item>
+        <item name="colorOnErrorContainer">@color/on_error_container</item>
+        
+        <!-- Outline -->
+        <item name="colorOutline">@color/outline</item>
+        <item name="colorOutlineVariant">@color/outline_variant</item>
+        
+        <!-- Inverse -->
+        <item name="colorInverseSurface">@color/inverse_surface</item>
+        <item name="colorInverseOnSurface">@color/inverse_on_surface</item>
+        <item name="colorInversePrimary">@color/inverse_primary</item>
+        
+        <!-- Scrim -->
+        <item name="colorScrim">@color/scrim</item>
+        
+        <!-- Elevation overlays -->
+        <item name="elevationOverlayEnabled">true</item>
+        
+        <!-- Typography -->
+        <item name="textAppearanceHeadlineLarge">@style/TextAppearance.Blanc.HeadlineLarge</item>
+        <item name="textAppearanceHeadlineMedium">@style/TextAppearance.Blanc.HeadlineMedium</item>
+        <item name="textAppearanceHeadlineSmall">@style/TextAppearance.Blanc.HeadlineSmall</item>
+        <item name="textAppearanceTitleLarge">@style/TextAppearance.Blanc.TitleLarge</item>
+        <item name="textAppearanceTitleMedium">@style/TextAppearance.Blanc.TitleMedium</item>
+        <item name="textAppearanceTitleSmall">@style/TextAppearance.Blanc.TitleSmall</item>
+        <item name="textAppearanceBodyLarge">@style/TextAppearance.Blanc.BodyLarge</item>
+        <item name="textAppearanceBodyMedium">@style/TextAppearance.Blanc.BodyMedium</item>
+        <item name="textAppearanceBodySmall">@style/TextAppearance.Blanc.BodySmall</item>
+        <item name="textAppearanceLabelLarge">@style/TextAppearance.Blanc.LabelLarge</item>
+        <item name="textAppearanceLabelMedium">@style/TextAppearance.Blanc.LabelMedium</item>
+        <item name="textAppearanceLabelSmall">@style/TextAppearance.Blanc.LabelSmall</item>
+        
+        <!-- Shapes -->
+        <item name="shapeAppearanceCornerSmall">@style/ShapeAppearance.Blanc.Small</item>
+        <item name="shapeAppearanceCornerMedium">@style/ShapeAppearance.Blanc.Medium</item>
+        <item name="shapeAppearanceCornerLarge">@style/ShapeAppearance.Blanc.Large</item>
+        <item name="shapeAppearanceCornerExtraLarge">@style/ShapeAppearance.Blanc.ExtraLarge</item>
+    </style>
+    
+    <!-- Light Theme Overrides -->
+    <style name="Theme.Blanc.Light" parent="Theme.Blanc">
+        <item name="colorSurface">@color/surface_light</item>
+        <item name="colorSurfaceVariant">@color/surface_variant_light</item>
+        <item name="colorSurfaceContainer">@color/surface_container_light</item>
+        <item name="colorSurfaceContainerHigh">@color/surface_container_high_light</item>
+        <item name="colorSurfaceContainerHighest">@color/surface_container_highest_light</item>
+        
+        <item name="colorPrimary">@color/primary_light</item>
+        <item name="colorPrimaryContainer">@color/primary_container_light</item>
+        <item name="colorOnPrimary">@color/on_primary_light</item>
+        <item name="colorOnPrimaryContainer">@color/on_primary_container_light</item>
+        
+        <item name="colorSecondary">@color/secondary_light</item>
+        <item name="colorSecondaryContainer">@color/secondary_container_light</item>
+        <item name="colorOnSecondary">@color/on_secondary_light</item>
+        <item name="colorOnSecondaryContainer">@color/on_secondary_container_light</item>
+        
+        <item name="colorTertiary">@color/tertiary_light</item>
+        <item name="colorTertiaryContainer">@color/tertiary_container_light</item>
+        <item name="colorOnTertiary">@color/on_tertiary_light</item>
+        <item name="colorOnTertiaryContainer">@color/on_tertiary_container_light</item>
+        
+        <item name="colorError">@color/error_light</item>
+        <item name="colorErrorContainer">@color/error_container_light</item>
+        <item name="colorOnError">@color/on_error_light</item>
+        <item name="colorOnErrorContainer">@color/on_error_container_light</item>
+        
+        <item name="colorOutline">@color/outline_light</item>
+        <item name="colorOutlineVariant">@color/outline_variant_light</item>
+        
+        <item name="colorInverseSurface">@color/inverse_surface_light</item>
+        <item name="colorInverseOnSurface">@color/inverse_on_surface_light</item>
+        <item name="colorInversePrimary">@color/inverse_primary_light</item>
+        
+        <item name="colorScrim">@color/scrim_light</item>
+        
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+    
+    <!-- Dark Theme Overrides -->
+    <style name="Theme.Blanc.Dark" parent="Theme.Blanc">
+        <item name="colorSurface">@color/surface_dark</item>
+        <item name="colorSurfaceVariant">@color/surface_variant_dark</item>
+        <item name="colorSurfaceContainer">@color/surface_container_dark</item>
+        <item name="colorSurfaceContainerHigh">@color/surface_container_high_dark</item>
+        <item name="colorSurfaceContainerHighest">@color/surface_container_highest_dark</item>
+        
+        <item name="colorPrimary">@color/primary_dark</item>
+        <item name="colorPrimaryContainer">@color/primary_container_dark</item>
+        <item name="colorOnPrimary">@color/on_primary_dark</item>
+        <item name="colorOnPrimaryContainer">@color/on_primary_container_dark</item>
+        
+        <item name="colorSecondary">@color/secondary_dark</item>
+        <item name="colorSecondaryContainer">@color/secondary_container_dark</item>
+        <item name="colorOnSecondary">@color/on_secondary_dark</item>
+        <item name="colorOnSecondaryContainer">@color/on_secondary_container_dark</item>
+        
+        <item name="colorTertiary">@color/tertiary_dark</item>
+        <item name="colorTertiaryContainer">@color/tertiary_container_dark</item>
+        <item name="colorOnTertiary">@color/on_tertiary_dark</item>
+        <item name="colorOnTertiaryContainer">@color/on_tertiary_container_dark</item>
+        
+        <item name="colorError">@color/error_dark</item>
+        <item name="colorErrorContainer">@color/error_container_dark</item>
+        <item name="colorOnError">@color/on_error_dark</item>
+        <item name="colorOnErrorContainer">@color/on_error_container_dark</item>
+        
+        <item name="colorOutline">@color/outline_dark</item>
+        <item name="colorOutlineVariant">@color/outline_variant_dark</item>
+        
+        <item name="colorInverseSurface">@color/inverse_surface_dark</item>
+        <item name="colorInverseOnSurface">@color/inverse_on_surface_dark</item>
+        <item name="colorInversePrimary">@color/inverse_primary_dark</item>
+        
+        <item name="colorScrim">@color/scrim_dark</item>
+        
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    
+    <!-- Sunrise Theme (Gold/Ivory) -->
+    <style name="Theme.Blanc.Sunrise" parent="Theme.Blanc.Light">
+        <item name="colorPrimary">@color/sunrise_gold</item>
+        <item name="colorPrimaryContainer">@color/sunrise_gold_container</item>
+        <item name="colorOnPrimary">@color/sunrise_gold_on</item>
+        <item name="colorOnPrimaryContainer">@color/sunrise_gold_on_container</item>
+        
+        <item name="colorSecondary">@color/sunrise_ivory</item>
+        <item name="colorSecondaryContainer">@color/sunrise_ivory_container</item>
+        <item name="colorOnSecondary">@color/sunrise_ivory_on</item>
+        <item name="colorOnSecondaryContainer">@color/sunrise_ivory_on_container</item>
+        
+        <item name="colorSurface">@color/sunrise_ivory_surface</item>
+        <item name="colorSurfaceVariant">@color/sunrise_ivory_surface_variant</item>
+    </style>
+    
+    <style name="Theme.Blanc.SunriseDark" parent="Theme.Blanc.Dark">
+        <item name="colorPrimary">@color/sunrise_gold</item>
+        <item name="colorPrimaryContainer">@color/sunrise_gold_container_dark</item>
+        <item name="colorOnPrimary">@color/sunrise_gold_on</item>
+        <item name="colorOnPrimaryContainer">@color/sunrise_gold_on_container_dark</item>
+        
+        <item name="colorSecondary">@color/sunrise_ivory</item>
+        <item name="colorSecondaryContainer">@color/sunrise_ivory_container_dark</item>
+        <item name="colorOnSecondary">@color/sunrise_ivory_on</item>
+        <item name="colorOnSecondaryContainer">@color/sunrise_ivory_on_container_dark</item>
+        
+        <item name="colorSurface">@color/sunrise_ivory_surface_dark</item>
+        <item name="colorSurfaceVariant">@color/sunrise_ivory_surface_variant_dark</item>
+    </style>
+    
+    <!-- Paper Theme (Warm Light) -->
+    <style name="Theme.Blanc.Paper" parent="Theme.Blanc.Light">
+        <item name="colorPrimary">@color/paper_brown</item>
+        <item name="colorPrimaryContainer">@color/paper_brown_container</item>
+        <item name="colorOnPrimary">@color/paper_brown_on</item>
+        <item name="colorOnPrimaryContainer">@color/paper_brown_on_container</item>
+        
+        <item name="colorSurface">@color/paper_cream</item>
+        <item name="colorSurfaceVariant">@color/paper_cream_variant</item>
+    </style>
+    
+    <!-- Ink Theme (High Contrast Dark) -->
+    <style name="Theme.Blanc.Ink" parent="Theme.Blanc.Dark">
+        <item name="colorPrimary">@color/ink_white</item>
+        <item name="colorPrimaryContainer">@color/ink_white_container</item>
+        <item name="colorOnPrimary">@color/ink_black</item>
+        <item name="colorOnPrimaryContainer">@color/ink_black</item>
+        
+        <item name="colorSurface">@color/ink_black_surface</item>
+        <item name="colorSurfaceVariant">@color/ink_black_surface_variant</item>
+    </style>
+    
+    <!-- Dialog Theme -->
+    <style name="Theme.Blanc.Dialog" parent="Theme.Material3.DayNight.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowMinWidthMajor">90%</item>
+        <item name="android:windowMinWidthMinor">90%</item>
+    </style>
+    
+    <!-- Bottom Sheet Theme -->
+    <style name="Theme.Blanc.BottomSheet" parent="Theme.Material3.DayNight.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.Blanc.BottomSheet</item>
+    </style>
+    
+    <style name="Widget.Blanc.BottomSheet" parent="Widget.Material3.BottomSheet.Modal">
+        <item name="shapeAppearance">@style/ShapeAppearance.Blanc.BottomSheet</item>
+    </style>
+    
+    <!-- Shape Appearances -->
+    <style name="ShapeAppearance.Blanc.Small" parent="ShapeAppearance.Material3.SmallComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+    
+    <style name="ShapeAppearance.Blanc.Medium" parent="ShapeAppearance.Material3.MediumComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">16dp</item>
+    </style>
+    
+    <style name="ShapeAppearance.Blanc.Large" parent="ShapeAppearance.Material3.LargeComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">24dp</item>
+    </style>
+    
+    <style name="ShapeAppearance.Blanc.ExtraLarge" parent="ShapeAppearance.Material3.LargeComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">32dp</item>
+    </style>
+    
+    <style name="ShapeAppearance.Blanc.BottomSheet" parent="ShapeAppearance.Material3.LargeComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">24dp</item>
+        <item name="cornerSizeTopRight">24dp</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+    
+    <!-- Text Appearances -->
+    <style name="TextAppearance.Blanc.HeadlineLarge" parent="TextAppearance.Material3.HeadlineLarge">
+        <item name="fontFamily">@font/inter_regular</item>
+        <item name="fontWeight">600</item>
+    </style>
+    
+    <style name="TextAppearance.Blanc.HeadlineMedium" parent="TextAppearance.Material3.HeadlineMedium">
+        <item name="fontFamily">@font/inter_regular</item>
+        <item name="fontWeight">600</item>
+    </style>
+    
+    <style name="TextAppearance.Blanc.HeadlineSmall" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="fontFamily">@font/inter_regular</item>
+        <item name="fontWeight">600</item>
+    </style>
+    
+    <style name="TextAppearance.Blanc.TitleLarge" parent="TextAppearance.Material3.TitleLarge">
+        <item name="fontFamily">@font/inter_medium</item>
+        <item name="fontWeight">500</item>
+    </style>
+    
+    <style name="TextAppearance.Blanc.TitleMedium" parent="TextAppearance.Material3.TitleMedium">
+        <item name="fontFamily">@font/inter_medium</item>
+        <item name="fontWeight">500</item>
+    </style>
+    
+    <style name="TextAppearance.Blanc.TitleSmall" parent="TextAppearance.Material3.TitleSmall">
+        <item name="fontFamily">@font/inter_medium</item>
+        <item name="fontWeight">500</item>
+    </style>
+    
+    <style name="TextAppearance.Blanc.BodyLarge" parent="TextAppearance.Material3.BodyLarge">
+        <item name="fontFamily">@font/inter_regular</item>
+    </style>
+    
+    <style name="TextAppearance.Blanc.BodyMedium" parent="TextAppearance.Material3.BodyMedium">
+        <item name="fontFamily">@font/inter_regular</item>
+    </style>
+    
+    <style name="TextAppearance.Blanc.BodySmall" parent="TextAppearance.Material3.BodySmall">
+        <item name="fontFamily">@font/inter_regular</item>
+    </style>
+    
+    <style name="TextAppearance.Blanc.LabelLarge" parent="TextAppearance.Material3.LabelLarge">
+        <item name="fontFamily">@font/inter_medium</item>
+    </style>
+    
+    <style name="TextAppearance.Blanc.LabelMedium" parent="TextAppearance.Material3.LabelMedium">
+        <item name="fontFamily">@font/inter_medium</item>
+    </style>
+    
+    <style name="TextAppearance.Blanc.LabelSmall" parent="TextAppearance.Material3.LabelSmall">
+        <item name="fontFamily">@font/inter_regular</item>
+    </style>
+</resources>
