@@ -232,7 +232,7 @@ fn navigate(
             // Check if URL is an ad/tracker
             {
                 let adblock = state.adblock.lock().map_err(|e| e.to_string())?;
-                if adblock.is_blocked(&allowed_url) {
+                if adblock.should_block(&allowed_url, None, "document") {
                     let _ = browser.increment_tab_blocked(&tab_id, 1);
                 }
             }

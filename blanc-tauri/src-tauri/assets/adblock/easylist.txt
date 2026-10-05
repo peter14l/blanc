@@ -1,0 +1,155 @@
+! EasyList - Primary Filter List for Ad Blocking
+! This is a minimal subset for testing. Full list available at https://easylist.to/
+! Last updated: 2024-01-15
+
+! General ad networks
+||doubleclick.net^
+||googlesyndication.com^
+||googleadservices.com^
+||googletagmanager.com^
+||googletagservices.com^
+||googletraveladservices.com^
+||pagead2.googlesyndication.com^
+||pagead46.l.doubleclick.net^
+||ad.doubleclick.net^
+||ad.google.com^
+||adservice.google.com^
+||adservice.google.de^
+||adservice.google.fr^
+||partnerad.l.doubleclick.net^
+||pubads.g.doubleclick.net^
+||securepubads.g.doubleclick.net^
+||static.doubleclick.net^
+
+! Facebook/Meta
+||facebook.net^$third-party
+||connect.facebook.net^$third-party
+||fbcdn.net^$third-party
+||fbsbx.com^$third-party
+||facebook.com/tr^$third-party
+||facebook.com/ads^$third-party
+
+! Google Analytics/Tag Manager
+||google-analytics.com^$third-party
+||googletagmanager.com^$third-party
+||googletagservices.com^$third-party
+||google-analytics.com/analytics.js^$third-party
+||googletagmanager.com/gtm.js^$third-party
+
+! Amazon
+||amazon-adsystem.com^$third-party
+||amazon.com/adserver^$third-party
+||aax.amazon-adsystem.com^$third-party
+||c.amazon-adsystem.com^$third-party
+||ad.doubleclick.net^$third-party
+
+! Taboola/Outbrain
+||taboola.com^$third-party
+||outbrain.com^$third-party
+||widgets.outbrain.com^$third-party
+||api.outbrain.com^$third-party
+
+! Criteo
+||criteo.com^$third-party
+||criteo.net^$third-party
+||criteo.net/cds^$third-party
+
+! AppNexus
+||adnxs.com^$third-party
+||ib.adnxs.com^$third-party
+||cdn.adnxs.com^$third-party
+
+! Rubicon Project
+||rubiconproject.com^$third-party
+||rubiconproject.com/ads^$third-party
+||pixel.rubiconproject.com^$third-party
+
+! PubMatic
+||pubmatic.com^$third-party
+||ads.pubmatic.com^$third-party
+||showads.pubmatic.com^$third-party
+
+! OpenX
+||openx.net^$third-party
+||ox-d.openx.net^$third-party
+
+! Index Exchange
+||indexexchange.com^$third-party
+||casalemedia.com^$third-party
+
+! Smart AdServer
+||smartadserver.com^$third-party
+||smartadserver.com/ac^$third-party
+
+! Moat
+||moatads.com^$third-party
+
+! Quantcast
+||quantserve.com^$third-party
+||pixel.quantserve.com^$third-party
+
+! Scorecard Research
+||scorecardresearch.com^$third-party
+
+! AdRoll
+||adroll.com^$third-party
+||d.adroll.com^$third-party
+||s.adroll.com^$third-party
+
+! Twitter
+||ads.twitter.com^$third-party
+||analytics.twitter.com^$third-party
+||platform.twitter.com^$third-party
+||t.co^$third-party
+
+! LinkedIn
+||linkedin.com/ads^$third-party
+||px.ads.linkedin.com^$third-party
+||cdn.linkedin.oribi.io^$third-party
+
+! TikTok
+||tiktok.com/ads^$third-party
+||ads.tiktok.com^$third-party
+||analytics.tiktok.com^$third-party
+
+! Pinterest
+||pinterest.com/ads^$third-party
+||ct.pinterest.com^$third-party
+
+! Snapchat
+||snapchat.com/ads^$third-party
+||analytics.snapchat.com^$third-party
+
+! Microsoft/Bing
+||bat.bing.com^$third-party
+||clarity.ms^$third-party
+||c.clarity.ms^$third-party
+
+! Yahoo
+||yahoo.com/ads^$third-party
+||gemini.yahoo.com^$third-party
+
+! Generic patterns
+||ads.$domain^$third-party
+||adserver.$domain^$third-party
+||advert.$domain^$third-party
+||advertising.$domain^$third-party
+||analytics.$domain^$third-party
+||banner.$domain^$third-party
+||tracking.$domain^$third-party
+||pixel.$domain^$third-party
+
+! Common ad paths
+||/ads/^$third-party
+||/ad/^$third-party
+||/advert/^$third-party
+||/banner/^$third-party
+||/tracking/^$third-party
+||/pixel/^$third-party
+||/collect/^$third-party
+
+! Exceptions for known false positives
+@@||google.com/adsense^$document
+@@||google.com/pagead^$document
+@@||googleads.g.doubleclick.net^$document
+@@||pagead2.googlesyndication.com/pagead/js/adsbygoogle.js^$script

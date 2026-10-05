@@ -1,0 +1,396 @@
+! EasyPrivacy - Privacy Filter List for Tracking Protection
+! This is a minimal subset for testing. Full list available at https://easylist.to/
+! Last updated: 2024-01-15
+
+! Google Analytics
+||google-analytics.com^$third-party
+||googletagmanager.com^$third-party
+||googletagservices.com^$third-party
+||google-analytics.com/analytics.js^$third-party
+||googletagmanager.com/gtm.js^$third-party
+||google-analytics.com/collect^$third-party
+||google-analytics.com/j/collect^$third-party
+||www.google-analytics.com^$third-party
+||ssl.google-analytics.com^$third-party
+
+! Google Ads tracking
+||googleadservices.com^$third-party
+||googleadservices.com/pagead/conversion^$third-party
+||googleadservices.com/pagead/conversion_async.js^$third-party
+||www.googleadservices.com^$third-party
+
+! Google Optimize/Experiments
+||google-optimize.com^$third-party
+||google-optimize.com/gtm.js^$third-party
+||google-optimize.com/gtm.js?id=^$third-party
+
+! Facebook tracking
+||connect.facebook.net^$third-party
+||facebook.net/tr^$third-party
+||facebook.net/signals^$third-party
+||facebook.net/signals/config^$third-party
+||facebook.net/signals/plugins/identity.js^$third-party
+||facebook.net/signals/plugins/identity.js?v=^$third-party
+||facebook.net/en_US/fbevents.js^$third-party
+||facebook.net/en_US/fbevents.js?v=^$third-party
+||facebook.com/tr^$third-party
+||facebook.com/tr/^$third-party
+||fbevents.js^$third-party
+||connect.facebook.net/en_US/fbevents.js^$third-party
+||connect.facebook.net/signals/config/^$third-party
+
+! Facebook pixel
+||fbcdn.net^$third-party
+||fbsbx.com^$third-party
+||staticxx.facebook.com^$third-party
+||static.xx.fbcdn.net^$third-party
+
+! Twitter/X tracking
+||analytics.twitter.com^$third-party
+||platform.twitter.com^$third-party
+||platform.twitter.com/oct.js^$third-party
+||platform.twitter.com/widgets.js^$third-party
+||t.co^$third-party
+||t.co/i/adsct^$third-party
+
+! LinkedIn tracking
+||px.ads.linkedin.com^$third-party
+||cdn.linkedin.oribi.io^$third-party
+||linkedin.com/insight^$third-party
+||linkedin.com/insight/tag^$third-party
+||snap.licdn.com^$third-party
+
+! Pinterest tracking
+||ct.pinterest.com^$third-party
+||pinterest.com/ads^$third-party
+||pinterest.com/v3/events^$third-party
+
+! TikTok tracking
+||analytics.tiktok.com^$third-party
+||tiktok.com/ads^$third-party
+||tiktok.com/v1/event^$third-party
+||tiktok.com/api/v1/event^$third-party
+
+! Snapchat tracking
+||analytics.snapchat.com^$third-party
+||snapchat.com/ads^$third-party
+||tr.snapchat.com^$third-party
+
+! Microsoft/Bing tracking
+||bat.bing.com^$third-party
+||clarity.ms^$third-party
+||c.clarity.ms^$third-party
+||c.bing.com^$third-party
+||bat.bing.com/bat.js^$third-party
+||c.clarity.ms/collect^$third-party
+
+! Adobe Analytics/Experience Cloud
+||assets.adobedtm.com^$third-party
+||assets.adobedtm.com/^$third-party
+||assets.adobedtm.com/satelliteLib^$third-party
+||demdex.net^$third-party
+||dpm.demdex.net^$third-party
+||demdex.net/event^$third-party
+||demdex.net/id^$third-party
+
+! Adobe Target
+||mboxedge^$third-party
+||mboxedge^$third-party
+||tt.omtrdc.net^$third-party
+||*.tt.omtrdc.net^$third-party
+
+! Adobe Audience Manager
+||demdex.net^$third-party
+||dpm.demdex.net^$third-party
+
+! Hotjar
+||hotjar.com^$third-party
+||static.hotjar.com^$third-party
+||script.hotjar.com^$third-party
+||vars.hotjar.com^$third-party
+||in.hotjar.com^$third-party
+
+! Mixpanel
+||mixpanel.com^$third-party
+||api.mixpanel.com^$third-party
+||api.mixpanel.com/track^$third-party
+||api.mixpanel.com/engage^$third-party
+||mixpanel.com/track^$third-party
+
+! Amplitude
+||amplitude.com^$third-party
+||api.amplitude.com^$third-party
+||api.amplitude.com/2/httpapi^$third-party
+||api2.amplitude.com^$third-party
+
+! Segment
+||segment.io^$third-party
+||segment.com^$third-party
+||cdn.segment.com^$third-party
+||api.segment.io^$third-party
+||api.segment.io/v1/track^$third-party
+
+! Heap
+||heapanalytics.com^$third-party
+||cdn.heapanalytics.com^$third-party
+||heapanalytics.com/track^$third-party
+
+! FullStory
+||fullstory.com^$third-party
+||fullstory.com/rec^$third-party
+||fullstory.com/rec/^$third-party
+
+! Mouseflow
+||mouseflow.com^$third-party
+||mouseflow.com/track^$third-party
+
+! Crazy Egg
+||crazyegg.com^$third-party
+||cdn.crazyegg.com^$third-party
+||scripts.crazyegg.com^$third-party
+
+! Optimizely
+||optimizely.com^$third-party
+||cdn.optimizely.com^$third-party
+||cdn.optimizely.com/js/^$third-party
+||logx.optimizely.com^$third-party
+||logx.optimizely.com/event^$third-party
+
+! VWO (Visual Website Optimizer)
+||vwo.com^$third-party
+||dev.visualwebsiteoptimizer.com^$third-party
+||dev.visualwebsiteoptimizer.com/j.php^$third-party
+
+! Google Tag Manager
+||googletagmanager.com^$third-party
+||googletagmanager.com/gtm.js^$third-party
+||googletagmanager.com/gtag/js^$third-party
+
+! Google Optimize
+||google-optimize.com^$third-party
+||google-optimize.com/gtm.js^$third-party
+
+! AdWords/Google Ads conversion
+||googleadservices.com/pagead/conversion^$third-party
+||googleadservices.com/pagead/conversion_async.js^$third-party
+
+! AppNexus tracking
+||adnxs.com^$third-party
+||ib.adnxs.com^$third-party
+||cdn.adnxs.com^$third-party
+
+! Criteo tracking
+||criteo.com^$third-party
+||criteo.net^$third-party
+||criteo.net/cds^$third-party
+||criteo.net/pe^$third-party
+
+! Rubicon Project tracking
+||rubiconproject.com^$third-party
+||pixel.rubiconproject.com^$third-party
+||pixel.rubiconproject.com/track^$third-party
+
+! PubMatic tracking
+||pubmatic.com^$third-party
+||ads.pubmatic.com^$third-party
+||showads.pubmatic.com^$third-party
+
+! OpenX tracking
+||openx.net^$third-party
+||ox-d.openx.net^$third-party
+
+! Index Exchange tracking
+||indexexchange.com^$third-party
+||casalemedia.com^$third-party
+
+! Smart AdServer tracking
+||smartadserver.com^$third-party
+||smartadserver.com/ac^$third-party
+
+! Moat tracking
+||moatads.com^$third-party
+||moatads.com/moatpixel.js^$third-party
+
+! Quantcast tracking
+||quantserve.com^$third-party
+||pixel.quantserve.com^$third-party
+||pixel.quantserve.com/pixel^$third-party
+||pixel.quantserve.com/pixel/p^$third-party
+
+! Scorecard Research
+||scorecardresearch.com^$third-party
+||scorecardresearch.com/p^$third-party
+||scorecardresearch.com/p2^$third-party
+||b.scorecardresearch.com^$third-party
+||b.scorecardresearch.com/p^$third-party
+
+! Comscore
+||comscore.com^$third-party
+||sb.scorecardresearch.com^$third-party
+||b.scorecardresearch.com^$third-party
+
+! Nielsen
+||nielsen.com^$third-party
+||secure-nielsen.com^$third-party
+||secure-nielsen.com/^$third-party
+
+! Chartbeat
+||chartbeat.com^$third-party
+||chartbeat.com/track^$third-party
+||static.chartbeat.com^$third-party
+||static.chartbeat.com/js/^$third-party
+
+! Parse.ly
+||parsely.com^$third-party
+||cdn.parsely.com^$third-party
+||cdn.parsely.com/keys/^$third-party
+||cdn.parsely.com/v2/^$third-party
+
+! Clicky
+||clicky.com^$third-party
+||static.clicky.com^$third-party
+||in.getclicky.com^$third-party
+||in.getclicky.com/^$third-party
+
+! Woopra
+||woopra.com^$third-party
+||woopra.com/track^$third-party
+||woopra.com/track/^$third-party
+
+! Kissmetrics
+||kissmetrics.com^$third-party
+||kissmetrics.com/track^$third-party
+||kissmetrics.com/track/^$third-party
+||kissmetrics.io^$third-party
+
+! Intercom
+||intercom.io^$third-party
+||static.intercom.io^$third-party
+||api.intercom.io^$third-party
+
+! Drift
+||drift.com^$third-party
+||js.driftt.com^$third-party
+||js.driftt.com/include/^$third-party
+
+! HubSpot
+||hubspot.com^$third-party
+||js.hs-scripts.com^$third-party
+||js.hs-scripts.com/^$third-party
+||js.hscollectedforms.net^$third-party
+||js.hscollectedforms.net/^$third-party
+||forms.hubspot.com^$third-party
+||forms.hubspot.com/^$third-party
+||track.hubspot.com^$third-party
+||track.hubspot.com/^$third-party
+
+! Marketo
+||marketocdn.com^$third-party
+||munchkin.marketo.net^$third-party
+||munchkin.marketo.net/^$third-party
+||munchkin.marketo.net/munchkin.js^$third-party
+
+! Eloqua
+||eloqua.com^$third-party
+||img.en25.com^$third-party
+||img.en25.com/^$third-party
+
+! Pardot
+||pardot.com^$third-party
+||pi.pardot.com^$third-party
+||pi.pardot.com/^$third-party
+
+! Act-On
+||actonsoftware.com^$third-party
+||actonsoftware.com/acton^$third-party
+
+! SharpSpring
+||sharpspring.com^$third-party
+||sharpspring.com/tracking^$third-party
+
+! Leadfeeder
+||leadfeeder.com^$third-party
+||track.leadfeeder.com^$third-party
+
+! Albacross
+||albacross.com^$third-party
+||albacross.com/track^$third-party
+
+! Clearbit
+||clearbit.com^$third-party
+||clearbit.com/v1/^$third-party
+
+! Demandbase
+||demandbase.com^$third-party
+||demandbase.com/^$third-party
+||demandbase.com/api/^$third-party
+
+! 6sense
+||6sense.com^$third-party
+||6sense.com/api/^$third-party
+
+! Bombora
+||bombora.com^$third-party
+||bombora.com/^$third-party
+
+! IntentData
+||intentdata.io^$third-party
+||intentdata.io/^$third-party
+
+! Generic tracking patterns
+||/track/^$third-party
+||/tracking/^$third-party
+||/analytics/^$third-party
+||/collect/^$third-party
+||/collect/^$third-party
+||/event/^$third-party
+||/events/^$third-party
+||/beacon/^$third-party
+||/pixel/^$third-party
+||/collector/^$third-party
+||/telemetry/^$third-party
+||/metrics/^$third-party
+||/monitoring/^$third-party
+
+! Fingerprinting
+||fingerprintjs^$third-party
+||fingerprintjs2^$third-party
+||fingerprintjs-pro^$third-party
+||clientjs^$third-party
+||fingerprint.com^$third-party
+||fpjs.io^$third-party
+
+! Canvas fingerprinting
+||canvas.fingerprint^$third-party
+||fingerprint2.js^$third-party
+
+! Audio fingerprinting
+||audio-context^$third-party
+||audio-fingerprint^$third-party
+
+! WebRTC leak detection
+||webrtc-leak^$third-party
+||webrtc-leak-test^$third-party
+
+! Battery API tracking
+||battery-api^$third-party
+||navigator.battery^$third-party
+
+! Generic tracking domains
+||tracking.$domain^$third-party
+||analytics.$domain^$third-party
+||analytics.$domain/^$third-party
+||stats.$domain^$third-party
+||stats.$domain/^$third-party
+||metrics.$domain^$third-party
+||metrics.$domain/^$third-party
+||telemetry.$domain^$third-party
+||telemetry.$domain/^$third-party
+||monitoring.$domain^$third-party
+||monitoring.$domain/^$third-party
+||beacon.$domain^$third-party
+||beacon.$domain/^$third-party
+||collector.$domain^$third-party
+||collector.$domain/^$third-party
+||pixel.$domain^$third-party
+||pixel.$domain/^$third-party
