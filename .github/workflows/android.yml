@@ -5,10 +5,13 @@ on:
     branches: [main]
     paths:
       - 'blanc-android/**'
+      - '.github/workflows/android.yml'
   pull_request:
     branches: [main]
     paths:
       - 'blanc-android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch: # Allow manual trigger
 
 env:
   GRADLE_OPTS: "-Xmx3g -Dorg.gradle.jvmargs=-Xmx3g"
