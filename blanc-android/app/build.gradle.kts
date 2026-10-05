@@ -38,6 +38,16 @@ android {
         }
     }
 
+    // Split APKs per ABI for smaller downloads
+    splits {
+        abi {
+            enable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            universalApk = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
