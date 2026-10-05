@@ -1,0 +1,76 @@
+! EasyList subset for testing
+! This is a minimal subset for testing purposes
+! Full list available at https://easylist.to/
+
+! General ad domains
+||doubleclick.net^
+||googlesyndication.com^
+||googleadservices.com^
+||adnxs.com^
+||adsrvr.org^
+||rubiconproject.com^
+||pubmatic.com^
+||openx.net^
+||casalemedia.com^
+||adform.net^
+||criteo.com^
+||scorecardresearch.com^
+||quantserve.com^
+||advertising.com^
+||yieldmanager.com^
+||adtech.de^
+||atdmt.com^
+||specificclick.net^
+||adbrite.com^
+||adlegend.com^
+||adrevolver.com^
+||advertise.com^
+||affiliatewindow.com^
+||clickbank.net^
+||commission-junction.com^
+||linksynergy.com^
+||shareasale.com^
+||tradedoubler.com^
+||zanox.com^
+
+! Third-party tracking
+||google-analytics.com/analytics.js$script,third-party
+||google-analytics.com/ga.js$script,third-party
+||googletagmanager.com/gtm.js$script,third-party
+||connect.facebook.net/en_US/sdk.js$script,third-party
+||platform.twitter.com/widgets.js$script,third-party
+||platform.linkedin.com/in.js$script,third-party
+
+! Social widgets
+||facebook.com/plugins/like.php$subdocument,third-party
+||facebook.com/plugins/share_button.php$subdocument,third-party
+||twitter.com/intent/tweet$subdocument,third-party
+||plusone.google.com/_/+1/fastbutton$subdocument,third-party
+
+! Exception rules (allowlist)
+@@||example.com^$document
+@@||localhost^$document
+@@||127.0.0.1^$document
+
+! Cosmetic filters (element hiding)
+##.ad-banner
+##.advertisement
+##.adsbox
+##.adslot
+##.sponsor-box
+##[id^="ad_"]
+##[id*="advertisement"]
+##[class*="ad-banner"]
+##[class*="advertisement"]
+##.google-auto-placed
+##.adsbygoogle
+##iframe[src*="doubleclick"]
+##iframe[src*="googlesyndication"]
+
+! Domain-specific cosmetic filters
+example.com##.site-specific-ad
+test.com##.custom-ad-class
+||exampleads.com^$domain=example.com
+
+! HTML filters (exception for cosmetic)
+example.com#@##.legitimate-content

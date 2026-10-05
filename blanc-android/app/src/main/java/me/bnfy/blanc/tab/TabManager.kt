@@ -7,6 +7,7 @@ import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.WebView
 import androidx.annotation.Keep
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -70,7 +71,23 @@ class TabManager(
      * Internal tab creation logic.
      */
     private fun createTabInternal(initialUrl: String, isPrivate: Boolean): Tab? {
-        val tab = if (isPrivate) Tab.createPrivate() else Tab.create()
+        val windowId = activeWindowId
+        val position = tabs.size
+        val profileId = windows[windowId]?.profileId ?: "personal"
+        
+        val tab = if (isPrivate) {
+            Tab.createPrivate().copy(
+                windowId = windowId,
+                position = position,
+                profileId = profileId
+            )
+        } else {
+            Tab.create().copy(
+                windowId = windowId,
+                position = position,
+                profileId = profileId
+            )
+        }
 
         // Create WebView on main thread
         mainHandler.post {
@@ -94,6 +111,10 @@ class TabManager(
                 // Add to collections
                 tabs[tab.id] = tab
                 tabOrder.add(tab.id)
+                
+                // Add to window
+                val window = windows[windowId]
+                window?.tabIds?.add(tab.id)
 
                 // Load initial URL
                 webView.loadUrl(initialUrl)
@@ -143,12 +164,23 @@ class TabManager(
 
             // Hide previously active tab
             activeTabId?.let { prevId ->
-                tabs[prevId]?.webView?.visibility = WebView.INVISIBLE
+                tabs[prevId]?.apply {
+                    webView?.visibility = WebView.INVISIBLE
+                    isActive = false
+                }
             }
 
             // Show new active tab
             tab.webView?.visibility = WebView.VISIBLE
+            tab.isActive = true
             activeTabId = tabId
+
+            // Update window's active tab
+            val window = windows[tab.windowId]
+            window?.let {
+                val updatedWindow = it.copy(activeTabId = tabId, updatedAt = System.currentTimeMillis())
+                windows[tab.windowId] = updatedWindow
+            }
 
             // Bring WebView to front if in a container
             tab.webView?.bringToFront()
@@ -187,6 +219,15 @@ class TabManager(
 
             // Remove from order
             tabOrder.remove(tabId)
+
+            // Remove from window's tabIds
+            val window = windows[tab.windowId]
+            window?.tabIds?.remove(tabId)
+
+            // Remove from group
+            tab.groupId?.let { groupId ->
+                tabGroups[groupId]?.tabIds?.remove(tabId)
+            }
 
             // Destroy WebView
             tab.webView?.apply {
@@ -432,7 +473,14 @@ class TabManager(
                     history = tab.history.toList(),
                     historyIndex = tab.historyIndex,
                     canGoBack = tab.canGoBack,
-                    canGoForward = tab.canGoForward
+                    canGoForward = tab.canGoForward,
+                    windowId = tab.windowId,
+                    isPinned = tab.isPinned,
+                    isMuted = tab.isMuted,
+                    groupId = tab.groupId,
+                    position = tab.position,
+                    profileId = tab.profileId,
+                    workspaceId = tab.workspaceId
                 )
             }
         }
@@ -466,7 +514,14 @@ class TabManager(
                     history = state.history.toMutableList(),
                     historyIndex = state.historyIndex,
                     canGoBack = state.canGoBack,
-                    canGoForward = state.canGoForward
+                    canGoForward = state.canGoForward,
+                    windowId = state.windowId,
+                    isPinned = state.isPinned,
+                    isMuted = state.isMuted,
+                    groupId = state.groupId,
+                    position = state.position,
+                    profileId = state.profileId,
+                    workspaceId = state.workspaceId
                 )
 
                 // Re-create clients with correct tab reference
@@ -477,6 +532,10 @@ class TabManager(
 
                 tabs[tab.id] = tab
                 tabOrder.add(tab.id)
+
+                // Add to window
+                val window = windows[state.windowId]
+                window?.tabIds?.add(tab.id)
 
                 webView.loadUrl(state.url)
             }
@@ -498,6 +557,466 @@ class TabManager(
         val history: List<String>,
         val historyIndex: Int,
         val canGoBack: Boolean,
-        val canGoForward: Boolean
+        val canGoForward: Boolean,
+        val windowId: String = "default",
+        val isPinned: Boolean = false,
+        val isMuted: Boolean = false,
+        val groupId: String? = null,
+        val position: Int = 0,
+        val profileId: String = "personal",
+        val workspaceId: String? = null
     )
+
+    // ===== Additional Methods for Bridge =====
+
+    /**
+     * Reloads a specific tab.
+     */
+    fun reloadTab(tabId: String): Boolean {
+        return mainHandler.run {
+            val tab = tabs[tabId] ?: return@run false
+            tab.webView?.reload()
+            true
+        }
+    }
+
+    /**
+     * Navigates back in a specific tab's history.
+     */
+    fun goBack(tabId: String): Boolean {
+        return mainHandler.run {
+            val tab = tabs[tabId] ?: return@run false
+            val url = tab.goBack()
+            url?.let { tab.webView?.loadUrl(it) }
+            url != null
+        }
+    }
+
+    /**
+     * Navigates forward in a specific tab's history.
+     */
+    fun goForward(tabId: String): Boolean {
+        return mainHandler.run {
+            val tab = tabs[tabId] ?: return@run false
+            val url = tab.goForward()
+            url?.let { tab.webView?.loadUrl(it) }
+            url != null
+        }
+    }
+
+    /**
+     * Sets tab pinned state.
+     */
+    fun setTabPinned(tabId: String, pinned: Boolean): Boolean {
+        return mainHandler.run {
+            val tab = tabs[tabId] ?: return@run false
+            tab.isPinned = pinned
+            if (pinned) {
+                moveTabToPinnedSection(tabId)
+            } else {
+                moveTabToUnpinnedSection(tabId)
+            }
+            bridge.onTabUpdated(tab.toBridgeTab())
+            true
+        }
+    }
+
+    /**
+     * Sets tab muted state.
+     */
+    fun setTabMuted(tabId: String, muted: Boolean): Boolean {
+        return mainHandler.run {
+            val tab = tabs[tabId] ?: return@run false
+            tab.isMuted = muted
+            bridge.onTabUpdated(tab.toBridgeTab())
+            true
+        }
+    }
+
+    // ===== Tab Group Methods =====
+
+    private val tabGroups = ConcurrentHashMap<String, TabGroup>()
+    private val windows = ConcurrentHashMap<String, Window>()
+    private val windowOrder = mutableListOf<String>()
+    private var activeWindowId: String = "default"
+
+    init {
+        // Create default window
+        val defaultWindow = Window(id = "default", label = "Window 1", profileId = "personal")
+        windows["default"] = defaultWindow
+        windowOrder.add("default")
+        activeWindowId = "default"
+    }
+
+    fun createGroup(windowId: String, name: String): TabGroup {
+        return mainHandler.run {
+            val window = windows[windowId] ?: return@run TabGroup(windowId = windowId, name = name)
+            val group = TabGroup(
+                windowId = windowId,
+                name = name,
+                position = window.groupIds.size
+            )
+            tabGroups[group.id] = group
+            window.groupIds.add(group.id)
+            window.updatedAt = System.currentTimeMillis()
+            bridge.onGroupCreated(group)
+            group
+        }
+    }
+
+    fun renameGroup(groupId: String, name: String): Boolean {
+        return mainHandler.run {
+            val group = tabGroups[groupId] ?: return@run false
+            val updatedGroup = group.copy(name = name)
+            tabGroups[groupId] = updatedGroup
+            bridge.onGroupUpdated(updatedGroup)
+            true
+        }
+    }
+
+    fun setGroupCollapsed(groupId: String, collapsed: Boolean): Boolean {
+        return mainHandler.run {
+            val group = tabGroups[groupId] ?: return@run false
+            val updatedGroup = group.copy(isCollapsed = collapsed)
+            tabGroups[groupId] = updatedGroup
+            bridge.onGroupUpdated(updatedGroup)
+            true
+        }
+    }
+
+    fun moveTabToGroup(tabId: String, groupId: String?): Boolean {
+        return mainHandler.run {
+            val tab = tabs[tabId] ?: return@run false
+            val oldGroupId = tab.groupId
+            
+            oldGroupId?.let { oldId ->
+                tabGroups[oldId]?.tabIds?.remove(tabId)
+                oldId.let { tabGroups[it]?.let { bridge.onGroupUpdated(it) } }
+            }
+
+            groupId?.let { newId ->
+                tabGroups[newId]?.tabIds?.add(tabId)
+                tabGroups[newId]?.let { bridge.onGroupUpdated(it) }
+            }
+
+            tab.groupId = groupId
+            bridge.onTabUpdated(tab.toBridgeTab())
+            true
+        }
+    }
+
+    fun closeGroup(groupId: String): Boolean {
+        return mainHandler.run {
+            val group = tabGroups.remove(groupId) ?: return@run false
+            val window = windows[group.windowId]
+            window?.groupIds?.remove(groupId)
+            
+            group.tabIds.forEach { tabId ->
+                closeTab(tabId)
+            }
+            
+            bridge.onGroupClosed(groupId)
+            true
+        }
+    }
+
+    fun focusGroup(groupId: String): Boolean {
+        return mainHandler.run {
+            val group = tabGroups[groupId] ?: return@run false
+            group.tabIds.firstOrNull()?.let { tabId ->
+                switchTab(tabId)
+            }
+            true
+        }
+    }
+
+    fun getGroupsForWindow(windowId: String): List<TabGroup> {
+        return mainHandler.run {
+            val window = windows[windowId] ?: return@run emptyList()
+            window.groupIds.mapNotNull { tabGroups[it] }
+        }
+    }
+
+    fun addTabToGroup(tabId: String, groupId: String): Boolean {
+        return mainHandler.run {
+            val tab = tabs[tabId] ?: return@run false
+            val group = tabGroups[groupId] ?: return@run false
+            
+            tab.groupId?.let { oldId ->
+                tabGroups[oldId]?.tabIds?.remove(tabId)
+            }
+            
+            group.tabIds.add(tabId)
+            tab.groupId = groupId
+            bridge.onTabUpdated(tab.toBridgeTab())
+            bridge.onGroupUpdated(group)
+            true
+        }
+    }
+
+    // ===== Window Methods (simulated on Android) =====
+
+    fun getActiveWindowId(): String = activeWindowId
+
+    fun getAllWindows(): List<Window> = windowOrder.mapNotNull { windows[it] }
+
+    fun getTabsForWindow(windowId: String): List<Tab> {
+        return mainHandler.run {
+            val window = windows[windowId] ?: return@run emptyList()
+            window.tabIds.mapNotNull { tabs[it] }
+        }
+    }
+
+    fun createWindow(label: String, profileId: String): Window {
+        return mainHandler.run {
+            val window = Window(
+                label = label,
+                profileId = profileId
+            )
+            windows[window.id] = window
+            windowOrder.add(window.id)
+            activeWindowId = window.id
+            window
+        }
+    }
+
+    fun closeWindow(windowId: String): Boolean {
+        return mainHandler.run {
+            val window = windows.remove(windowId) ?: return@run false
+            windowOrder.remove(windowId)
+            
+            window.tabIds.forEach { tabId ->
+                closeTab(tabId)
+            }
+            
+            window.groupIds.forEach { groupId ->
+                tabGroups.remove(groupId)
+            }
+            
+            if (activeWindowId == windowId) {
+                activeWindowId = windowOrder.firstOrNull() ?: "default"
+                if (!windows.containsKey(activeWindowId)) {
+                    val defaultWindow = Window(id = "default", label = "Window 1", profileId = "personal")
+                    windows["default"] = defaultWindow
+                    windowOrder.add(0, "default")
+                    activeWindowId = "default"
+                }
+            }
+            
+            bridge.onWindowClosed(windowId)
+            true
+        }
+    }
+
+    fun focusWindow(windowId: String): Boolean {
+        return mainHandler.run {
+            val window = windows[windowId] ?: return@run false
+            activeWindowId = windowId
+            window.activeTabId?.let { switchTab(it) }
+            bridge.onWindowFocused(windowId)
+            true
+        }
+    }
+
+    fun setViewport(windowId: String, x: Double, y: Double, width: Double, height: Double, hidden: Boolean): Boolean {
+        return mainHandler.run {
+            val window = windows[windowId] ?: return@run false
+            val updatedWindow = window.copy(
+                boundsX = x.toFloat(),
+                boundsY = y.toFloat(),
+                boundsWidth = width.toFloat(),
+                boundsHeight = height.toFloat(),
+                isHidden = hidden,
+                updatedAt = System.currentTimeMillis()
+            )
+            windows[windowId] = updatedWindow
+            true
+        }
+    }
+
+    fun closeSurface(windowId: String): Boolean {
+        bridge.onSurfaceClosed(windowId)
+        return true
+    }
+
+    /**
+     * Reopens a closed tab from a closed tab entry.
+     */
+    fun reopenClosedTab(entry: ClosedTabEntity, windowId: String): Tab? {
+        return mainHandler.run {
+            val isPrivate = entry.isPrivate
+            val profileId = entry.profileId
+            val factory = if (isPrivate) {
+                WebViewFactory.createPrivate(context)
+            } else {
+                WebViewFactory.createRegular(context)
+            }
+
+            val webViewClient = TabWebViewClient(Tab(), bridge, adblockEngine)
+            val webChromeClient = TabWebChromeClient(Tab(), bridge, getActivity(), this@TabManager)
+
+            val webView = factory.createWebView(webViewClient, webChromeClient)
+            factory.configurePrivateCookies(webView)
+
+            val tab = Tab(
+                id = entry.tabId,
+                webView = webView,
+                url = entry.url,
+                title = entry.title,
+                isPrivate = isPrivate,
+                isPinned = entry.isPinned,
+                groupId = entry.groupId,
+                position = entry.position,
+                history = stringToHistory(entry.navigationHistory),
+                historyIndex = entry.historyIndex,
+                canGoBack = entry.canGoBack,
+                canGoForward = entry.canGoForward,
+                windowId = windowId,
+                profileId = profileId,
+                workspaceId = windows[windowId]?.workspaceId
+            )
+
+            val newWebViewClient = TabWebViewClient(tab, bridge, adblockEngine)
+            val newWebChromeClient = TabWebChromeClient(tab, bridge, getActivity(), this@TabManager)
+            webView.webViewClient = newWebViewClient
+            webView.webChromeClient = newWebChromeClient
+
+            tabs[tab.id] = tab
+            tabOrder.add(tab.position, tab.id)
+            
+            val window = windows[windowId]
+            window?.tabIds?.add(tab.position, tab.id)
+
+            webView.loadUrl(entry.url)
+            
+            if (entry.isGroup) {
+                bridge.onToast("Reopened group: ${entry.groupName}")
+            } else {
+                switchTab(tab.id)
+            }
+            
+            tab
+        }
+    }
+
+    private fun stringToHistory(json: String): MutableList<String> {
+        return try {
+            json.trim()
+                .removePrefix("[")
+                .removeSuffix("]")
+                .split(",")
+                .map { it.trim().removeSurrounding('"') }
+                .filter { it.isNotBlank() }
+                .toMutableList()
+        } catch (e: Exception) {
+            mutableListOf()
+        }
+    }
+
+    /**
+     * Responds to a permission request from a tab.
+     */
+    fun respondToPermissionRequest(requestId: String, allow: Boolean, remember: Boolean) {
+        // Callback stored in TabWebChromeClient
+    }
+
+    /**
+     * Opens a downloaded file.
+     */
+    fun openDownload(downloadId: String) {
+        bridge.onToast("Open download: $downloadId")
+    }
+
+    /**
+     * Shows a downloaded file in the system file manager.
+     */
+    fun showDownloadInFolder(downloadId: String) {
+        bridge.onToast("Show in folder: $downloadId")
+    }
+
+    /**
+     * Cancels a download.
+     */
+    fun cancelDownload(downloadId: String) {
+        bridge.onToast("Cancelled download: $downloadId")
+    }
+
+    /**
+     * Evaluates JavaScript on the UI thread.
+     */
+    fun evaluateJavascriptOnUi(script: String) {
+        mainHandler.post {
+            // UI WebView would evaluate this
+        }
+    }
+
+    private fun moveTabToPinnedSection(tabId: String) {
+        val currentIndex = tabOrder.indexOf(tabId)
+        if (currentIndex >= 0) {
+            tabOrder.removeAt(currentIndex)
+            var insertIndex = 0
+            for (i in tabOrder.indices) {
+                val t = tabs[tabOrder[i]]
+                if (t?.isPinned == true) {
+                    insertIndex = i + 1
+                } else {
+                    break
+                }
+            }
+            tabOrder.add(insertIndex, tabId)
+        }
+    }
+
+    private fun moveTabToUnpinnedSection(tabId: String) {
+        val currentIndex = tabOrder.indexOf(tabId)
+        if (currentIndex >= 0) {
+            tabOrder.removeAt(currentIndex)
+            var insertIndex = tabOrder.size
+            for (i in tabOrder.indices) {
+                val t = tabs[tabOrder[i]]
+                if (t?.isPinned != true) {
+                    insertIndex = i
+                    break
+                }
+            }
+            tabOrder.add(insertIndex.coerceAtMost(tabOrder.size), tabId)
+        }
+    }
 }
+
+/**
+ * Tab group data class for organizing tabs.
+ */
+@Keep
+data class TabGroup(
+    val id: String = UUID.randomUUID().toString(),
+    val windowId: String,
+    val name: String,
+    val isCollapsed: Boolean = false,
+    val tabIds: MutableList<String> = mutableListOf(),
+    val position: Int = 0,
+    val profileId: String = "personal",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * Window data class for multi-window support (simulated on Android).
+ */
+@Keep
+data class Window(
+    val id: String = UUID.randomUUID().toString(),
+    val label: String,
+    val profileId: String,
+    val activeTabId: String? = null,
+    val tabIds: MutableList<String> = mutableListOf(),
+    val groupIds: MutableList<String> = mutableListOf(),
+    val workspaceId: String? = null,
+    val boundsX: Float = 0f,
+    val boundsY: Float = 0f,
+    val boundsWidth: Float = 0f,
+    val boundsHeight: Float = 0f,
+    val isMaximized: Boolean = false,
+    val isHidden: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)

@@ -25,6 +25,12 @@ data class Tab(
     /** The current page title. */
     var title: String = "",
 
+    /** The window ID this tab belongs to. */
+    var windowId: String = "default",
+
+    /** The favicon URL. */
+    var favicon: String? = null,
+
     /** Whether the tab can navigate backward in history. */
     var canGoBack: Boolean = false,
 
@@ -47,7 +53,28 @@ data class Tab(
     var historyIndex: Int = -1,
 
     /** Current page loading progress (0-100). */
-    var progress: Int = 0
+    var progress: Int = 0,
+
+    /** Whether this tab is pinned. */
+    var isPinned: Boolean = false,
+
+    /** Whether this tab is muted. */
+    var isMuted: Boolean = false,
+
+    /** The group ID this tab belongs to, if any. */
+    var groupId: String? = null,
+
+    /** The position of this tab in the tab order. */
+    var position: Int = 0,
+
+    /** The workspace ID this tab belongs to, if any. */
+    var workspaceId: String? = null,
+
+    /** Whether this tab is currently active. */
+    var isActive: Boolean = false,
+
+    /** The profile ID this tab belongs to. */
+    var profileId: String = "personal"
 ) {
 
     /**

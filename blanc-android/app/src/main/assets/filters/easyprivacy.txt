@@ -1,0 +1,120 @@
+! EasyPrivacy subset for testing
+! This is a minimal subset for testing purposes
+! Full list available at https://easylist.to/
+
+! Google tracking
+||google-analytics.com^$third-party
+||googletagmanager.com^$third-party
+||googleadservices.com^$third-party
+||googlesyndication.com^$third-party
+||doubleclick.net^$third-party
+||google.com/ads^$third-party
+||google.com/adsense^$third-party
+||google.com/adsid^$third-party
+||googleusercontent.com/pagead^$third-party
+
+! Facebook tracking
+||connect.facebook.net^$third-party
+||facebook.com/tr^$third-party
+||facebook.com/plugins^$third-party
+||facebook.net/en_US/sdk.js$script,third-party
+||facebook.net/en_US/fbevents.js$script,third-party
+
+! Twitter tracking
+||platform.twitter.com^$third-party
+||twitter.com/i/jot^$third-party
+||twitter.com/i/adsct^$third-party
+||analytics.twitter.com^$third-party
+||t.co/i/adsct^$third-party
+
+! Adobe tracking
+||omtrdc.net^$third-party
+||adobedtm.com^$third-party
+||assets.adobedtm.com^$third-party
+||dpm.demdex.net^$third-party
+
+! Analytics platforms
+||segment.io^$third-party
+||cdn.segment.com^$third-party
+||api.segment.io^$third-party
+||mixpanel.com^$third-party
+||mixpanel.net^$third-party
+||amplitude.com^$third-party
+||api.amplitude.com^$third-party
+||heap.io^$third-party
+||heapanalytics.com^$third-party
+||fullstory.com^$third-party
+||hotjar.com^$third-party
+||inspectlet.com^$third-party
+||mouseflow.com^$third-party
+||crazyegg.com^$third-party
+||clicktale.net^$third-party
+||luckyorange.com^$third-party
+||smartlook.com^$third-party
+
+! Marketing automation
+||hubspot.com^$third-party
+||hubspot.net^$third-party
+||hsforms.com^$third-party
+||hs-sites.com^$third-party
+||marketo.com^$third-party
+||mktoresp.com^$third-party
+||pardot.com^$third-party
+||eloqua.com^$third-party
+||exacttarget.com^$third-party
+
+! Data brokers / DMPs
+||bluekai.com^$third-party
+||bkrtx.com^$third-party
+||criteo.com^$third-party
+||criteo.net^$third-party
+||adroll.com^$third-party
+||adroll.net^$third-party
+||quantserve.com^$third-party
+||scorecardresearch.com^$third-party
+||rubiconproject.com^$third-party
+||pubmatic.com^$third-party
+||openx.net^$third-party
+||adnxs.com^$third-party
+||adsrvr.org^$third-party
+||casalemedia.com^$third-party
+||adform.net^$third-party
+||yieldmanager.com^$third-party
+||adtech.de^$third-party
+||atdmt.com^$third-party
+||specificclick.net^$third-party
+||mediaplex.com^$third-party
+||serving-sys.com^$third-party
+||eyewonder.com^$third-party
+||pointroll.com^$third-party
+||richmedia.com^$third-party
+||unicast.com^$third-party
+||valueclick.com^$third-party
+||valueclick.net^$third-party
+||fastclick.com^$third-party
+||tribalfusion.com^$third-party
+||burstnet.com^$third-party
+||advertising.com^$third-party
+
+! Fingerprinting
+||fingerprintjs.com^$third-party
+||clientjs.com^$third-party
+||fingerprint.pet-portal.com^$third-party
+
+! Exception rules for legitimate analytics (first-party)
+@@||example.com/analytics^$first-party
+@@||localhost/analytics^$first-party
+@@||127.0.0.1/analytics^$first-party
+
+! Cosmetic filters for tracking elements
+##.tracking-pixel
+##[src*="google-analytics"]
+##[src*="googletagmanager"]
+##[src*="facebook.net/tr"]
+##[src*="twitter.com/i/jot"]
+##[src*="analytics"]
+##[src*="tracking"]
+##[src*="beacon"]
+##img[width="1"][height="1"]
+##iframe[src*="analytics"]
+##iframe[src*="tracking"]
