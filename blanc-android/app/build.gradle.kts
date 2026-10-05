@@ -83,9 +83,6 @@ android {
     room {
         schemaDirectory("$projectDir/schemas")
     }
-
-    // NDK for potential native code
-    ndkVersion = "27.0.12077973"
 }
 
 dependencies {
