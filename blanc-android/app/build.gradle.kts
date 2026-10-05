@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.kapt")
     id("androidx.room")
-    id("com.google.devtools.ksp") version "2.0.21-1.0.14" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
 }
 
 android {
@@ -15,7 +15,7 @@ android {
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1.0-alpha.1"
+        versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
@@ -23,28 +23,18 @@ android {
     }
 
     buildTypes {
-        release {
+        getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig signingConfigs.release
         }
-        debug {
+        getByName("debug") {
             isMinifyEnabled = false
             isShrinkResources = false
-            matchingFallbacks = ["release"]
-        }
-    }
-
-    signingConfigs {
-        create("release") {
-            storeFile = file(System.getenv("KEYSTORE_PATH") ?: "")
-            storePassword = System.getenv("KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEY_PASSWORD")
+            matchingFallbacks.add("release")
         }
     }
 
@@ -53,13 +43,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs = listOf(
-            "-Xopt-in=kotlin.RequiresOptIn",
-            "-Xopt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "-Xopt-in=androidx.compose.material3.ExperimentalMaterial3Api"
-        )
+    kotlin {
+        compilerOptions {
+            freeCompilerArgs = listOf(
+                "-Xopt-in=kotlin.RequiresOptIn",
+                "-Xopt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
+                "-Xopt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+            )
+        }
     }
 
     buildFeatures {
@@ -71,7 +62,7 @@ android {
         kotlinCompilerExtensionVersion = "2.0.21"
     }
 
-    packagingOptions {
+    packaging {
         resources {
             excludes += listOf(
                 "META-INF/DEPENDENCIES",
@@ -130,9 +121,6 @@ dependencies {
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.animation:animation-graphics")
     implementation("androidx.constraintlayout:constraintlayout-compose:1.1.0")
-    
-    // Compose Compiler (handled by KSP)
-    ksp("androidx.compose.compiler:compiler:2.0.21")
 
     // ===========================================
     // Navigation
@@ -238,13 +226,14 @@ kapt {
     }
 }
 
-// Compose Compiler KSP Configuration
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-    kotlinOptions {
-        freeCompilerArgs += listOf(
-            "-Xopt-in=kotlin.RequiresOptIn",
-            "-Xopt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "-Xopt-in=androidx.compose.material3.ExperimentalMaterial3Api"
-        )
+tasks {
+    withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        kotlinOptions {
+            freeCompilerArgs += listOf(
+                "-Xopt-in=kotlin.RequiresOptIn",
+                "-Xopt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
+                "-Xopt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+            )
+        }
     }
 }

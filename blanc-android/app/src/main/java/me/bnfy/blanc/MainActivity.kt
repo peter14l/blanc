@@ -14,32 +14,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.ComposedModifier
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Rect
-import androidx.compose.ui.graphics.toRect
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.OnGloballyPositionedModifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
@@ -55,7 +29,7 @@ import me.bnfy.blanc.storage.Repository
 import me.bnfy.blanc.tab.Tab
 import me.bnfy.blanc.tab.TabManager
 import me.bnfy.blanc.tab.WebViewFactory
-import me.bnfy.blanc.ui.BrowserChrome
+import me.bnfy.blanc.ui.BrowserScreen
 import me.bnfy.blanc.ui.ContentWebView
 import me.bnfy.blanc.ui.WebViewContainer
 import timber.log.Timber
@@ -117,7 +91,7 @@ class MainActivity : AppCompatActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.surface
                 ) {
-                    BrowserChromeScreen(
+                    BrowserScreen(
                         tabManager = tabManager!!,
                         repository = repository!!,
                         adblockEngine = adblockEngine!!,

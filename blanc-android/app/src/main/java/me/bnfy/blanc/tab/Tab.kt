@@ -75,6 +75,9 @@ data class Tab(
 
     /** The profile ID this tab belongs to. */
     var profileId: String = "personal"
+
+    /** Thumbnail bitmap for tab switcher (cached). */
+    var thumbnail: android.graphics.Bitmap? = null
 ) {
 
     /**

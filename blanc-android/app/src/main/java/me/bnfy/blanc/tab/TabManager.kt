@@ -7,6 +7,12 @@ import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.WebView
 import androidx.annotation.Keep
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.map
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -36,9 +42,81 @@ class TabManager(
     private val tabOrder = mutableListOf<String>()
     private var activeTabId: String? = null
 
+    // ===== Reactive State (for Compose) =====
+    private val _tabs = MutableStateFlow<List<Tab>>(emptyList())
+    val tabsFlow: StateFlow<List<Tab>> = _tabs.asStateFlow()
+
+    private val _activeTabId = MutableStateFlow<String?>(null)
+    val activeTabIdFlow: StateFlow<String?> = _activeTabId.asStateFlow()
+
+    private val _tabCount = MutableStateFlow<Int>(0)
+    val tabCountFlow: StateFlow<Int> = _tabCount.asStateFlow()
+
+    private val _groups = MutableStateFlow<List<TabGroup>>(emptyList())
+    val groupsFlow: StateFlow<List<TabGroup>> = _groups.asStateFlow()
+
+    private val _windows = MutableStateFlow<List<Window>>(emptyList())
+    val windowsFlow: StateFlow<List<Window>> = _windows.asStateFlow()
+
+    private val _activeWindowId = MutableStateFlow<String>("default")
+    val activeWindowIdFlow: StateFlow<String> = _activeWindowId.asStateFlow()
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var onTabCountChanged: ((Int) -> Unit)? = null
+
+    // Thumbnail capture
+    private val thumbnailExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private var thumbnailCaptureRunnable: Runnable? = null
+
+    // Update reactive state
+    private fun updateReactiveState() {
+        _tabs.value = tabOrder.mapNotNull { tabs[it] }
+        _tabCount.value = tabs.size
+        _groups.value = tabGroups.values.toList()
+        _windows.value = windowOrder.mapNotNull { windows[it] }
+    }
+
+    /**
+     * Captures thumbnails for all visible tabs.
+     * Called when app goes to background or periodically.
+     */
+    fun captureAllThumbnails() {
+        thumbnailExecutor.execute {
+            tabs.values.forEach { tab ->
+                tab.webView?.let { webView ->
+                    if (webView is ContentWebView) {
+                        val thumbnail = webView.captureThumbnail()
+                        if (thumbnail != null) {
+                            mainHandler.post {
+                                tab.thumbnail = thumbnail
+                                updateReactiveState()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Captures thumbnail for a specific tab.
+     */
+    fun captureTabThumbnail(tabId: String) {
+        tabs[tabId]?.webView?.let { webView ->
+            if (webView is ContentWebView) {
+                thumbnailExecutor.execute {
+                    val thumbnail = webView.captureThumbnail()
+                    if (thumbnail != null) {
+                        mainHandler.post {
+                            tabs[tabId]?.thumbnail = thumbnail
+                            updateReactiveState()
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * Sets a callback for tab count changes.
@@ -98,7 +176,9 @@ class TabManager(
                     WebViewFactory.createRegular(context)
                 }
 
-                val webViewClient = TabWebViewClient(tab, bridge, adblockEngine)
+                val webViewClient = TabWebViewClient(tab, bridge, adblockEngine) { url ->
+                    captureTabThumbnail(tab.id)
+                }
                 val webChromeClient = TabWebChromeClient(tab, bridge, getActivity(), this@TabManager)
 
                 val webView = factory.createWebView(webViewClient, webChromeClient)
@@ -118,6 +198,9 @@ class TabManager(
 
                 // Load initial URL
                 webView.loadUrl(initialUrl)
+
+                // Update reactive state
+                updateReactiveState()
 
                 // Notify bridge
                 bridge.onTabCreated(tab.toBridgeTab())
@@ -174,6 +257,7 @@ class TabManager(
             tab.webView?.visibility = WebView.VISIBLE
             tab.isActive = true
             activeTabId = tabId
+            _activeTabId.value = tabId
 
             // Update window's active tab
             val window = windows[tab.windowId]
@@ -184,6 +268,9 @@ class TabManager(
 
             // Bring WebView to front if in a container
             tab.webView?.bringToFront()
+
+            // Update reactive state
+            updateReactiveState()
 
             // Notify bridge
             bridge.onTabSwitched(tabId)
@@ -238,12 +325,20 @@ class TabManager(
             }
             tab.webView = null
 
+            // Clear active tab ID if this was the active tab
+            if (activeTabId == tabId) {
+                activeTabId = null
+                _activeTabId.value = null
+            }
+
+            // Update reactive state
+            updateReactiveState()
+
             // Notify bridge
             bridge.onTabClosed(tabId)
 
             // If we closed the active tab, select another
-            if (activeTabId == tabId) {
-                activeTabId = null
+            if (activeTabId == null) {
                 selectAdjacentTab(tabId)
             }
 
@@ -274,6 +369,10 @@ class TabManager(
             }
             val nextTabId = tabOrder[nextIndex]
             switchTab(nextTabId)
+        } else if (tabOrder.isNotEmpty()) {
+            // Fallback: select first tab
+            val firstTabId = tabOrder.first()
+            switchTab(firstTabId)
         }
     }
 
@@ -284,6 +383,7 @@ class TabManager(
         mainHandler.post {
             val tabIds = tabs.keys.toList()
             tabIds.forEach { closeTab(it) }
+            updateReactiveState()
         }
     }
 
@@ -327,6 +427,7 @@ class TabManager(
 
             tabOrder.removeAt(currentIndex)
             tabOrder.add(clampedIndex, tabId)
+            updateReactiveState()
             true
         }
     }
@@ -436,6 +537,8 @@ class TabManager(
         tabs.values.forEach { tab ->
             tab.webView?.onPause()
         }
+        // Capture thumbnails for tab switcher
+        captureAllThumbnails()
     }
 
     /**
@@ -444,6 +547,87 @@ class TabManager(
     fun onResume() {
         tabs.values.forEach { tab ->
             tab.webView?.onResume()
+        }
+    }
+
+    /**
+     * Recreates a tab after its renderer process crashed.
+     * Preserves tab state (URL, history, private mode, etc.)
+     */
+    fun recreateTabAfterCrash(tabId: String, url: String, isPrivate: Boolean) {
+        mainHandler.post {
+            val oldTab = tabs[tabId]
+            if (oldTab == null) return@post
+            
+            // Preserve state
+            val history = oldTab.history.toMutableList()
+            val historyIndex = oldTab.historyIndex
+            val canGoBack = oldTab.canGoBack
+            val canGoForward = oldTab.canGoForward
+            val title = oldTab.title
+            val windowId = oldTab.windowId
+            val isPinned = oldTab.isPinned
+            val isMuted = oldTab.isMuted
+            val groupId = oldTab.groupId
+            val position = oldTab.position
+            val profileId = oldTab.profileId
+            val workspaceId = oldTab.workspaceId
+            val favicon = oldTab.favicon
+            
+            // Create new tab with same ID to preserve identity
+            val factory = if (isPrivate) {
+                WebViewFactory.createPrivate(context)
+            } else {
+                WebViewFactory.createRegular(context)
+            }
+
+            val webViewClient = TabWebViewClient(oldTab, bridge, adblockEngine) { url ->
+                captureTabThumbnail(oldTab.id)
+            }
+            val webChromeClient = TabWebChromeClient(oldTab, bridge, getActivity(), this@TabManager)
+
+            val webView = factory.createWebView(webViewClient, webChromeClient)
+            factory.configurePrivateCookies(webView)
+            factory.applyAdblockSettings(webView)
+
+            // Create new tab with preserved state
+            val newTab = Tab(
+                id = tabId,
+                webView = webView,
+                url = url,
+                title = title,
+                isPrivate = isPrivate,
+                history = history,
+                historyIndex = historyIndex,
+                canGoBack = canGoBack,
+                canGoForward = canGoForward,
+                windowId = windowId,
+                isPinned = isPinned,
+                isMuted = isMuted,
+                groupId = groupId,
+                position = position,
+                profileId = profileId,
+                workspaceId = workspaceId,
+                favicon = favicon
+            )
+
+            // Replace in collections
+            tabs[tabId] = newTab
+            
+            // Update window
+            val window = windows[windowId]
+            window?.tabIds?.remove(tabId)
+            window?.tabIds?.add(tabId)
+            
+            // Reload URL
+            webView.loadUrl(url)
+            
+            updateReactiveState()
+            
+            // If this was the active tab, switch to it
+            if (activeTabId == tabId) {
+                switchTab(tabId)
+            }
         }
     }
 
@@ -499,7 +683,9 @@ class TabManager(
                     WebViewFactory.createRegular(context)
                 }
 
-                val webViewClient = TabWebViewClient(Tab(), bridge, adblockEngine)
+                val webViewClient = TabWebViewClient(Tab(), bridge, adblockEngine) { url ->
+                    captureTabThumbnail(state.id)
+                }
                 val webChromeClient = TabWebChromeClient(Tab(), bridge, getActivity(), this@TabManager)
 
                 val webView = factory.createWebView(webViewClient, webChromeClient)
@@ -525,7 +711,9 @@ class TabManager(
                 )
 
                 // Re-create clients with correct tab reference
-                val newWebViewClient = TabWebViewClient(tab, bridge, adblockEngine)
+                val newWebViewClient = TabWebViewClient(tab, bridge, adblockEngine) { url ->
+                    captureTabThumbnail(tab.id)
+                }
                 val newWebChromeClient = TabWebChromeClient(tab, bridge, getActivity(), this@TabManager)
                 webView.webViewClient = newWebViewClient
                 webView.webChromeClient = newWebChromeClient
@@ -542,6 +730,7 @@ class TabManager(
 
             // Activate first tab
             tabOrder.firstOrNull()?.let { switchTab(it) }
+            updateReactiveState()
             onTabCountChanged?.invoke(tabs.size)
         }
     }
@@ -616,6 +805,7 @@ class TabManager(
             } else {
                 moveTabToUnpinnedSection(tabId)
             }
+            updateReactiveState()
             bridge.onTabUpdated(tab.toBridgeTab())
             true
         }
@@ -628,6 +818,7 @@ class TabManager(
         return mainHandler.run {
             val tab = tabs[tabId] ?: return@run false
             tab.isMuted = muted
+            updateReactiveState()
             bridge.onTabUpdated(tab.toBridgeTab())
             true
         }
@@ -659,6 +850,7 @@ class TabManager(
             tabGroups[group.id] = group
             window.groupIds.add(group.id)
             window.updatedAt = System.currentTimeMillis()
+            updateReactiveState()
             bridge.onGroupCreated(group)
             group
         }
@@ -669,6 +861,7 @@ class TabManager(
             val group = tabGroups[groupId] ?: return@run false
             val updatedGroup = group.copy(name = name)
             tabGroups[groupId] = updatedGroup
+            updateReactiveState()
             bridge.onGroupUpdated(updatedGroup)
             true
         }
@@ -679,6 +872,7 @@ class TabManager(
             val group = tabGroups[groupId] ?: return@run false
             val updatedGroup = group.copy(isCollapsed = collapsed)
             tabGroups[groupId] = updatedGroup
+            updateReactiveState()
             bridge.onGroupUpdated(updatedGroup)
             true
         }
@@ -700,6 +894,7 @@ class TabManager(
             }
 
             tab.groupId = groupId
+            updateReactiveState()
             bridge.onTabUpdated(tab.toBridgeTab())
             true
         }
@@ -715,6 +910,7 @@ class TabManager(
                 closeTab(tabId)
             }
             
+            updateReactiveState()
             bridge.onGroupClosed(groupId)
             true
         }
@@ -776,6 +972,8 @@ class TabManager(
             windows[window.id] = window
             windowOrder.add(window.id)
             activeWindowId = window.id
+            _activeWindowId.value = window.id
+            updateReactiveState()
             window
         }
     }
@@ -795,14 +993,17 @@ class TabManager(
             
             if (activeWindowId == windowId) {
                 activeWindowId = windowOrder.firstOrNull() ?: "default"
+                _activeWindowId.value = activeWindowId
                 if (!windows.containsKey(activeWindowId)) {
                     val defaultWindow = Window(id = "default", label = "Window 1", profileId = "personal")
                     windows["default"] = defaultWindow
                     windowOrder.add(0, "default")
                     activeWindowId = "default"
+                    _activeWindowId.value = "default"
                 }
             }
             
+            updateReactiveState()
             bridge.onWindowClosed(windowId)
             true
         }
@@ -812,7 +1013,9 @@ class TabManager(
         return mainHandler.run {
             val window = windows[windowId] ?: return@run false
             activeWindowId = windowId
+            _activeWindowId.value = windowId
             window.activeTabId?.let { switchTab(it) }
+            updateReactiveState()
             bridge.onWindowFocused(windowId)
             true
         }
@@ -830,6 +1033,7 @@ class TabManager(
                 updatedAt = System.currentTimeMillis()
             )
             windows[windowId] = updatedWindow
+            updateReactiveState()
             true
         }
     }
@@ -852,9 +1056,10 @@ class TabManager(
                 WebViewFactory.createRegular(context)
             }
 
-            val webViewClient = TabWebViewClient(Tab(), bridge, adblockEngine)
-            val webChromeClient = TabWebChromeClient(Tab(), bridge, getActivity(), this@TabManager)
-
+            val webViewClient = TabWebViewClient(Tab(), bridge, adblockEngine) { url ->
+                    captureTabThumbnail(entry.tabId)
+                }
+                val webChromeClient = TabWebChromeClient(Tab(), bridge, getActivity(), this@TabManager)
             val webView = factory.createWebView(webViewClient, webChromeClient)
             factory.configurePrivateCookies(webView)
 
@@ -895,6 +1100,7 @@ class TabManager(
                 switchTab(tab.id)
             }
             
+            updateReactiveState()
             tab
         }
     }

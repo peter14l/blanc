@@ -25,7 +25,8 @@ import androidx.annotation.RequiresApi
 class TabWebViewClient(
     private val tab: Tab,
     private val bridge: BlancBridge,
-    private val adblockEngine: AdblockEngine? = null
+    private val adblockEngine: AdblockEngine? = null,
+    private val onPageFinishedCallback: ((String) -> Unit)? = null
 ) : WebViewClient() {
 
     /** Tracks whether the current navigation was initiated by user action. */
@@ -98,6 +99,9 @@ class TabWebViewClient(
             tab.canGoForward = view?.canGoForward() ?: false
 
             bridge.onTabUpdated(tab.toBridgeTab())
+            
+            // Capture thumbnail after page load
+            onPageFinishedCallback?.invoke(it)
         }
     }
 
@@ -108,6 +112,25 @@ class TabWebViewClient(
             tab.title = it
             bridge.onTabUpdated(tab.toBridgeTab())
         }
+    }
+
+    /** Called when the favicon is received. */
+    override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
+        super.onReceivedIcon(view, icon)
+        icon?.let {
+            // Convert bitmap to data URI for storage
+            val faviconUri = bitmapToDataUri(it)
+            tab.favicon = faviconUri
+            bridge.onTabUpdated(tab.toBridgeTab())
+        }
+    }
+
+    private fun bitmapToDataUri(bitmap: Bitmap): String {
+        val outputStream = java.io.ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+        val byteArray = outputStream.toByteArray()
+        val base64 = android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+        return "data:image/png;base64,$base64"
     }
 
     /** Called when an error occurs during loading. */
@@ -195,9 +218,27 @@ class TabWebViewClient(
     /** Called when the render process crashes or is killed. */
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
-        // Notify bridge that the tab's renderer is gone
-        // TabManager should handle recreation
-        bridge.onNavigation(tab.id, "about:blank", "Renderer process gone")
+        val didCrash = detail?.didCrash() == true
+        val reason = if (didCrash) "Renderer process crashed" else "Renderer process killed"
+        
+        // Notify bridge
+        bridge.onNavigation(tab.id, "about:blank", reason)
+        
+        // Schedule tab recreation on main thread
+        if (tab.webView != null) {
+            val tabId = tab.id
+            val tabUrl = tab.url
+            val isPrivate = tab.isPrivate
+            val tabManager = tab.webView?.tag as? TabManager
+            
+            if (tabManager != null) {
+                tabManager.mainHandler.post {
+                    // Recreate the tab
+                    tabManager.recreateTabAfterCrash(tabId, tabUrl, isPrivate)
+                }
+            }
+        }
+        
         return true // Indicates we handled it
     }
 
