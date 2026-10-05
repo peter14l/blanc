@@ -1,0 +1,327 @@
+name: Blanc Android Native Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'blanc-android/**'
+      - '.github/workflows/blanc-android-build.yml'
+  pull_request:
+    paths:
+      - 'blanc-android/**'
+      - '.github/workflows/blanc-android-build.yml'
+  workflow_dispatch:
+  release:
+    types: [published]
+
+env:
+  GRADLE_VERSION: 8.5
+  JAVA_VERSION: 21
+
+jobs:
+  build-android-native:
+    name: Build & Test Android Native (Kotlin)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+          cache-dependency-path: 'blanc-android/gradle.properties'
+
+      - name: Setup Gradle
+        uses: actions/setup-gradle@v3
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+        with:
+          api-level: 34
+          ndk-version: r26d
+          cmdline-tools-version: latest
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('blanc-android/gradle.properties', 'blanc-android/**/*.gradle.kts') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install Node.js (for React UI build)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'blanc-tauri/package-lock.json'
+
+      - name: Build React UI for Android assets
+        working-directory: blanc-tauri
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy React build to Android assets
+        run: |
+          rm -rf blanc-android/app/src/main/assets/ui
+          cp -r blanc-tauri/dist blanc-android/app/src/main/assets/ui
+
+      - name: Grant execute permission to Gradle wrapper
+        working-directory: blanc-android
+        run: chmod +x gradlew
+
+      - name: Run Unit Tests
+        working-directory: blanc-android
+        run: ./gradlew test --no-daemon --info
+
+      - name: Run Lint
+        working-directory: blanc-android
+        run: ./gradlew lint --no-daemon
+
+      - name: Build Debug APK
+        working-directory: blanc-android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Build Release AAB (unsigned)
+        working-directory: blanc-android
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: blanc-android-debug-apk
+          path: blanc-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+
+      - name: Upload Release AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: blanc-android-release-aab
+          path: blanc-android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: warn
+
+      - name: Upload Lint Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blanc-android-lint-report
+          path: blanc-android/app/build/reports/lint-results*.html
+          if-no-files-found: ignore
+
+  build-android-split-apks:
+    name: Build Signed Split APKs per ABI
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: build-android-native
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: 'arm64-v8a'
+            target: 'aarch64'
+          - abi: 'armeabi-v7a'
+            target: 'armv7'
+          - abi: 'x86_64'
+            target: 'x86_64'
+          - abi: 'x86'
+            target: 'i686'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: actions/setup-gradle@v3
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+        with:
+          api-level: 34
+          ndk-version: r26d
+          cmdline-tools-version: latest
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'blanc-tauri/package-lock.json'
+
+      - name: Build React UI for Android assets
+        working-directory: blanc-tauri
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy React build to Android assets
+        run: |
+          rm -rf blanc-android/app/src/main/assets/ui
+          cp -r blanc-tauri/dist blanc-android/app/src/main/assets/ui
+
+      - name: Grant execute permission to Gradle wrapper
+        working-directory: blanc-android
+        run: chmod +x gradlew
+
+      - name: Generate Release Keystore
+        id: keystore
+        working-directory: blanc-android
+        run: |
+          mkdir -p keystore
+          if [ ! -f keystore/release.keystore ]; then
+            keytool -genkey -v \
+              -keystore keystore/release.keystore \
+              -alias blanc-release \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+              -keypass "${{ secrets.ANDROID_KEY_PASSWORD }}" \
+              -dname "CN=Blanc Browser, O=Bananify Creative, C=US"
+          fi
+          echo "keystore_path=keystore/release.keystore" >> $GITHUB_OUTPUT
+
+      - name: Build Signed Split APK for ${{ matrix.abi }}
+        working-directory: blanc-android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=${{ steps.keystore.outputs.keystore_path }} \
+            -Pandroid.injected.signing.store.password=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=blanc-release \
+            -Pandroid.injected.signing.key.password=${{ secrets.ANDROID_KEY_PASSWORD }} \
+            -Pandroid.abi=${{ matrix.abi }} \
+            --no-daemon
+
+      - name: Verify Signed APK for ${{ matrix.abi }}
+        working-directory: blanc-android
+        run: |
+          BUILD_TOOLS_DIR=$(ls -d /usr/local/lib/android/sdk/build-tools/* | sort -V | tail -n 1)
+          APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
+          find app/build/outputs/apk -name "*${{ matrix.abi }}*.apk" | while read -r apk; do
+            echo "Verifying $apk..."
+            "$APKSIGNER" verify --verbose "$apk"
+          done
+
+      - name: Upload Signed Split APK (${{ matrix.abi }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: blanc-android-split-${{ matrix.abi }}-signed
+          path: blanc-android/app/build/outputs/apk/release/*${{ matrix.abi }}*.apk
+          if-no-files-found: error
+
+  build-android-native-instrumented:
+    name: Instrumented Tests (Emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: build-android-native
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: actions/setup-gradle@v3
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+        with:
+          api-level: 34
+          ndk-version: r26d
+          cmdline-tools-version: latest
+          emulator: true
+
+      - name: Start Android Emulator
+        uses: android-actions/emulator@v2
+        with:
+          avd-name: test
+          api-level: 34
+          arch: x86_64
+          force-avd-creation: false
+          ram-size: 2048M
+          gpu-mode: auto
+          options: -no-snapshot-load -no-snapshot-save
+
+      - name: Wait for Emulator
+        run: |
+          adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
+
+      - name: Run Instrumented Tests
+        working-directory: blanc-android
+        run: ./gradlew connectedAndroidTest --no-daemon
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blanc-android-test-results
+          path: blanc-android/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
+
+  release-android:
+    name: Publish Android Release to GitHub
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build-android-split-apks]
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all split APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-apks
+          pattern: blanc-android-split-*-signed
+          merge-multiple: true
+
+      - name: Organize APKs for Release
+        run: |
+          mkdir -p dist-android
+          find release-apks -name "*.apk" | while read -r apk; do
+            cp "$apk" dist-android/
+          done
+          echo "APKs to release:"
+          ls -la dist-android/
+
+      - name: Create/Update GitHub Release with Split APKs
+        uses: softprops/action-gh-release@v1
+        if: github.event_name == 'release'
+        with:
+          files: dist-android/*.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
