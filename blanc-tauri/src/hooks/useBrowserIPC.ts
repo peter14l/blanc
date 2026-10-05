@@ -898,8 +898,13 @@ export function useBrowserIPC(): BrowserIPCContextType {
 
       listen<{ tab_id: string; url?: string; title?: string }>('tab-navigated', (event) => {
         const { tab_id, url, title } = event.payload;
-        setTabs((prev) =>
-          prev.map((t) => {
+        setTabs((prev) => {
+          // Don't record history for private tabs
+          const tab = prev.find((t) => t.id === tab_id);
+          if (url && !url.startsWith('blanc://') && !url.startsWith('about:') && !tab?.is_private) {
+            addHistoryEntry({ url, title: title || getTabTitleFromUrl(url) });
+          }
+          return prev.map((t) => {
             if (t.id === tab_id) {
               const updatedUrl = url || t.url;
               const updatedTitle = title || (url ? getTabTitleFromUrl(url) : t.title);
@@ -911,11 +916,8 @@ export function useBrowserIPC(): BrowserIPCContextType {
               };
             }
             return t;
-          })
-        );
-        if (url && !url.startsWith('blanc://') && !url.startsWith('about:')) {
-          addHistoryEntry({ url, title: title || getTabTitleFromUrl(url) });
-        }
+          });
+        });
       }).then((fn) => {
         if (!unlisten) unlisten = fn;
         else {

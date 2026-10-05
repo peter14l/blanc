@@ -8,6 +8,7 @@ export interface Tab {
   can_go_back: boolean;
   can_go_forward: boolean;
   favicon?: string;
+  is_private?: boolean;
 }
 
 export type QuickSwitcherItemType =

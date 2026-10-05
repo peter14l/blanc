@@ -238,6 +238,13 @@ fn navigate(
             }
             emit_state_projection(&app, &browser);
 
+            // Get tab to check if private (for history)
+            let is_private = browser
+                .tabs
+                .get(&tab_id)
+                .map(|t| t.is_private())
+                .unwrap_or(false);
+
             if !allowed_url.starts_with("blanc://") && allowed_url != "about:blank" {
                 if app.get_webview(&tab_id).is_none() {
                     if let Err(err) = webview::create_tab_webview(&app, &tab_id, &allowed_url) {
@@ -246,7 +253,10 @@ fn navigate(
                 } else {
                     webview::navigate_webview(&app, &tab_id, &allowed_url)?;
                 }
-                let _ = state.storage.add_history(allowed_url, "".to_string());
+                // Only record history for non-private tabs
+                if !is_private {
+                    let _ = state.storage.add_history(allowed_url, "".to_string());
+                }
             } else {
                 #[cfg(desktop)]
                 if let Some(wv) = app.get_webview(&tab_id) {

@@ -83,7 +83,7 @@ export const MobileBrowser: React.FC<MobileBrowserProps> = ({
   const isBookmarks = activeUrl === 'blanc://bookmarks';
   const isInternal = isNewTab || isHistory || isSettings || isBookmarks;
 
-  const { content, loading: pageLoading, isDirect, directSrc, shouldOpenExternally } = useWebPageLoader(activeUrl);
+  const { content, loading: pageLoading, isDirect, directSrc } = useWebPageLoader(activeUrl);
 
   // Listen for navigation messages from iframes (YouTube hub, search results, etc.)
   useEffect(() => {

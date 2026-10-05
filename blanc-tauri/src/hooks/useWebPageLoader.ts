@@ -25,6 +25,7 @@ export function useWebPageLoader(url?: string): WebPageResult {
   const [isDirect, setIsDirect] = useState<boolean>(false);
   const [directSrc, setDirectSrc] = useState<string>(url || '');
   const [finalUrl, setFinalUrl] = useState<string>(url || '');
+  const [shouldOpenExternally, setShouldOpenExternally] = useState<boolean>(false);
 
   useEffect(() => {
     if (!url || url.startsWith('blanc://') || url.startsWith('about:')) {
