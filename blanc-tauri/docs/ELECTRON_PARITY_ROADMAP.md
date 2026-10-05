@@ -2,7 +2,7 @@
 
 **Audience:** coding agents implementing the Tauri port  
 **Source baseline:** the Electron implementation in `../src/` and the Tauri
-implementation in this directory, reviewed October 4, 2026  
+implementation in this directory, reviewed October 5, 2026  
 **Status:** implementation roadmap, not a claim that the Tauri port is
 production-ready
 
@@ -37,6 +37,32 @@ component exists. A feature is ported only when:
 3. persistence, privacy, error handling, and user-visible states are covered;
 4. automated tests prove the behavior; and
 5. packaging/release checks include the feature where appropriate.
+
+## Android Native Migration (Parallel Track)
+
+**Target:** Replace Tauri mobile (single WebView + iframe) with native Kotlin
+multi-WebView (`blanc-android/`) — true tab isolation, no iframe limits.
+
+| Track | Status | Target |
+|-------|--------|--------|
+| Desktop (Tauri) | P0-P2 in progress | Production desktop |
+| Android Native | Phase 1 Foundation | Phase 5 release |
+
+See `ANDROID_NATIVE_MIGRATION_PLAN.md` for detailed 7-week plan with parallel
+agent streams.
+
+The React UI (`Layer A`) is **shared** — identical Island pill, overlays,
+settings, internal pages. Only `Layer B` (content engine) differs:
+
+| Platform | Layer B Implementation |
+|----------|------------------------|
+| Desktop | Tauri v2 + Rust → native child WebViews (WebView2/WebKitGTK) |
+| Android | Kotlin `TabManager` + `Array<WebView>` (System WebView) |
+
+Rules:
+- React never branches on platform; receives same bridge events
+- Kotlin mirrors Rust command/event surface via `BlancBridge`
+- Feature parity = same behavior, different native impl
 
 ## Rules for the port
 
@@ -739,40 +765,50 @@ npm run release:verify
 
 ## Feature matrix
 
-| Area | Current Tauri status | Priority |
-|---|---|---|
-| Native child webviews | Basic desktop implementation | P0 harden |
-| Single-window tabs | Basic | P0 replace with window runtime |
-| Multi-window | Missing | P0 |
-| Navigation admission/protocols | Basic heuristic | P0 |
-| Popup/context-menu policy | Missing | P0 |
-| Internal pages/guarded IPC | React-only, no Electron-equivalent trust layer | P0 |
-| Persistence/recovery | One direct JSON file plus duplicated localStorage | P0 |
-| Session restore | URL-only, incomplete | P0 |
-| Private browsing | Missing | P0 |
-| Real ad blocking | Hard-coded hostname list | P0 |
-| Permission policy | Missing | P0 |
-| Media/capture/WebRTC | Missing | P0/P1 |
-| Downloads | Missing | P1 |
-| Favorites/history/settings | UI exists; native source of truth incomplete | P1 |
-| Search suggestions | UI/provider exists; privacy/native integration incomplete | P1 |
-| Groups/pins | Missing | P1 |
-| Reopen closed tabs | Missing | P1 |
-| Quiet tabs | Missing | P1 |
-| Profiles | Missing | P1 |
-| Workspaces | Missing | P1 |
-| Sync | Missing | P2 |
-| Telemetry | Missing | P2 |
-| Patron | Missing | P2 |
-| 1Password fill | Missing | P2 |
-| WebAuthn/passkeys | Missing | P2 |
-| uBlock Origin provider | Missing | P2, separately reviewed |
-| Updater | Missing | P2 |
-| Signing/notarization/release evidence | Basic Tauri bundle only | P2/P3 |
-| Accessibility/shortcut parity | Partial React implementation | P1/P2 |
-| Automated tests | Missing | P0 |
-| Windows Mica Alt | Implemented as enhancement | Done, verify on Windows 11 |
-| Mobile shell | Scaffold exists | After native core contracts |
+| Area | Desktop (Tauri) | Android (Native Kotlin) | Priority |
+|---|---|---|---|
+| Native child webviews | Basic desktop implementation | Phase 1: TabManager + WebViewFactory | P0 harden |
+| Single-window tabs | Basic | Phase 1: TabManager lifecycle | P0 replace with window runtime |
+| Multi-window | Missing | N/A (single activity) | P0 |
+| Navigation admission/protocols | Basic heuristic | Phase 3: port Rust logic | P0 |
+| Popup/context-menu policy | Missing | Phase 3: TabWebChromeClient | P0 |
+| Internal pages/guarded IPC | React-only, no Electron-equivalent trust layer | Phase 2: Bridge + UI WebView | P0 |
+| Persistence/recovery | One direct JSON file plus duplicated localStorage | Phase 3: Room DB | P0 |
+| Session restore | URL-only, incomplete | Phase 3: Room session | P0 |
+| Private browsing | Missing | Phase 1: Private WebView | P0 |
+| Real ad blocking | Hard-coded hostname list | Phase 1: AdblockEngine (Kotlin) | P0 |
+| Permission policy | Missing | Phase 3: TabWebChromeClient | P0 |
+| Media/capture/WebRTC | Missing | Phase 4: native adapters | P0/P1 |
+| Downloads | Missing | Phase 3: System DownloadManager | P1 |
+| Favorites/history/settings | UI exists; native source of truth incomplete | Phase 3: Room DAOs | P1 |
+| Search suggestions | UI/provider exists; privacy/native integration incomplete | Phase 3: bridge suggestions | P1 |
+| Groups/pins | Missing | Phase 3: TabManager groups | P1 |
+| Reopen closed tabs | Missing | Phase 3: Room closedTabs | P1 |
+| Quiet tabs | Missing | Phase 4: sleep policy | P1 |
+| Profiles | Missing | Phase 3: Room profiles | P1 |
+| Workspaces | Missing | Phase 3: Room workspaces | P1 |
+| Sync | Missing | Phase 4: port or JNI | P2 |
+| Telemetry | Missing | Phase 4: Kotlin port | P2 |
+| Patron | Missing | Phase 4: Kotlin port | P2 |
+| 1Password fill | Missing | N/A (platform autofill) | P2 |
+| WebAuthn/passkeys | Missing | Phase 4: native | P2 |
+| uBlock Origin provider | Missing | N/A (native adblock) | P2, separately reviewed |
+| Updater | Missing | Play Store native | P2 |
+| Signing/notarization/release evidence | Basic Tauri bundle only | Play Store signing | P2/P3 |
+| Accessibility/shortcut parity | Partial React implementation | Same React UI | P1/P2 |
+| Automated tests | Missing | Phase 5: unit + instrumented | P0 |
+| Windows Mica Alt | Implemented as enhancement | N/A | Done, verify on Windows 11 |
+| Mobile shell | Scaffold exists | **Phase 1-5: Native Kotlin** | Phase 5 release |
+
+## Android Native Agent Work Streams
+
+| Agent | Stream | Deliverables |
+|-------|--------|--------------|
+| **Agent 1** | TabManager + WebView Factory | `TabManager`, `WebViewFactory`, `Tab`, lifecycle tests |
+| **Agent 2** | Adblock Engine | `AdblockEngine`, `AdblockWebViewClient`, filter list parser, benchmarks |
+| **Agent 3** | Bridge + UI WebView | `BlancBridge`, UI WebView setup, React build integration, message protocol |
+| **Agent 4** | Storage + Features | Room DB, History/Bookmarks/Settings DAOs, Downloads, Private tabs |
+| **Agent 5** | UI Parity | React build integration, visual regression tests, theme support |
 
 ## Suggested agent work breakdown
 

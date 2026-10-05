@@ -7,6 +7,8 @@ export interface WebPageResult {
   isDirect: boolean;
   directSrc: string;
   finalUrl: string;
+  // New: indicates this site cannot be embedded and should open externally
+  shouldOpenExternally: boolean;
 }
 
 /**
@@ -32,40 +34,83 @@ export function useWebPageLoader(url?: string): WebPageResult {
       setIsDirect(false);
       setDirectSrc(url || '');
       setFinalUrl(url || '');
+      setShouldOpenExternally(false);
       return;
     }
 
     setFinalUrl(url);
+    setShouldOpenExternally(false);
+
+    // Sites known to block iframe embedding entirely (X-Frame-Options: DENY, strict CSP)
+    // These will show blank panes even with proxy. Open externally instead.
+    const problematicSites = [
+      'github.com',
+      'gitlab.com',
+      'bitbucket.org',
+      'twitter.com',
+      'x.com',
+      'facebook.com',
+      'instagram.com',
+      'linkedin.com',
+      'discord.com',
+      'slack.com',
+      'notion.so',
+      'figma.com',
+      'canva.com',
+      'miro.com',
+      'airtable.com',
+      'linear.app',
+      'vercel.com',
+      'netlify.com',
+      'cloudflare.com',
+      'aws.amazon.com',
+      'console.cloud.google.com',
+      'console.aws.amazon.com',
+      'portal.azure.com',
+      'app.slack.com',
+      'teams.microsoft.com',
+      'meet.google.com',
+      'zoom.us',
+      'calendly.com',
+      'stripe.com',
+      'paypal.com',
+      'patreon.com',
+      'onlyfans.com',
+      'twitch.tv',
+      'youtube.com', // handled separately for videos, but main site blocks framing
+      'tiktok.com',
+      'reddit.com', // blocks framing
+      'pinterest.com',
+      'medium.com',
+      'substack.com',
+      'ghost.io',
+      'webflow.com',
+      'wix.com',
+      'squarespace.com',
+      'shopify.com',
+      'bigcommerce.com',
+    ];
+
+    const hostname = (() => {
+      try {
+        return new URL(url).hostname.replace(/^www\./, '');
+      } catch {
+        return '';
+      }
+    })();
+
+    const isProblematic = problematicSites.some(site => hostname === site || hostname.endsWith('.' + site));
+
+    if (isProblematic) {
+      setShouldOpenExternally(true);
+      setLoading(false);
+      setError(null);
+      setIsDirect(false);
+      setContent(null);
+      return;
+    }
 
     // 1. Google with igu=1 allows direct iframe embedding
-    if (/google\.[a-z.]+(\/|$)/i.test(url)) {
-      let googleUrl = url;
-      if (!googleUrl.includes('igu=1')) {
-        googleUrl += (googleUrl.includes('?') ? '&' : '?') + 'igu=1';
-      }
-      setIsDirect(true);
-      setDirectSrc(googleUrl);
-      setContent(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    // 2. Google with igu=1 allows direct iframe embedding
-    if (/google\.[a-z.]+(\/|$)/i.test(url)) {
-      let googleUrl = url;
-      if (!googleUrl.includes('igu=1')) {
-        googleUrl += (googleUrl.includes('?') ? '&' : '?') + 'igu=1';
-      }
-      setIsDirect(true);
-      setDirectSrc(googleUrl);
-      setContent(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    // 3. YouTube Special Handling:
     // YouTube blocks direct site framing (X-Frame-Options: SAMEORIGIN & TrustedTypes CORS),
     // but official embeds (youtube-nocookie.com/embed) are 100% frameable and playable.
     if (/youtube\.com|youtu\.be/i.test(url)) {
@@ -282,7 +327,7 @@ export function useWebPageLoader(url?: string): WebPageResult {
     };
   }, [url]);
 
-  return { content, loading, error, isDirect, directSrc, finalUrl };
+  return { content, loading, error, isDirect, directSrc, finalUrl, shouldOpenExternally };
 }
 
 function renderYouTubeHub(targetUrl: string): string {

@@ -1,18 +1,31 @@
-# Parity IPC contract (Rust ⇄ React)
+# Parity IPC contract (Rust ⇄ React ⇄ Kotlin)
 
 **Status:** binding contract for the Electron → Tauri parity port.
 **Owner of this file:** the integrator. Every agent implements against it;
 nobody changes it without the integrator.
 
-This exists because Rust and React slices are developed in parallel. It fixes
-the event names, command names, and payload shapes so the two sides can be built
+This exists because Rust, Kotlin, and React slices are developed in parallel. It fixes
+the event names, command names, and payload shapes so the three sides can be built
 independently and then wired together without drift.
+
+## Platform mapping
+
+| Platform | Native Core | Bridge Layer |
+|----------|-------------|--------------|
+| Desktop (Windows/macOS/Linux) | Rust (`blanc-tauri/`) | Tauri IPC (`invoke`, `emit`) |
+| Android | Kotlin (`blanc-android/`) | `BlancBridge` (`@JavascriptInterface` + `evaluateJavascript`) |
+
+React UI is **identical** across platforms. It receives the same events and sends
+the same commands regardless of platform. The bridge layer translates between
+platform-native transport (Tauri IPC vs. `@JavascriptInterface`) and the
+platform-agnostic protocol defined here.
 
 ## Rules this contract enforces
 
-1. **One source of truth.** Rust owns browser state, webview ownership,
-   navigation, permissions, downloads, blocking, profiles, persistence, and
-   security decisions. React renders a projection and sends intents.
+1. **One source of truth per platform.** Rust (desktop) / Kotlin (Android) own
+   browser state, webview ownership, navigation, permissions, downloads,
+   blocking, profiles, persistence, and security decisions. React renders a
+   projection and sends intents.
 2. **React holds no browser state of its own.** No localStorage for tabs,
    history, favorites, settings, groups, closed tabs, permissions, or blocker
    stats. localStorage may hold ephemeral UI preferences only (panel open,
@@ -20,7 +33,10 @@ independently and then wired together without drift.
 3. **React never infers browser state by replaying its own actions.** Every
    native mutation emits a fresh projection; React replaces its view wholesale.
 4. **Errors surface.** A failed command rejects with a message React displays.
-   Rust never substitutes success-shaped data for a failure.
+   Native never substitutes success-shaped data for a failure.
+5. **Platform transport is an implementation detail.** React sees the same
+   command/event names and payloads; Tauri IPC and `BlancBridge` are
+   transports, not protocols.
 
 ## Serialization conventions
 
@@ -31,10 +47,16 @@ independently and then wired together without drift.
   every new projection type serialize with **camelCase**.
 - Rust command arguments arrive from JS camelCase; Tauri v2 converts to the
   snake_case Rust parameter. Declare parameters in snake_case.
+- Kotlin uses the **same camelCase JSON** as React. `Gson`/`Moshi` handles
+  conversion. No platform-specific payload shapes.
 
-## Events (Rust → React)
+## Events (Native → React)
 
-All events are emitted with `Emitter::emit`. Every payload is `serde::Serialize`.
+All events are emitted via platform transport:
+- **Desktop:** `Emitter::emit("event-name", payload)`
+- **Android:** `webView.evaluateJavascript("window.__BLANC__.onEvent('name', $json)")`
+
+React registers handlers via `window.__BLANC__.onEvent = (name, payload) => {...}`
 
 ### `blanc:state-updated` — the authoritative projection
 
@@ -54,7 +76,7 @@ only way React learns browser state.
 }
 ```
 
-`tabs` are read from Rust through `get_state_projection` and from
+`tabs` are read from Native through `get_state_projection` and from
 `blanc:state-updated`; there is no separate `tabs-updated` event. Callers that
 want only the window's tabs filter the projection by `label`.
 
@@ -123,7 +145,22 @@ answered `Deny` without a prompt.
 Every surfaced failure goes through here; React never invents its own message
 for a native error.
 
-## Commands (React → Rust)
+### `blanc:create-window-request` (Android only)
+
+```rust
+{ url: String, private: bool }
+```
+
+Emitted when a link with `target="_blank"` or `window.open()` is triggered.
+Kotlin creates a new tab and returns its ID via bridge callback.
+
+---
+
+## Commands (React → Native)
+
+All commands sent via platform transport:
+- **Desktop:** `invoke("command_name", args)`
+- **Android:** `BlancBridge.commandName(args)` via `@JavascriptInterface`
 
 ### State
 
@@ -148,7 +185,7 @@ for a native error.
 | `set_tab_pinned` | `tabId: String`, `pinned: bool` | `()` |
 | `set_tab_muted` | `tabId: String`, `muted: bool` | `()` |
 
-`navigate` takes **raw user text**. Rust owns classification, search fallback,
+`navigate` takes **raw user text**. Native owns classification, search fallback,
 protocol handoff and popup policy (see `navigation.rs`). React must not
 pre-normalize: doing so twice is exactly the drift the roadmap forbids.
 
@@ -189,6 +226,9 @@ leads its rows; only ungrouped pins use a standalone pinned shelf.
 `close_window_ui` (close the native window). Both must destroy the runtime's
 child webviews; see `state.rs` and `webview.rs`.
 
+**Android:** `create_window` / `close_window` are no-ops (single activity).
+`set_viewport` maps to UI WebView layout.
+
 ### History
 
 | Command | Args | Returns |
@@ -198,7 +238,7 @@ child webviews; see `state.rs` and `webview.rs`.
 | `history_remove` | `id: String` | `()` |
 | `history_clear` | — | `()` |
 
-`history_record` **rejects private tabs**. Rust is the only caller that knows
+`history_record` **rejects private tabs**. Native is the only caller that knows
 privacy; the command takes no privacy argument it could be lied about.
 
 ### Favorites
@@ -258,6 +298,86 @@ Utility surfaces (`favorites`, `history`, `downloads`, `settings`, `shortcuts`)
 become a floating sheet on the window, **not** a browser tab. `newtab` is an
 ordinary managed tab.
 
+---
+
+## Android-specific: `BlancBridge` Interface
+
+```kotlin
+class BlancBridge @JvmOverloads constructor(
+    private val context: Context,
+    private val tabManager: TabManager,
+    private val adblockEngine: AdblockEngine,
+    // ... other services
+) {
+
+    // Commands (React → Kotlin)
+    @JavascriptInterface
+    fun createTab(url: String?, private: Boolean = false): String // returns tabId
+
+    @JavascriptInterface
+    fun closeTab(tabId: String)
+
+    @JavascriptInterface
+    fun switchTab(tabId: String)
+
+    @JavascriptInterface
+    fun navigate(tabId: String, url: String)
+
+    @JavascriptInterface
+    fun reloadTab(tabId: String)
+
+    @JavascriptInterface
+    fun goBack(tabId: String)
+
+    @JavascriptInterface
+    fun goForward(tabId: String)
+
+    @JavascriptInterface
+    fun getStateProjection(): String // JSON
+
+    @JavascriptInterface
+    fun getSettings(): String // JSON
+
+    @JavascriptInterface
+    fun saveSettings(settingsJson: String)
+
+    @JavascriptInterface
+    fun toggleAdblock(enabled: Boolean)
+
+    @JavascriptInterface
+    fun addAdblockException(hostname: String)
+
+    @JavascriptInterface
+    fun removeAdblockException(hostname: String)
+
+    @JavascriptInterface
+    fun historyList(limit: Int, offset: Int, query: String?): String // JSON
+
+    @JavascriptInterface
+    fun historyRecord(url: String, title: String)
+
+    @JavascriptInterface
+    fun favoritesList(): String // JSON
+
+    @JavascriptInterface
+    fun favoritesAdd(favoriteJson: String)
+
+    // ... all other commands mirrored
+}
+```
+
+React calls via:
+```ts
+// Platform-agnostic wrapper
+const native = {
+  createTab: (url?: string, private?: boolean) =>
+    window.__BLANC_BRIDGE?.createTab(url, private) ?? invoke("create_tab", ...),
+  // ...
+}
+```
+
+---
+
 ## Internal-surface trust
 
 `blanc://` URLs are resolved by `model::Surface::from_url`, which accepts only
@@ -270,3 +390,6 @@ must never be able to reach Blanc's IPC: a command is rejected unless the caller
 is the shell's own window (`main` or another `window-*` label) **and** the
 calling surface matches the command's expected surface. See the
 `blanc:surface-caller` validation in `lib.rs` integration.
+
+**Android:** UI WebView loads React from `file:///android_asset/ui/index.html`.
+Internal pages (`blanc://...`) are routed via `BlancBridge.openSurface()`.
