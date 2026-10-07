@@ -1,20 +1,22 @@
 package me.bnfy.blanc.ui
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.print.PrintAttributes
-import android.print.PrintDocumentAdapter
 import android.print.PrintManager
 import android.util.AttributeSet
-import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.DownloadListener
 import android.webkit.GeolocationPermissions
+import android.webkit.JsPromptResult
 import android.webkit.JsResult
 import android.webkit.PermissionRequest
+import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -23,14 +25,20 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.annotation.RequiresApi
-import androidx.compose.ui.platform.LocalContext
-import me.bnfy.blanc.adblock.AdblockEngine
-import me.bnfy.blanc.bridge.BridgeProtocol
-import me.bnfy.blanc.bridge.BlancBridge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.viewinterop.AndroidView
+import com.google.gson.Gson
+import me.bnfy.blanc.BlancApplication
+import me.bnfy.blanc.download.DownloadService
+import me.bnfy.blanc.storage.DownloadEntity
 import me.bnfy.blanc.tab.Tab
 import me.bnfy.blanc.tab.TabManager
-import me.bnfy.blanc.tab.TabWebViewClient
-import me.bnfy.blanc.tab.WebViewFactory
 import timber.log.Timber
 
 /**
@@ -43,9 +51,7 @@ class ContentWebView(
     
     private var tab: Tab? = null
     private var tabManager: TabManager? = null
-    private var adblockEngine: AdblockEngine? = null
-    private var blancBridge: BlancBridge? = null
-    private var onFileChooserCallback: ((ValueCallback<Array<Uri>>, List<String>) -> Unit)? = null
+    private var onFileChooserCallback: FileChooserHandler? = null
     private var onPermissionRequestCallback: ((String, String, (Boolean) -> Unit) -> Unit)? = null
     
     init {
@@ -59,7 +65,6 @@ class ContentWebView(
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.databaseEnabled = true
-        settings.setAppCacheEnabled(true)
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         
         // Mixed content
@@ -68,7 +73,7 @@ class ContentWebView(
         // Viewport
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
-        settings.supportZoom = true
+        settings.setSupportZoom(true)
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         
@@ -93,9 +98,6 @@ class ContentWebView(
         settings.saveFormData = true
         settings.savePassword = true
         
-        // Hardware acceleration
-        settings.renderPriority = WebSettings.RenderPriority.HIGH
-        
         // Layout
         settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
         
@@ -117,7 +119,7 @@ class ContentWebView(
         settings.setSupportMultipleWindows(false)
         
         // Download listener
-        downloadListener = DownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
+        setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
             startDownload(url, userAgent, contentDisposition, mimeType, contentLength)
         }
         
@@ -138,10 +140,23 @@ class ContentWebView(
                     else -> {
                         tab?.url = url
                         tab?.resetForNewNavigation()
-                        blancBridge?.onNavigation(tab?.id ?: "", url, null)
                         false
                     }
                 }
+            }
+            
+            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                val requestUrl = request?.url?.toString() ?: return super.shouldInterceptRequest(view, request)
+                try {
+                    val engine = BlancApplication.getInstance().adblockEngine
+                    if (engine.shouldBlock(requestUrl, request)) {
+                        tab?.blockedCount = (tab?.blockedCount ?: 0) + 1
+                        return engine.createBlockedResponse()
+                    }
+                } catch (e: Exception) {
+                    // Fall back to super
+                }
+                return super.shouldInterceptRequest(view, request)
             }
             
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -151,8 +166,6 @@ class ContentWebView(
                     tab?.isLoading = true
                     tab?.progress = 0
                     tab?.blockedCount = 0
-                    blancBridge?.onNavigation(tab?.id ?: "", it, null)
-                    blancBridge?.onTabUpdated(tab?.toBridgeTab()!!)
                 }
             }
             
@@ -170,16 +183,14 @@ class ContentWebView(
                     
                     tab?.canGoBack = view?.canGoBack() ?: false
                     tab?.canGoForward = view?.canGoForward() ?: false
-                    
-                    blancBridge?.onTabUpdated(tab?.toBridgeTab()!!)
-                }
-            }
-            
-            override fun onReceivedTitle(view: WebView?, title: String?) {
-                super.onReceivedTitle(view, title)
-                title?.let {
-                    tab?.title = it
-                    blancBridge?.onTabUpdated(tab?.toBridgeTab()!!)
+
+                    view?.let { wv ->
+                        try {
+                            BlancApplication.getInstance().adblockEngine.cosmeticEngine.injectCosmeticFilters(wv, it)
+                        } catch (e: Exception) {
+                            Timber.e(e, "Error injecting cosmetic filters")
+                        }
+                    }
                 }
             }
             
@@ -192,13 +203,11 @@ class ContentWebView(
                 if (request?.isForMainFrame == true) {
                     tab?.isLoading = false
                     tab?.progress = 100
-                    blancBridge?.onTabUpdated(tab?.toBridgeTab()!!)
                 }
             }
             
             @RequiresApi(Build.VERSION_CODES.O)
             override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
-                blancBridge?.onNavigation(tab?.id ?: "", "about:blank", "Renderer process gone")
                 return true
             }
         }
@@ -207,14 +216,12 @@ class ContentWebView(
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 super.onProgressChanged(view, newProgress)
                 tab?.progress = newProgress
-                blancBridge?.onTabUpdated(tab?.toBridgeTab()!!)
             }
             
             override fun onReceivedTitle(view: WebView?, title: String?) {
                 super.onReceivedTitle(view, title)
                 title?.let {
                     tab?.title = it
-                    blancBridge?.onTabUpdated(tab?.toBridgeTab()!!)
                 }
             }
             
@@ -224,7 +231,7 @@ class ContentWebView(
                 fileChooserParams: FileChooserParams?
             ): Boolean {
                 val acceptTypes = fileChooserParams?.acceptTypes?.toList() ?: listOf("*/*")
-                onFileChooserCallback?.invoke(filePathCallback!!, acceptTypes)
+                onFileChooserCallback?.onFileChooser(filePathCallback, acceptTypes)
                 return true
             }
             
@@ -260,7 +267,6 @@ class ContentWebView(
             }
             
             override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
-                // Could show custom dialog
                 result?.confirm()
                 return true
             }
@@ -270,7 +276,7 @@ class ContentWebView(
                 return true
             }
             
-            override fun onJsPrompt(view: WebView?, url: String?, message: String?, defaultValue: String?, result: JsResult?): Boolean {
+            override fun onJsPrompt(view: WebView?, url: String?, message: String?, defaultValue: String?, result: JsPromptResult?): Boolean {
                 result?.confirm()
                 return true
             }
@@ -280,20 +286,13 @@ class ContentWebView(
     fun bind(
         tab: Tab,
         tabManager: TabManager,
-        adblockEngine: AdblockEngine,
-        blancBridge: BlancBridge,
-        onFileChooser: (ValueCallback<Array<Uri>>, List<String>) -> Unit,
-        onPermissionRequest: (String, String, (Boolean) -> Unit) -> Unit
+        onFileChooser: FileChooserHandler? = null,
+        onPermissionRequest: ((String, String, (Boolean) -> Unit) -> Unit)? = null
     ) {
         this.tab = tab
         this.tabManager = tabManager
-        this.adblockEngine = adblockEngine
-        this.blancBridge = blancBridge
         this.onFileChooserCallback = onFileChooser
         this.onPermissionRequestCallback = onPermissionRequest
-        
-        // Update WebViewClient with adblock
-        webViewClient = TabWebViewClient(tab, blancBridge, adblockEngine)
         
         // Configure cookies for private mode
         if (tab.isPrivate) {
@@ -332,22 +331,26 @@ class ContentWebView(
         )
         
         // Start download service
-        val intent = Intent(context, me.bnfy.blanc.download.DownloadService::class.java).apply {
-            action = me.bnfy.blanc.download.DownloadService.ACTION_START
-            putExtra(me.bnfy.blanc.download.DownloadService.EXTRA_DOWNLOAD, entity)
+        val intent = Intent(context, DownloadService::class.java).apply {
+            action = DownloadService.ACTION_START
+            putExtra(DownloadService.EXTRA_DOWNLOAD_JSON, Gson().toJson(entity))
         }
-        context.startForegroundService(intent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
     }
     
     private fun handleBlancUrl(url: String) {
         when {
             url == "blanc://newtab" -> tabManager?.createTab()
             url == "blanc://newtab?private=1" -> tabManager?.createPrivateTab()
-            url == "blanc://settings" -> blancBridge?.openSurface("settings", false)
-            url == "blanc://bookmarks" -> blancBridge?.openSurface("favorites", false)
-            url == "blanc://history" -> blancBridge?.openSurface("history", false)
-            url == "blanc://downloads" -> blancBridge?.openSurface("downloads", false)
-            url == "blanc://shortcuts" -> blancBridge?.openSurface("shortcuts", false)
+            url == "blanc://settings" -> tabManager?.createTab("blanc://settings")
+            url == "blanc://bookmarks" -> tabManager?.createTab("blanc://bookmarks")
+            url == "blanc://history" -> tabManager?.createTab("blanc://history")
+            url == "blanc://downloads" -> tabManager?.createTab("blanc://downloads")
+            url == "blanc://shortcuts" -> tabManager?.createTab("blanc://shortcuts")
             url.startsWith("blanc://mahjong") -> tabManager?.createTab(url)
             else -> tabManager?.createTab(url)
         }
@@ -377,7 +380,6 @@ class ContentWebView(
 
     /**
      * Captures the current WebView content as a bitmap for tab thumbnails.
-     * Uses PixelCopy for hardware-accelerated capture on API 24+.
      */
     fun captureThumbnail(): Bitmap? {
         return try {
@@ -387,29 +389,14 @@ class ContentWebView(
             
             // Scale down for thumbnail (max 200px width)
             val scale = 200f / width
-            val thumbWidth = (width * scale).toInt()
-            val thumbHeight = (height * scale).toInt()
+            val thumbWidth = (width * scale).toInt().coerceAtLeast(1)
+            val thumbHeight = (height * scale).toInt().coerceAtLeast(1)
             
             val bitmap = Bitmap.createBitmap(thumbWidth, thumbHeight, Bitmap.Config.ARGB_8888)
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Use PixelCopy for hardware-accelerated capture
-                val pixelCopy = android.view.PixelCopy()
-                val result = pixelCopy.request(this, bitmap, { copyResult ->
-                    // Copy completed
-                }, Handler(Looper.getMainLooper()))
-                if (result == android.view.PixelCopy.SUCCESS) {
-                    bitmap
-                } else {
-                    // Fallback to draw
-                    draw(android.graphics.Canvas(bitmap))
-                    bitmap
-                }
-            } else {
-                // Fallback for older APIs
-                draw(android.graphics.Canvas(bitmap))
-                bitmap
-            }
+            val canvas = android.graphics.Canvas(bitmap)
+            canvas.scale(scale, scale)
+            draw(canvas)
+            bitmap
         } catch (e: Exception) {
             Timber.e(e, "Failed to capture thumbnail")
             null
@@ -423,56 +410,56 @@ class ContentWebView(
 @Composable
 fun ContentWebViewContainer(
     tabManager: TabManager,
-    activeTabId: String?,
-    tabs: List<Tab>,
-    onFileChooser: (ValueCallback<Array<Uri>>, List<String>) -> Unit,
+    activeTab: Tab?,
+    onFileChooser: FileChooserHandler,
     onRequestPermission: (String, String, (Boolean) -> Unit) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val view = LocalView.current
-    
-    // Get the active tab
-    val activeTab = tabs.find { it.id == activeTabId }
-    
-    // Create WebView for each tab
-    // In a real implementation, you'd use a ViewPager or similar for tab switching
-    // For now, we'll show the active tab's WebView
-    
     if (activeTab != null) {
         AndroidView(
             factory = { ctx ->
-                val webView = ContentWebView(ctx).apply {
+                ContentWebView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
+                    bind(activeTab, tabManager, onFileChooser, onRequestPermission)
                 }
-                webView
             },
             update = { webView ->
-                (webView as ContentWebView).bind(
-                    tab = activeTab,
-                    tabManager = tabManager,
-                    adblockEngine = me.bnfy.blanc.BlancApplication.getInstance().adblockEngine,
-                    blancBridge = me.bnfy.blanc.BlancApplication.getInstance().blancBridge!!,
-                    onFileChooser = onFileChooser,
-                    onPermissionRequest = onRequestPermission
-                )
+                webView.bind(activeTab, tabManager, onFileChooser, onRequestPermission)
             },
             modifier = modifier
         )
     } else {
         // No active tab - show new tab page
-        androidx.compose.foundation.Box(
+        Box(
             modifier = modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            androidx.compose.material3.Text(
+            Text(
                 text = "No tabs open. Tap + to create a new tab.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyLarge
             )
         }
     }
+}
+
+@Composable
+fun ContentWebViewContainer(
+    tabManager: TabManager,
+    activeTabId: String?,
+    tabs: List<Tab>,
+    onFileChooser: FileChooserHandler,
+    onRequestPermission: (String, String, (Boolean) -> Unit) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ContentWebViewContainer(
+        tabManager = tabManager,
+        activeTab = tabs.find { it.id == activeTabId },
+        onFileChooser = onFileChooser,
+        onRequestPermission = onRequestPermission,
+        modifier = modifier
+    )
 }

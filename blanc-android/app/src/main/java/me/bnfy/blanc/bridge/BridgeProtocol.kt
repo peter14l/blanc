@@ -2,6 +2,7 @@ package me.bnfy.blanc.bridge
 
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
+import java.lang.reflect.Type
 
 /**
  * Bridge protocol for communication between React UI and Kotlin native.

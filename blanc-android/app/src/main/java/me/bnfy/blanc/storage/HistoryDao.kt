@@ -85,6 +85,10 @@ interface HistoryDao {
         profileId: String
     )
 
+    /** Gets a history entry by URL. */
+    @Query("SELECT * FROM history_entries WHERE url = :url AND profileId = :profileId AND isPrivate = 0 LIMIT 1")
+    suspend fun getByUrl(url: String, profileId: String): HistoryEntry?
+
     /** Removes a specific history entry by URL. */
     @Query("DELETE FROM history_entries WHERE url = :url AND profileId = :profileId AND isPrivate = 0")
     suspend fun removeByUrl(url: String, profileId: String): Int
@@ -134,6 +138,10 @@ interface HistoryDao {
            "AND date(visitTime/1000, 'unixepoch') = :date " +
            "ORDER BY visitTime DESC")
     suspend fun getHistoryForDate(profileId: String, date: String): List<HistoryEntry>
+
+    /** Gets all history entries for a profile. */
+    @Query("SELECT * FROM history_entries WHERE profileId = :profileId AND isPrivate = 0 ORDER BY visitTime DESC")
+    suspend fun getByProfile(profileId: String): List<HistoryEntry>
 }
 
 /**

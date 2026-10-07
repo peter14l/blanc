@@ -11,14 +11,24 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -96,15 +106,15 @@ fun SearchBar(onSearch: (String) -> Unit) {
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 0.dp
     ) {
-        androidx.compose.material3.TextField(
+        TextField(
             value = query.value,
             onValueChange = { query.value = it },
             placeholder = { Text("Search or enter address") },
             singleLine = true,
-            keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions.Default.copy(
-                imeAction = androidx.compose.ui.text.input.ImeAction.Search
+            keyboardOptions = KeyboardOptions.Default.copy(
+                imeAction = ImeAction.Search
             ),
-            keyboardActions = androidx.compose.ui.text.input.KeyboardActions(
+            keyboardActions = KeyboardActions(
                 onSearch = { onSearch(query.value) }
             ),
             leadingIcon = { Icon(painterResource(R.drawable.ic_search), contentDescription = null) },
@@ -118,8 +128,9 @@ fun SearchBar(onSearch: (String) -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            colors = androidx.compose.material3.TextFieldDefaults.textFieldColors(
-                containerColor = Color.Transparent,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
                 disabledIndicatorColor = Color.Transparent
@@ -169,7 +180,7 @@ fun FavoritesGrid(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(80.dp)
-                    .combinedClickable(onClick = { onClick(item.url) }),
+                    .clickable(onClick = { onClick(item.url) }),
                 colors = androidx.compose.material3.CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
@@ -229,7 +240,7 @@ fun RecentTabsList(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .combinedClickable(onClick = { onClick(item.url) }),
+                    .clickable(onClick = { onClick(item.url) }),
                 colors = androidx.compose.material3.CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
@@ -285,7 +296,7 @@ fun FooterActions(
             modifier = Modifier.weight(1f)
         ) {
             Icon(painterResource(R.drawable.ic_tab), contentDescription = null)
-            androidx.compose.runtime.CompositionLocalProvider.run { /* spacer */ }
+            Spacer(modifier = Modifier.width(8.dp))
             Text("New Tab")
         }
         
@@ -298,7 +309,7 @@ fun FooterActions(
             )
         ) {
             Icon(painterResource(R.drawable.ic_private_tab), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            androidx.compose.runtime.CompositionLocalProvider.run { /* spacer */ }
+            Spacer(modifier = Modifier.width(8.dp))
             Text("Private Tab")
         }
     }

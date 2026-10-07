@@ -1,10 +1,8 @@
 package me.bnfy.blanc.download
 
-import android.app.DownloadManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.Handler
@@ -14,19 +12,21 @@ import android.webkit.CookieManager
 import android.webkit.URLUtil
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
+import com.google.gson.Gson
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import me.bnfy.blanc.BuildConfig
+import me.bnfy.blanc.R
 import me.bnfy.blanc.BlancApplication
-import me.bnfy.blanc.bridge.BlancBridge
 import me.bnfy.blanc.bridge.BridgeProtocol
-import me.bnfy.blanc.download.DownloadBuilder
 import me.bnfy.blanc.storage.DownloadEntity
-import me.bnfy.blanc.storage.Repository
 import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLDecoder
 import java.util.concurrent.Executors
 
 /**
@@ -37,6 +37,8 @@ class DownloadService : Service() {
 
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val serviceScope = CoroutineScope(Dispatchers.IO)
+    private val gson = Gson()
     private var notificationManager: NotificationManagerCompat? = null
     private var currentDownloadId: String? = null
     private var currentNotificationId = 1000
@@ -59,20 +61,22 @@ class DownloadService : Service() {
         val action = intent.action ?: return
         
         when (action) {
-            DownloadService.ACTION_START -> {
-                val downloadEntity = intent.getParcelableExtra<DownloadEntity>(EXTRA_DOWNLOAD)
+            ACTION_START -> {
+                val json = intent.getStringExtra(EXTRA_DOWNLOAD_JSON)
+                val downloadEntity = json?.let { gson.fromJson(it, DownloadEntity::class.java) }
                 downloadEntity?.let { startDownload(it) }
             }
-            DownloadService.ACTION_CANCEL -> {
+            ACTION_CANCEL -> {
                 val downloadId = intent.getStringExtra(EXTRA_DOWNLOAD_ID)
                 downloadId?.let { cancelDownload(it) }
             }
-            DownloadService.ACTION_PAUSE -> {
+            ACTION_PAUSE -> {
                 val downloadId = intent.getStringExtra(EXTRA_DOWNLOAD_ID)
                 downloadId?.let { pauseDownload(it) }
             }
-            DownloadService.ACTION_RETRY -> {
-                val downloadEntity = intent.getParcelableExtra<DownloadEntity>(EXTRA_DOWNLOAD)
+            ACTION_RETRY -> {
+                val json = intent.getStringExtra(EXTRA_DOWNLOAD_JSON)
+                val downloadEntity = json?.let { gson.fromJson(it, DownloadEntity::class.java) }
                 downloadEntity?.let { retryDownload(it) }
             }
         }
@@ -81,12 +85,14 @@ class DownloadService : Service() {
     private fun startDownload(entity: DownloadEntity) {
         currentDownloadId = entity.id
         isCancelled = false
+        var current = entity
 
         executor.execute {
             try {
-                val url = URL(entity.url)
-                currentConnection = url.openConnection() as HttpURLConnection
-                currentConnection.apply {
+                val url = URL(current.url)
+                val connection = url.openConnection() as HttpURLConnection
+                currentConnection = connection
+                connection.apply {
                     requestMethod = "GET"
                     connectTimeout = 30000
                     readTimeout = 30000
@@ -94,7 +100,7 @@ class DownloadService : Service() {
                     
                     // Add cookies if available
                     val cookieManager = CookieManager.getInstance()
-                    val cookies = cookieManager.getCookie(entity.url)
+                    val cookies = cookieManager.getCookie(current.url)
                     if (!cookies.isNullOrBlank()) {
                         setRequestProperty("Cookie", cookies)
                     }
@@ -103,14 +109,14 @@ class DownloadService : Service() {
                     setRequestProperty("User-Agent", "Blanc/Android")
                 }
 
-                val responseCode = currentConnection.responseCode
+                val responseCode = connection.responseCode
                 if (responseCode != HttpURLConnection.HTTP_OK) {
                     throw java.io.IOException("HTTP $responseCode")
                 }
 
-                val contentLength = currentConnection.contentLengthLong
-                val contentDisposition = currentConnection.getHeaderField("Content-Disposition")
-                val fileName = extractFileName(contentDisposition, entity.url, entity.fileName)
+                val contentLength = connection.contentLengthLong
+                val contentDisposition = connection.getHeaderField("Content-Disposition")
+                val fileName = extractFileName(contentDisposition, current.url, current.fileName)
                 
                 // Determine download directory
                 val downloadDir = getDownloadDirectory()
@@ -119,16 +125,17 @@ class DownloadService : Service() {
                 }
                 
                 // Update entity with target path
-                entity.targetPath = targetFile.absolutePath
-                entity.totalBytes = contentLength
-                entity.state = DownloadEntity.STATE_IN_PROGRESS
-                
-                // Persist update
-                updateDownloadInRepo(entity)
+                current = current.copy(
+                    targetPath = targetFile.absolutePath,
+                    totalBytes = contentLength,
+                    state = DownloadEntity.STATE_IN_PROGRESS
+                )
+                updateDownloadInRepo(current)
                 
                 // Open streams
-                val inputStream = currentConnection.inputStream
-                currentOutputStream = FileOutputStream(targetFile)
+                val inputStream = connection.inputStream
+                val outputStream = FileOutputStream(targetFile)
+                currentOutputStream = outputStream
                 
                 val buffer = ByteArray(8192)
                 var downloaded = 0L
@@ -138,47 +145,51 @@ class DownloadService : Service() {
                     val read = inputStream.read(buffer)
                     if (read == -1) break
                     
-                    currentOutputStream.write(buffer, 0, read)
+                    outputStream.write(buffer, 0, read)
                     downloaded += read
                     
                     // Update progress every ~100ms or 1MB
-                    if (System.currentTimeMillis() - lastProgressUpdate > 100 || downloaded - entity.receivedBytes > 1024 * 1024) {
-                        entity.receivedBytes = downloaded
-                        updateDownloadInRepo(entity)
-                        updateNotificationProgress(entity)
+                    if (System.currentTimeMillis() - lastProgressUpdate > 100 || downloaded - current.receivedBytes > 1024 * 1024) {
+                        current = current.copy(receivedBytes = downloaded)
+                        updateDownloadInRepo(current)
+                        updateNotificationProgress(current)
                         lastProgressUpdate = System.currentTimeMillis()
                     }
                 }
                 
                 if (isCancelled) {
                     targetFile.delete()
-                    entity.state = DownloadEntity.STATE_CANCELLED
-                    updateDownloadInRepo(entity)
+                    current = current.copy(state = DownloadEntity.STATE_CANCELLED)
+                    updateDownloadInRepo(current)
                     hideNotification()
                 } else {
-                    currentOutputStream?.flush()
-                    entity.receivedBytes = downloaded
-                    entity.state = DownloadEntity.STATE_COMPLETED
-                    entity.completedAt = System.currentTimeMillis()
-                    updateDownloadInRepo(entity)
-                    showCompletionNotification(entity)
+                    outputStream.flush()
+                    current = current.copy(
+                        receivedBytes = downloaded,
+                        state = DownloadEntity.STATE_COMPLETED,
+                        completedAt = System.currentTimeMillis()
+                    )
+                    updateDownloadInRepo(current)
+                    showCompletionNotification(current)
                     
                     // Notify bridge
                     mainHandler.post {
                         BlancApplication.getInstance().blancBridge.emitEvent(
                             BridgeProtocol.Events.DOWNLOAD_UPDATED,
-                            DownloadBuilder.fromDownload(entity)
+                            DownloadBuilder.fromDownload(current)
                         )
                     }
                 }
                 
             } catch (e: Exception) {
-                Timber.e(e, "Download failed: ${entity.id}")
+                Timber.e(e, "Download failed: ${current.id}")
                 if (!isCancelled) {
-                    entity.state = DownloadEntity.STATE_FAILED
-                    entity.error = e.message
-                    updateDownloadInRepo(entity)
-                    showErrorNotification(entity)
+                    current = current.copy(
+                        state = DownloadEntity.STATE_FAILED,
+                        error = e.message
+                    )
+                    updateDownloadInRepo(current)
+                    showErrorNotification(current)
                 }
             } finally {
                 closeResources()
@@ -194,21 +205,20 @@ class DownloadService : Service() {
     }
 
     private fun pauseDownload(downloadId: String) {
-        // For simplicity, treat pause as cancel (can be resumed via retry)
         if (downloadId == currentDownloadId) {
             isCancelled = true
-            // State will be updated to CANCELLED, user can retry
         }
     }
 
     private fun retryDownload(entity: DownloadEntity) {
-        // Reset entity for retry
-        entity.state = DownloadEntity.STATE_PENDING
-        entity.receivedBytes = 0
-        entity.error = null
-        entity.startedAt = System.currentTimeMillis()
-        updateDownloadInRepo(entity)
-        startDownload(entity)
+        val reset = entity.copy(
+            state = DownloadEntity.STATE_PENDING,
+            receivedBytes = 0,
+            error = null,
+            startedAt = System.currentTimeMillis()
+        )
+        updateDownloadInRepo(reset)
+        startDownload(reset)
     }
 
     private fun extractFileName(contentDisposition: String?, url: String, fallback: String): String {
@@ -216,7 +226,7 @@ class DownloadService : Service() {
             val filenameRegex = """filename\*?=([^;]+)""".toRegex()
             val match = filenameRegex.find(it)
             match?.groupValues?.get(1)?.let { filename ->
-                return URLUtil.decode(filename.trim().trim('"'))
+                return URLDecoder.decode(filename.trim().trim('"'), "UTF-8")
             }
         }
         
@@ -233,10 +243,8 @@ class DownloadService : Service() {
     }
 
     private fun updateDownloadInRepo(entity: DownloadEntity) {
-        mainHandler.post {
-            BlancApplication.getInstance().scope.launch {
-                BlancApplication.getInstance().repository.downloadDao.insert(entity)
-            }
+        serviceScope.launch {
+            BlancApplication.getInstance().repository.downloadDao.insert(entity)
         }
     }
 
@@ -330,7 +338,7 @@ class DownloadService : Service() {
 
     private fun createCancelPendingIntent(downloadId: String): android.app.PendingIntent {
         val intent = Intent(this, DownloadService::class.java).apply {
-            action = DownloadService.ACTION_CANCEL
+            action = ACTION_CANCEL
             putExtra(EXTRA_DOWNLOAD_ID, downloadId)
         }
         return android.app.PendingIntent.getService(
@@ -375,8 +383,8 @@ class DownloadService : Service() {
 
     private fun createRetryPendingIntent(entity: DownloadEntity): android.app.PendingIntent {
         val intent = Intent(this, DownloadService::class.java).apply {
-            action = DownloadService.ACTION_RETRY
-            putExtra(EXTRA_DOWNLOAD, entity)
+            action = ACTION_RETRY
+            putExtra(EXTRA_DOWNLOAD_JSON, gson.toJson(entity))
         }
         return android.app.PendingIntent.getService(
             this, 0, intent,
@@ -421,7 +429,7 @@ class DownloadService : Service() {
         const val ACTION_PAUSE = "me.bnfy.blanc.download.PAUSE"
         const val ACTION_RETRY = "me.bnfy.blanc.download.RETRY"
         
-        const val EXTRA_DOWNLOAD = "download"
+        const val EXTRA_DOWNLOAD_JSON = "download_json"
         const val EXTRA_DOWNLOAD_ID = "download_id"
     }
 }

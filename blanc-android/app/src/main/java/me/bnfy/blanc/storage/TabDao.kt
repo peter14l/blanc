@@ -273,6 +273,16 @@ interface TabDao {
         return SessionState(result)
     }
 
+    /** Saves all session data for a profile. */
+    @Transaction
+    suspend fun saveSession(state: SessionState) {
+        state.windows.forEach { windowWithTabs ->
+            insertWindow(windowWithTabs.window)
+            insertAll(windowWithTabs.tabs)
+            windowWithTabs.groups.forEach { insertGroup(it) }
+        }
+    }
+
     /** Clears all session data for a profile. */
     @Transaction
     suspend fun clearSession(profileId: String) {

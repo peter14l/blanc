@@ -20,6 +20,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
 import me.bnfy.blanc.adblock.AdblockEngine
 import me.bnfy.blanc.bridge.BlancBridge
 import me.bnfy.blanc.bridge.BridgeProtocol
@@ -31,7 +35,6 @@ import me.bnfy.blanc.tab.TabManager
 import me.bnfy.blanc.tab.WebViewFactory
 import me.bnfy.blanc.ui.BrowserScreen
 import me.bnfy.blanc.ui.ContentWebView
-import me.bnfy.blanc.ui.WebViewContainer
 import timber.log.Timber
 
 /**
@@ -51,7 +54,9 @@ class MainActivity : AppCompatActivity() {
     // File chooser callback for WebView
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        fileChooserCallback?.onReceiveValue(result.data?.let { arrayOf(it.data) } ?: emptyArray())
+        val uri = result.data?.data
+        val uris = if (uri != null) arrayOf(uri) else emptyArray()
+        fileChooserCallback?.onReceiveValue(uris)
         fileChooserCallback = null
     }
 
@@ -116,7 +121,7 @@ class MainActivity : AppCompatActivity() {
         // Handle back press
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (!tabManager?.goBack() ?? false) {
+                if (tabManager?.goBack() != true) {
                     // Check if there's a find bar or panel open
                     // For now, just finish
                     finish()

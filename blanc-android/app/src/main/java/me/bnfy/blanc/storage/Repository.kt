@@ -1,15 +1,14 @@
 package me.bnfy.blanc.storage
 
 import android.content.Context
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.PreferencesKeys
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import androidx.datastore.preferences.core.getString
-import androidx.datastore.preferences.core.getBoolean
-import androidx.datastore.preferences.core.getInt
-import androidx.datastore.preferences.core.getLong
-import androidx.datastore.preferences.core.getStringSet
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.map
 import androidx.lifecycle.asLiveData
@@ -18,13 +17,14 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.emit
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.tasks.await
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.lang.reflect.Type
-import java.util.concurrent.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineExceptionHandler
+
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "blanc_preferences")
 
 /**
  * Repository layer - Single source of truth for data access.
@@ -34,48 +34,52 @@ import java.util.concurrent.CoroutineExceptionHandler
 class Repository private constructor(
     private val context: Context,
     private val database: AppDatabase,
-    private val dataStore: androidx.datastore.preferences.core.PreferencesDataStore,
+    private val dataStore: DataStore<Preferences>,
     private val gson: Gson
 ) {
+
+    fun close() {
+        database.close()
+    }
 
     // ===== DataStore Keys =====
 
     // General settings
-    private val KEY_ADBLOCK_ENABLED = PreferencesKeys.boolean("adblock_enabled")
-    private val KEY_ADBLOCK_EXCEPTIONS = PreferencesKeys.stringSet("adblock_exceptions")
-    private val KEY_DEFAULT_SEARCH_ENGINE = PreferencesKeys.string("default_search_engine")
-    private val KEY_THEME = PreferencesKeys.string("theme") // system, light, dark
-    private val KEY_HOMEPAGE = PreferencesKeys.string("homepage")
-    private val KEY_STARTUP_BEHAVIOR = PreferencesKeys.string("startup_behavior") // newtab, restore, homepage
-    private val KEY_QUIET_TABS_DELAY = PreferencesKeys.string("quiet_tabs_delay") // off, 30m, 1h, 6h
+    private val KEY_ADBLOCK_ENABLED = booleanPreferencesKey("adblock_enabled")
+    private val KEY_ADBLOCK_EXCEPTIONS = stringSetPreferencesKey("adblock_exceptions")
+    private val KEY_DEFAULT_SEARCH_ENGINE = stringPreferencesKey("default_search_engine")
+    private val KEY_THEME = stringPreferencesKey("theme") // system, light, dark
+    private val KEY_HOMEPAGE = stringPreferencesKey("homepage")
+    private val KEY_STARTUP_BEHAVIOR = stringPreferencesKey("startup_behavior") // newtab, restore, homepage
+    private val KEY_QUIET_TABS_DELAY = stringPreferencesKey("quiet_tabs_delay") // off, 30m, 1h, 6h
 
     // Privacy settings
-    private val KEY_BLOCK_THIRD_PARTY_COOKIES = PreferencesKeys.boolean("block_third_party_cookies")
-    private val KEY_DO_NOT_TRACK = PreferencesKeys.boolean("do_not_track")
-    private val KEY_CLEAR_ON_EXIT = PreferencesKeys.boolean("clear_on_exit")
-    private val KEY_SEND_USAGE_STATS = PreferencesKeys.boolean("send_usage_stats")
+    private val KEY_BLOCK_THIRD_PARTY_COOKIES = booleanPreferencesKey("block_third_party_cookies")
+    private val KEY_DO_NOT_TRACK = booleanPreferencesKey("do_not_track")
+    private val KEY_CLEAR_ON_EXIT = booleanPreferencesKey("clear_on_exit")
+    private val KEY_SEND_USAGE_STATS = booleanPreferencesKey("send_usage_stats")
 
     // UI settings
-    private val KEY_SHOW_HOME_BUTTON = PreferencesKeys.boolean("show_home_button")
-    private val KEY_SHOW_BOOKMARKS_BAR = PreferencesKeys.boolean("show_bookmarks_bar")
-    private val KEY_TAB_PREVIEW = PreferencesKeys.boolean("tab_preview")
-    private val KEY_SMOOTH_SCROLLING = PreferencesKeys.boolean("smooth_scrolling")
+    private val KEY_SHOW_HOME_BUTTON = booleanPreferencesKey("show_home_button")
+    private val KEY_SHOW_BOOKMARKS_BAR = booleanPreferencesKey("show_bookmarks_bar")
+    private val KEY_TAB_PREVIEW = booleanPreferencesKey("tab_preview")
+    private val KEY_SMOOTH_SCROLLING = booleanPreferencesKey("smooth_scrolling")
 
     // Profile/Sync
-    private val KEY_ACTIVE_PROFILE_ID = PreferencesKeys.string("active_profile_id")
-    private val KEY_SYNC_ENABLED = PreferencesKeys.boolean("sync_enabled")
-    private val KEY_SYNC_PASSPHRASE_SET = PreferencesKeys.boolean("sync_passphrase_set")
+    private val KEY_ACTIVE_PROFILE_ID = stringPreferencesKey("active_profile_id")
+    private val KEY_SYNC_ENABLED = booleanPreferencesKey("sync_enabled")
+    private val KEY_SYNC_PASSPHRASE_SET = booleanPreferencesKey("sync_passphrase_set")
 
     // App icon (Sunrise, Sunrise Dark, Paper, Ink)
-    private val KEY_APP_ICON = PreferencesKeys.string("app_icon")
+    private val KEY_APP_ICON = stringPreferencesKey("app_icon")
 
     // Patreon/Patron
-    private val KEY_PATRON_ACTIVE = PreferencesKeys.boolean("patron_active")
-    private val KEY_PATRON_ENTITLEMENTS = PreferencesKeys.string("patron_entitlements")
+    private val KEY_PATRON_ACTIVE = booleanPreferencesKey("patron_active")
+    private val KEY_PATRON_ENTITLEMENTS = stringPreferencesKey("patron_entitlements")
 
     // Install ID (for telemetry)
-    private val KEY_INSTALL_ID = PreferencesKeys.string("install_id")
-    private val KEY_SESSION_ID = PreferencesKeys.string("session_id")
+    private val KEY_INSTALL_ID = stringPreferencesKey("install_id")
+    private val KEY_SESSION_ID = stringPreferencesKey("session_id")
 
     // Companion for singleton
     companion object {
@@ -87,8 +91,7 @@ class Repository private constructor(
         fun getInstance(context: Context): Repository {
             return INSTANCE ?: synchronized(this) {
                 val database = AppDatabase.getInstance(context)
-                val dataStore = context.preferencesDataStore("blanc_preferences")
-                val instance = Repository(context, database, dataStore, Gson())
+                val instance = Repository(context.applicationContext, database, context.applicationContext.dataStore, Gson())
                 INSTANCE = instance
                 instance
             }
@@ -96,12 +99,11 @@ class Repository private constructor(
 
         fun createForTesting(context: Context): Repository {
             val database = AppDatabase.createInMemory(context)
-            val dataStore = context.preferencesDataStore("blanc_preferences_test")
-            return Repository(context, database, dataStore, Gson())
+            return Repository(context.applicationContext, database, context.applicationContext.dataStore, Gson())
         }
 
         fun clearInstance() {
-            INSTANCE?.database?.close()
+            INSTANCE?.close()
             AppDatabase.clearInstance()
             INSTANCE = null
         }
@@ -128,8 +130,6 @@ class Repository private constructor(
                 throw e
             }
         }
-
-    private fun emptyPreferences(): Preferences = Preferences.EMPTY
 
     // ===== Public Settings API =====
 
@@ -512,13 +512,7 @@ class Repository private constructor(
 
     /** Saves session state. */
     suspend fun saveSessionState(state: SessionState) {
-        database.runInTransaction {
-            state.windows.forEach { windowWithTabs ->
-                tabDao.insertWindow(windowWithTabs.window)
-                tabDao.insertAll(windowWithTabs.tabs)
-                tabDao.insertAll(windowWithTabs.groups.map { it as TabGroupEntity })
-            }
-        }
+        tabDao.saveSession(state)
     }
 
     /** Clears session for a profile. */

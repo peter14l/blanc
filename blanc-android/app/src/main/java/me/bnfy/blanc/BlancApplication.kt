@@ -8,6 +8,8 @@ import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 import me.bnfy.blanc.adblock.AdblockEngine
 import me.bnfy.blanc.storage.Repository
 import me.bnfy.blanc.tab.TabManager
@@ -137,7 +139,7 @@ class BlancApplication : Application() {
         scope.cancel()
         _tabManager?.destroy()
         _adblockEngine?.shutdown()
-        _repository?.database?.close()
+        _repository?.close()
     }
 }
 
@@ -149,7 +151,7 @@ class AppLifecycleObserver : androidx.lifecycle.DefaultLifecycleObserver {
         BlancApplication.getInstance().tabManager.onResume()
     }
     
-    override fun onStop(owner: androidx.lifecycle.LifecycleObserver) {
+    override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
         BlancApplication.getInstance().tabManager.onPause()
     }
 }

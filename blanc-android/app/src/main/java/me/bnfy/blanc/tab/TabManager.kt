@@ -13,6 +13,9 @@ import androidx.lifecycle.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import me.bnfy.blanc.adblock.AdblockEngine
+import me.bnfy.blanc.storage.ClosedTabEntity
+import me.bnfy.blanc.ui.ContentWebView
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -61,7 +64,7 @@ class TabManager(
     private val _activeWindowId = MutableStateFlow<String>("default")
     val activeWindowIdFlow: StateFlow<String> = _activeWindowId.asStateFlow()
 
-    private val mainHandler = Handler(Looper.getMainLooper())
+    val mainHandler = Handler(Looper.getMainLooper())
 
     private var onTabCountChanged: ((Int) -> Unit)? = null
 
@@ -444,6 +447,8 @@ class TabManager(
             true
         }
     }
+
+    fun navigate(tabId: String, url: String): Boolean = navigateTo(tabId, url)
 
     /**
      * Reloads the active tab.
@@ -1063,19 +1068,20 @@ class TabManager(
             val webView = factory.createWebView(webViewClient, webChromeClient)
             factory.configurePrivateCookies(webView)
 
+            val historyList = stringToHistory(entry.navigationHistory)
             val tab = Tab(
                 id = entry.tabId,
                 webView = webView,
                 url = entry.url,
-                title = entry.title,
+                title = entry.title ?: "",
                 isPrivate = isPrivate,
                 isPinned = entry.isPinned,
                 groupId = entry.groupId,
                 position = entry.position,
-                history = stringToHistory(entry.navigationHistory),
+                history = historyList,
                 historyIndex = entry.historyIndex,
-                canGoBack = entry.canGoBack,
-                canGoForward = entry.canGoForward,
+                canGoBack = entry.historyIndex > 0,
+                canGoForward = entry.historyIndex < historyList.size - 1,
                 windowId = windowId,
                 profileId = profileId,
                 workspaceId = windows[windowId]?.workspaceId
@@ -1111,7 +1117,7 @@ class TabManager(
                 .removePrefix("[")
                 .removeSuffix("]")
                 .split(",")
-                .map { it.trim().removeSurrounding('"') }
+                .map { it.trim().removeSurrounding("\"") }
                 .filter { it.isNotBlank() }
                 .toMutableList()
         } catch (e: Exception) {
@@ -1213,16 +1219,16 @@ data class Window(
     val id: String = UUID.randomUUID().toString(),
     val label: String,
     val profileId: String,
-    val activeTabId: String? = null,
+    var activeTabId: String? = null,
     val tabIds: MutableList<String> = mutableListOf(),
     val groupIds: MutableList<String> = mutableListOf(),
-    val workspaceId: String? = null,
+    var workspaceId: String? = null,
     val boundsX: Float = 0f,
     val boundsY: Float = 0f,
     val boundsWidth: Float = 0f,
     val boundsHeight: Float = 0f,
-    val isMaximized: Boolean = false,
-    val isHidden: Boolean = false,
+    var isMaximized: Boolean = false,
+    var isHidden: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    var updatedAt: Long = System.currentTimeMillis()
 )

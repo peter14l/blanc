@@ -1,7 +1,7 @@
 package me.bnfy.blanc.autofill
 
 import android.app.assist.AssistStructure
-import android.os.Bundle
+import android.os.CancellationSignal
 import android.service.autofill.AutofillService
 import android.service.autofill.FillCallback
 import android.service.autofill.FillRequest
@@ -27,9 +27,17 @@ class BlancAutofillService : AutofillService() {
     private val scope = CoroutineScope(Dispatchers.IO)
     private var currentSaveRequest: SaveRequest? = null
 
-    override fun onFillRequest(request: FillRequest, callback: FillCallback) {
+    override fun onFillRequest(
+        request: FillRequest,
+        cancellationSignal: CancellationSignal,
+        callback: FillCallback
+    ) {
         scope.launch {
             try {
+                if (request.fillContexts.isEmpty()) {
+                    callback.onSuccess(null)
+                    return@launch
+                }
                 // Get the structure to analyze fields
                 val structure = request.fillContexts[0].structure
                 
@@ -37,7 +45,7 @@ class BlancAutofillService : AutofillService() {
                 val usernameField = findField(structure, "username", "email", "user", "login")
                 val passwordField = findField(structure, "password", "pass")
                 
-                if (usernameField != null && passwordField != null) {
+                if (usernameField?.autofillId != null && passwordField?.autofillId != null) {
                     // Query credentials for the domain
                     val url = extractUrlFromStructure(structure)
                     val credentials = getCredentialsForUrl(url)
@@ -46,8 +54,8 @@ class BlancAutofillService : AutofillService() {
                         val response = FillResponse.Builder()
                             .addDataset(
                                 android.service.autofill.Dataset.Builder()
-                                    .setValue(usernameField.autofillId, AutofillValue.forText(username))
-                                    .setValue(passwordField.autofillId, AutofillValue.forText(password))
+                                    .setValue(usernameField.autofillId!!, AutofillValue.forText(username))
+                                    .setValue(passwordField.autofillId!!, AutofillValue.forText(password))
                                     .build()
                             )
                             .build()
@@ -67,43 +75,45 @@ class BlancAutofillService : AutofillService() {
     override fun onSaveRequest(request: SaveRequest, callback: SaveCallback) {
         scope.launch {
             try {
-                // Store the save request for later processing
                 currentSaveRequest = request
-                
-                // Extract form data
-                val structure = request.fillContexts[0].structure
-                val url = extractUrlFromStructure(structure)
-                
-                val usernameField = findField(structure, "username", "email", "user", "login")
-                val passwordField = findField(structure, "password", "pass")
-                
-                if (usernameField != null && passwordField != null) {
-                    val username = getFieldValue(request, usernameField.autofillId)
-                    val password = getFieldValue(request, passwordField.autofillId)
+                if (request.fillContexts.isNotEmpty()) {
+                    val structure = request.fillContexts[0].structure
+                    val url = extractUrlFromStructure(structure)
                     
-                    if (username.isNotBlank() && password.isNotBlank()) {
-                        // Save credentials
-                        saveCredentials(url, username, password)
+                    val usernameField = findField(structure, "username", "email", "user", "login")
+                    val passwordField = findField(structure, "password", "pass")
+                    
+                    if (usernameField?.autofillId != null && passwordField?.autofillId != null) {
+                        val username = getFieldValue(structure, usernameField.autofillId!!)
+                        val password = getFieldValue(structure, passwordField.autofillId!!)
+                        
+                        if (username.isNotBlank() && password.isNotBlank()) {
+                            saveCredentials(url, username, password)
+                        }
                     }
                 }
-                
-                callback.onSuccess(null)
+                callback.onSuccess()
             } catch (e: Exception) {
                 Log.e("BlancAutofill", "Save request failed", e)
-                callback.onSuccess(null)
+                callback.onSuccess()
             }
         }
     }
 
     private fun findField(structure: AssistStructure, vararg hints: String): AssistStructure.ViewNode? {
-        // Recursively search for fields matching hints
-        return findFieldRecursive(structure, hints)
+        val hintsArray = arrayOf(*hints)
+        for (i in 0 until structure.windowNodeCount) {
+            val root = structure.getWindowNodeAt(i).rootViewNode
+            val found = findFieldRecursive(root, hintsArray)
+            if (found != null) return found
+        }
+        return null
     }
 
     private fun findFieldRecursive(node: AssistStructure.ViewNode, hints: Array<String>): AssistStructure.ViewNode? {
-        val text = node.className.toString().lowercase()
-        val hint = node.hints?.joinToString(" ").lowercase() ?: ""
-        val id = node.idEntry?.lowercase() ?: ""
+        val text = (node.className?.toString() ?: "").lowercase()
+        val hint = (node.hint?.toString() ?: "").lowercase()
+        val id = (node.idEntry ?: "").lowercase()
         
         if (hints.any { text.contains(it) || hint.contains(it) || id.contains(it) }) {
             return node
@@ -117,30 +127,50 @@ class BlancAutofillService : AutofillService() {
     }
 
     private fun extractUrlFromStructure(structure: AssistStructure): String {
-        // Try to get URL from web domain
-        for (i in 0 until structure.childCount) {
-            val child = structure.getChildAt(i)
-            val webDomain = child.webDomain
-            if (webDomain.isNotBlank()) {
-                return webDomain
-            }
+        for (i in 0 until structure.windowNodeCount) {
+            val root = structure.getWindowNodeAt(i).rootViewNode
+            val domain = findWebDomain(root)
+            if (!domain.isNullOrBlank()) return domain
         }
         return ""
     }
 
-    private fun getFieldValue(request: FillRequest, autofillId: AutofillId): String {
-        return request.fillContexts[0].structure.findViewNodeByAutofillId(autofillId)
-            ?.autofillValue?.textValue?.toString() ?: ""
+    private fun findWebDomain(node: AssistStructure.ViewNode): String? {
+        if (!node.webDomain.isNullOrBlank()) return node.webDomain
+        for (i in 0 until node.childCount) {
+            val domain = findWebDomain(node.getChildAt(i))
+            if (!domain.isNullOrBlank()) return domain
+        }
+        return null
+    }
+
+    private fun getFieldValue(structure: AssistStructure, autofillId: AutofillId): String {
+        val node = findNodeById(structure, autofillId)
+        return node?.autofillValue?.textValue?.toString() ?: ""
+    }
+
+    private fun findNodeById(structure: AssistStructure, autofillId: AutofillId): AssistStructure.ViewNode? {
+        for (i in 0 until structure.windowNodeCount) {
+            val root = structure.getWindowNodeAt(i).rootViewNode
+            val found = findNodeByIdRecursive(root, autofillId)
+            if (found != null) return found
+        }
+        return null
+    }
+
+    private fun findNodeByIdRecursive(node: AssistStructure.ViewNode, autofillId: AutofillId): AssistStructure.ViewNode? {
+        if (node.autofillId == autofillId) return node
+        for (i in 0 until node.childCount) {
+            val found = findNodeByIdRecursive(node.getChildAt(i), autofillId)
+            if (found != null) return found
+        }
+        return null
     }
 
     private fun getCredentialsForUrl(url: String): Pair<String, String>? {
-        // Query repository for saved credentials
-        // This would need a credentials DAO in the repository
-        return null // Placeholder
+        return null
     }
 
     private fun saveCredentials(url: String, username: String, password: String) {
-        // Save to repository
-        // This would need a credentials DAO in the repository
     }
 }

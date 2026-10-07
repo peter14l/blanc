@@ -143,9 +143,6 @@ class AdblockWebViewClientDecorator(
     override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) =
         delegate.onPageStarted(view, url, favicon)
 
-    override fun onReceivedTitle(view: WebView?, title: String?) =
-        delegate.onReceivedTitle(view, title)
-
     override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?) =
         delegate.onReceivedError(view, request, error)
 

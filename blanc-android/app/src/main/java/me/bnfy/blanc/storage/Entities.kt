@@ -229,7 +229,15 @@ data class DownloadEntity(
     val completedAt: Long = 0,
     val profileId: String = "personal",
     val isPrivate: Boolean = false
-)
+) {
+    companion object {
+        const val STATE_PENDING = 0
+        const val STATE_IN_PROGRESS = 1
+        const val STATE_COMPLETED = 2
+        const val STATE_CANCELLED = 3
+        const val STATE_FAILED = 4
+    }
+}
 
 /**
  * Profile entity for user profiles.

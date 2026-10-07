@@ -9,17 +9,15 @@ import android.os.Message
 import android.util.Log
 import android.view.View
 import android.webkit.GeolocationPermissions
+import android.webkit.JsPromptResult
+import android.webkit.JsResult
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
-import android.webkit.WebAuthnClient
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
-import androidx.biometric.BiometricPrompt
-import androidx.core.content.ContextCompat
-import java.util.concurrent.Executor
 
 /**
  * WebChromeClient implementation for handling UI interactions, permissions, and window management.
@@ -45,41 +43,10 @@ class TabWebChromeClient(
     private var customView: View? = null
     private var customViewCallback: CustomViewCallback? = null
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
-    private var fileChooserCallbackSingle: ValueCallback<Uri>? = null
-    
-    // WebAuthn
-    private var webAuthnClient: WebAuthnClient? = null
-    private var biometricPrompt: BiometricPrompt? = null
 
     companion object {
         private const val TAG = "TabWebChromeClient"
         private const val FILE_CHOOSER_REQUEST_CODE = 0x1001
-    }
-
-    init {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            webAuthnClient = WebAuthnClient(activity)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            biometricPrompt = BiometricPrompt(
-                activity as androidx.fragment.app.FragmentActivity,
-                ContextCompat.getMainExecutor(activity),
-                object : BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                        // WebAuthn authentication succeeded
-                        // The WebAuthnClient handles the rest
-                    }
-                    
-                    override fun onAuthenticationFailed() {
-                        // WebAuthn authentication failed
-                    }
-                    
-                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                        // WebAuthn authentication error
-                    }
-                }
-            )
-        }
     }
 
     /** Called when page loading progress changes. */
@@ -177,53 +144,6 @@ class TabWebChromeClient(
         }
     }
 
-    /** Handles WebAuthn / Passkey requests (API 24+). */
-    @RequiresApi(Build.VERSION_CODES.N)
-    override fun onReceivedWebAuthnRequest(
-        view: WebView?,
-        request: WebAuthnClient.WebAuthnRequest?,
-        callback: WebAuthnClient.Callback?
-    ) {
-        request?.let { webAuthnRequest ->
-            callback?.let { webAuthnCallback ->
-                // Handle WebAuthn request with biometric authentication
-                handleWebAuthnRequest(webAuthnRequest, webAuthnCallback)
-            }
-        }
-    }
-    
-    /**
-     * Handles WebAuthn authentication requests using biometric prompt.
-     */
-    @RequiresApi(Build.VERSION_CODES.N)
-    private fun handleWebAuthnRequest(
-        request: WebAuthnClient.WebAuthnRequest,
-        callback: WebAuthnClient.Callback
-    ) {
-        // For WebAuthn, we need to show biometric prompt
-        // The WebAuthnClient handles the actual cryptographic operations
-        // We just need to trigger the biometric authentication
-        
-        biometricPrompt?.authenticate(
-            BiometricPrompt.PromptInfo.Builder()
-                .setTitle("Verify your identity")
-                .setSubtitle("Use biometric to authenticate with ${request.origin}")
-                .setNegativeButtonText("Cancel")
-                .build(),
-            object : BiometricPrompt.CryptoObject(null) {
-                // No crypto object needed for basic WebAuthn
-            }
-        ) { result ->
-            // The WebAuthnClient will handle the response through the callback
-            // We just need to signal that user authentication completed
-            callback.onWebAuthnAuthenticationComplete(
-                request.requestId,
-                WebAuthnClient.Result.SUCCESS,
-                null
-            )
-        }
-    }
-
     // ===== Window Management =====
 
     /** Handles window.open() and target="_blank" links. */
@@ -234,15 +154,19 @@ class TabWebChromeClient(
         resultMsg: Message?
     ): Boolean {
         // Create a new tab for the popup
-        val newTab = tabManager.createTab(url = "about:blank", isPrivate = tab.isPrivate)
+        val newTab = if (tab.isPrivate) {
+            tabManager.createPrivateTab("about:blank")
+        } else {
+            tabManager.createTab("about:blank")
+        }
 
         if (newTab != null) {
             // Set up the new WebView as the target
             val targetWebView = newTab.webView
             if (targetWebView != null) {
-                val transport = resultMsg.obj as? WebView.WebViewTransport
+                val transport = resultMsg?.obj as? WebView.WebViewTransport
                 transport?.webView = targetWebView
-                resultMsg.sendToTarget()
+                resultMsg?.sendToTarget()
             }
             return true
         }
@@ -272,32 +196,6 @@ class TabWebChromeClient(
 
         // Request file picker via bridge/activity
         requestFileChooser(fileChooserParams)
-        return true
-    }
-
-    /** Legacy file chooser (API < 21). */
-    @Suppress("DEPRECATION")
-    override fun onShowFileChooser(
-        webView: WebView?,
-        valueCallback: ValueCallback<Uri>?,
-        fileChooserParams: FileChooserParams?
-    ): Boolean {
-        fileChooserCallbackSingle = valueCallback
-        requestFileChooser(fileChooserParams)
-        return true
-    }
-
-    /** Legacy file chooser (API < 21, older signature). */
-    @Suppress("DEPRECATION")
-    override fun onShowFileChooser(
-        webView: WebView?,
-        valueCallback: ValueCallback<Uri>?,
-        acceptType: String?,
-        capture: String?
-    ): Boolean {
-        fileChooserCallbackSingle = valueCallback
-        // Trigger file picker
-        requestLegacyFileChooser(acceptType, capture)
         return true
     }
 
@@ -378,17 +276,10 @@ class TabWebChromeClient(
                 }
 
                 override fun onResultSingle(uri: Uri?) {
-                    fileChooserCallbackSingle?.onReceiveValue(uri)
-                    fileChooserCallbackSingle = null
+                    fileChooserCallback?.onReceiveValue(uri?.let { arrayOf(it) })
+                    fileChooserCallback = null
                 }
             }
         )
-    }
-
-    /**
-     * Legacy file chooser request.
-     */
-    private fun requestLegacyFileChooser(acceptType: String?, capture: String?) {
-        requestFileChooser(null)
     }
 }

@@ -387,11 +387,21 @@ fn mobile_can_go_forward(app: AppHandle) -> Result<bool, String> {
 #[tauri::command]
 fn find_in_page(
     app: AppHandle,
-    tab_id: String,
+    state: State<'_, AppState>,
+    tab_id: Option<String>,
     query: String,
     forward: bool,
 ) -> Result<webview::FindResult, String> {
-    webview::find_in_page(&app, &tab_id, &query, forward)
+    let resolved_tab = match tab_id {
+        Some(t) => t,
+        None => {
+            let browser = state.browser.lock().map_err(|e| e.to_string())?;
+            browser.get_active_tab_for_window("main")
+                .map(|t| t.id)
+                .ok_or_else(|| "No active tab".to_string())?
+        }
+    };
+    webview::find_in_page(&app, &resolved_tab, &query, forward)
 }
 
 // -----------------------------------------------------------------------------
@@ -736,7 +746,7 @@ fn toggle_adblock(
     enabled: bool,
 ) -> Result<BlockingStatus, String> {
     let status = {
-        let mut adblock = state.adblock.lock().map_err(|e| e.to_string())?;
+        let adblock = state.adblock.lock().map_err(|e| e.to_string())?;
         adblock.set_enabled(enabled);
         adblock.get_status()
     };
@@ -750,14 +760,14 @@ fn toggle_adblock(
 
 #[tauri::command]
 fn adblock_add_exception(state: State<'_, AppState>, hostname: String) -> Result<(), String> {
-    let mut adblock = state.adblock.lock().map_err(|e| e.to_string())?;
+    let adblock = state.adblock.lock().map_err(|e| e.to_string())?;
     adblock.add_exception(&hostname);
     Ok(())
 }
 
 #[tauri::command]
 fn adblock_remove_exception(state: State<'_, AppState>, hostname: String) -> Result<(), String> {
-    let mut adblock = state.adblock.lock().map_err(|e| e.to_string())?;
+    let adblock = state.adblock.lock().map_err(|e| e.to_string())?;
     adblock.remove_exception(&hostname);
     Ok(())
 }

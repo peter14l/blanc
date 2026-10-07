@@ -1,30 +1,37 @@
 package me.bnfy.blanc.ui.pages
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.bnfy.blanc.R
@@ -67,7 +74,7 @@ fun DownloadsPage(
                                 .fillMaxWidth()
                                 .padding(end = 16.dp)
                                 .wrapContentWidth()
-                                .combinedClickable(onClick = onClearCompleted)
+                                .clickable(onClick = onClearCompleted)
                         )
                     }
                 }
@@ -81,11 +88,11 @@ fun DownloadsPage(
                     subtitle = "Your downloaded files will appear here"
                 )
             } else {
-                androidx.compose.foundation.lazy.LazyColumn(
+                LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(vertical = 16.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp, horizontal = 16.dp),
+                    contentPadding = PaddingValues(vertical = 8.dp, horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(filteredDownloads) { download ->
@@ -123,7 +130,7 @@ fun DownloadItemCard(
     Card(
         modifier = Modifier
             .fillMaxWidth(),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
+        colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
@@ -143,13 +150,13 @@ fun DownloadItemCard(
                     Text(
                         text = download.fileName,
                         maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyLarge
                     )
                     Text(
                         text = download.url,
                         maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp
                     )
@@ -164,8 +171,8 @@ fun DownloadItemCard(
             
             // Progress bar (for in-progress)
             if (isInProgress) {
-                ProgressIndicator(
-                    progress = progress / 100f,
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.primaryContainer
@@ -205,7 +212,7 @@ fun DownloadItemCard(
                         Icon(painterResource(R.drawable.ic_refresh), contentDescription = null)
                         Text("Retry")
                     }
-                    Button(onClick = onCancel, colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    Button(onClick = onCancel, colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer,
                         contentColor = MaterialTheme.colorScheme.onErrorContainer
                     )) {
@@ -219,7 +226,7 @@ fun DownloadItemCard(
                 }
                 
                 if (isComplete || isFailed || isCancelled) {
-                    Button(onClick = onCancel, colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    Button(onClick = onCancel, colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer,
                         contentColor = MaterialTheme.colorScheme.onErrorContainer
                     )) {
@@ -245,7 +252,7 @@ fun DownloadStatusBadge(state: Int, progress: Int) {
     Surface(
         modifier = Modifier
             .height(20.dp)
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp)),
+            .clip(RoundedCornerShape(10.dp)),
         color = color.copy(alpha = 0.12f)
     ) {
         Text(

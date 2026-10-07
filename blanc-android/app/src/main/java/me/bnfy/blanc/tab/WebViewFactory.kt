@@ -47,6 +47,10 @@ class WebViewFactory private constructor(
             setWebViewClient(webViewClient)
             setWebChromeClient(webChromeClient)
 
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                overScrollMode = WebView.OVER_SCROLL_NEVER
+            }
+
             // Apply all settings
             configureSettings(settings)
 
@@ -54,9 +58,6 @@ class WebViewFactory private constructor(
             if (isPrivate) {
                 configurePrivateMode()
             }
-
-            // Blanc-specific defaults
-            configureBlancDefaults()
         }
         return webView
     }
@@ -69,8 +70,6 @@ class WebViewFactory private constructor(
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.databaseEnabled = true
-        settings.setAppCacheEnabled(true)
-        settings.setAppCachePath(context.cacheDir.absolutePath)
         settings.cacheMode = WebSettings.LOAD_DEFAULT
 
         // Mixed content - allow HTTPS pages to load HTTP resources (with warning)
@@ -80,7 +79,7 @@ class WebViewFactory private constructor(
         // Viewport and zoom
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
-        settings.supportZoom = true
+        settings.setSupportZoom(true)
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
 
@@ -105,9 +104,6 @@ class WebViewFactory private constructor(
         settings.saveFormData = !isPrivate
         settings.savePassword = !isPrivate
 
-        // Hardware acceleration
-        settings.renderPriority = WebSettings.RenderPriority.HIGH
-
         // Layout algorithm
         settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
 
@@ -116,32 +112,17 @@ class WebViewFactory private constructor(
             settings.safeBrowsingEnabled = true
         }
 
-        // Prevent overscroll glow on Android 12+
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            settings.overScrollMode = WebView.OVER_SCROLL_NEVER
-        }
+        // Blanc defaults
+        settings.setGeolocationEnabled(false)
+        settings.javaScriptCanOpenWindowsAutomatically = false
+        settings.setSupportMultipleWindows(false)
     }
 
     /**
      * Applies private/incognito mode specific configuration.
      */
     private fun configurePrivateMode() {
-        // Private mode settings are handled at the WebView level via
-        // a separate WebViewDatabase and CookieManager configuration.
-        // The WebView itself doesn't have a "private mode" flag,
-        // so we rely on separate data directories and session handling.
-    }
-
-    /**
-     * Applies Blanc-specific default configurations.
-     */
-    private fun configureBlancDefaults() {
-        // Disable unnecessary features for privacy/performance
-        settings?.let {
-            it.setGeolocationEnabled(false) // Requires explicit permission
-            it.javaScriptCanOpenWindowsAutomatically = false
-            it.setSupportMultipleWindows(false)
-        }
+        // Handled at CookieManager level
     }
 
     /**

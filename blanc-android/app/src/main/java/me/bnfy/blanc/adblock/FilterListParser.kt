@@ -95,7 +95,7 @@ class FilterListParser {
         val pattern = parseNetworkPattern(filterLine)
         if (pattern == null) return null
 
-        val domains = options["domain"]?.split(",").map { it.trim() }.filter { it.isNotEmpty() } ?: emptyList()
+        val domains = options["domain"]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
         val thirdParty = options.containsKey("third-party")
         val firstParty = options.containsKey("first-party")
         val script = options.containsKey("script")
@@ -128,7 +128,7 @@ class FilterListParser {
                 image = image,
                 stylesheet = stylesheet,
                 xmlhttprequest = xmlhttprequest,
-                object = objectType,
+                `object` = objectType,
                 subdocument = subdocument,
                 document = document,
                 elemhide = elemhide,
@@ -272,7 +272,7 @@ data class Filter(
         if (options.image && requestType != "image") return false
         if (options.stylesheet && requestType != "stylesheet") return false
         if (options.xmlhttprequest && requestType != "xmlhttprequest") return false
-        if (options.object && requestType != "object") return false
+        if (options.`object` && requestType != "object") return false
         if (options.subdocument && requestType != "subdocument") return false
         if (options.document && requestType != "document") return false
         if (options.elemhide && requestType != "elemhide") return false
@@ -307,7 +307,7 @@ data class Filter(
     }
 
     private fun matchesDomain(host: String, domain: String): Boolean {
-        val cleanDomain = domain.trimStart("~").lowercase() // ~domain means exclude
+        val cleanDomain = domain.removePrefix("~").lowercase() // ~domain means exclude
         val isExclude = domain.startsWith("~")
         val matches = host == cleanDomain || host.endsWith(".${cleanDomain}")
         return if (isExclude) !matches else matches
@@ -349,7 +349,7 @@ data class FilterOptions(
     val image: Boolean = false,
     val stylesheet: Boolean = false,
     val xmlhttprequest: Boolean = false,
-    val object: Boolean = false,
+    val `object`: Boolean = false,
     val subdocument: Boolean = false,
     val document: Boolean = false,
     val elemhide: Boolean = false,

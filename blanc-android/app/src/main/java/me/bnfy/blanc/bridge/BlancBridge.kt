@@ -7,10 +7,15 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 import me.bnfy.blanc.storage.ClosedTabEntity
+import me.bnfy.blanc.storage.DownloadEntity
+import me.bnfy.blanc.storage.Favorite
+import me.bnfy.blanc.storage.HistoryEntry
+import me.bnfy.blanc.storage.PermissionDecisionEntity
 import me.bnfy.blanc.tab.Tab
 import me.bnfy.blanc.tab.TabGroup
 import me.bnfy.blanc.tab.TabManager
@@ -32,15 +37,15 @@ class BlancBridge(
     private val tabManager: TabManager,
     private val adblockEngine: AdblockEngine,
     private val lifecycleOwner: LifecycleOwner
-) {
+) : me.bnfy.blanc.tab.BlancBridge {
 
     private val gson = Gson()
     private val pendingCallbacks = ConcurrentHashMap<String, (String) -> Unit>()
-    private val scope = CoroutineScope(Dispatchers.Main + lifecycleOwner.lifecycle.coroutineContext)
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     // ===== Helper Methods =====
 
-    private suspend fun <T> asyncResult(block: suspend () -> T): String = withContext(Dispatchers.IO) {
+    private fun <T> asyncResult(block: suspend () -> T): String = runBlocking(Dispatchers.IO) {
         try {
             val result = block()
             gson.toJson(BridgeProtocol.Response(java.util.UUID.randomUUID().toString(), result))
@@ -57,7 +62,7 @@ class BlancBridge(
         scope.launch { block() }
     }
 
-    private fun getActiveProfileId(): String {
+    private suspend fun getActiveProfileId(): String {
         return repository.activeProfileId.first()
     }
 
@@ -125,9 +130,9 @@ class BlancBridge(
             } else {
                 tabManager.createTab(finalUrl)
             }
-            tab?.let {
-                group?.let { tabManager.addTabToGroup(it.id, group) }
-                TabRecordBuilder.fromTab(it)
+            tab?.let { newTab ->
+                group?.let { tabManager.addTabToGroup(newTab.id, it) }
+                TabRecordBuilder.fromTab(newTab)
             } ?: throw IllegalStateException("Failed to create tab")
         }
     }
@@ -352,9 +357,10 @@ class BlancBridge(
     @JavascriptInterface
     fun reopenClosedTab(entryId: String, windowId: String): String {
         return asyncResult {
-            val entry = repository.closedTabDao.getById(entryId).await()
+            val entry = repository.closedTabDao.getById(entryId)
                 ?: throw IllegalArgumentException("Closed tab entry not found: $entryId")
             val tab = tabManager.reopenClosedTab(entry, windowId)
+                ?: throw IllegalStateException("Failed to reopen tab $entryId")
             TabRecordBuilder.fromTab(tab)
         }
     }
@@ -365,7 +371,7 @@ class BlancBridge(
      */
     @JavascriptInterface
     fun forgetClosedTab(entryId: String): String {
-        asyncVoid { repository.closedTabDao.deleteById(entryId).await() }
+        asyncVoid { repository.closedTabDao.deleteById(entryId) }
         return gson.toJson(BridgeProtocol.Response(java.util.UUID.randomUUID().toString()))
     }
 
@@ -375,7 +381,7 @@ class BlancBridge(
      */
     @JavascriptInterface
     fun clearClosedTabs(windowId: String): String {
-        asyncVoid { repository.closedTabDao.clearByWindow(windowId).await() }
+        asyncVoid { repository.closedTabDao.clearByWindow(windowId) }
         return gson.toJson(BridgeProtocol.Response(java.util.UUID.randomUUID().toString()))
     }
 
@@ -469,8 +475,8 @@ class BlancBridge(
     fun historyList(limit: Int, offset: Int, query: String?): String {
         return asyncResult {
             val profileId = getActiveProfileId()
-            val entries = repository.historyDao.getHistoryPage(profileId, limit, offset, query).await()
-            val total = repository.historyDao.getTotalCount(profileId, query).await()
+            val entries = repository.historyDao.getHistoryPage(profileId, limit, offset, query)
+            val total = repository.historyDao.getTotalCount(profileId, query)
             BridgeProtocol.HistoryPage(
                 entries.map { HistoryEntryBuilder.fromEntry(it) },
                 total
@@ -489,7 +495,7 @@ class BlancBridge(
         return asyncResult {
             val profileId = getActiveProfileId()
             repository.recordHistoryVisit(url, title, null, profileId)
-            val entry = repository.historyDao.getByUrl(url, profileId).await()
+            val entry = repository.historyDao.getByUrl(url, profileId)
             entry?.let { HistoryEntryBuilder.fromEntry(it) }
         }
     }
@@ -500,7 +506,7 @@ class BlancBridge(
      */
     @JavascriptInterface
     fun historyRemove(id: String): String {
-        asyncVoid { repository.historyDao.deleteById(id.toLong()).await() }
+        asyncVoid { repository.historyDao.deleteById(id.toLong()) }
         return gson.toJson(BridgeProtocol.Response(java.util.UUID.randomUUID().toString()))
     }
 
@@ -509,7 +515,7 @@ class BlancBridge(
      */
     @JavascriptInterface
     fun historyClear(): String {
-        asyncVoid { repository.historyDao.clearHistory(getActiveProfileId()).await() }
+        asyncVoid { repository.historyDao.clearHistory(getActiveProfileId()) }
         return gson.toJson(BridgeProtocol.Response(java.util.UUID.randomUUID().toString()))
     }
 
@@ -523,7 +529,7 @@ class BlancBridge(
     fun favoritesList(): String {
         return asyncResult {
             val profileId = getActiveProfileId()
-            repository.favoriteDao.getAll(profileId).await().map { FavoriteBuilder.fromFavorite(it) }
+            repository.favoriteDao.getAll(profileId).map { FavoriteBuilder.fromFavorite(it) }
         }
     }
 
@@ -551,7 +557,7 @@ class BlancBridge(
                 profileId = getActiveProfileId(),
                 isPinned = favorite.isPinned
             )
-            repository.favoriteDao.insert(entity).await()
+            repository.favoriteDao.insert(entity)
             favorite
         }
     }
@@ -581,7 +587,7 @@ class BlancBridge(
                 profileId = getActiveProfileId(),
                 isPinned = favorite.isPinned
             )
-            repository.favoriteDao.update(entity).await()
+            repository.favoriteDao.update(entity)
             favorite.copy(id = id, updatedAt = entity.updatedAt)
         }
     }
@@ -592,7 +598,7 @@ class BlancBridge(
      */
     @JavascriptInterface
     fun favoritesRemove(id: String): String {
-        asyncVoid { repository.favoriteDao.deleteById(id).await() }
+        asyncVoid { repository.favoriteDao.deleteById(id) }
         return gson.toJson(BridgeProtocol.Response(java.util.UUID.randomUUID().toString()))
     }
 
@@ -720,7 +726,7 @@ class BlancBridge(
     fun permissionListDecisions(): String {
         return asyncResult {
             val profileId = getActiveProfileId()
-            repository.profileDao.getPermissionsByProfile(profileId).await().map { PermissionBuilder.fromDecision(it) }
+            repository.profileDao.getPermissionsByProfile(profileId).map { PermissionBuilder.fromDecision(it) }
         }
     }
 
@@ -741,7 +747,7 @@ class BlancBridge(
                 isRemembered = decision != 0,
                 profileId = profileId
             )
-            repository.profileDao.insertPermission(entity).await()
+            repository.profileDao.insertPermission(entity)
         }
         return gson.toJson(BridgeProtocol.Response(java.util.UUID.randomUUID().toString()))
     }
@@ -772,7 +778,7 @@ class BlancBridge(
     fun downloadsList(): String {
         return asyncResult {
             val profileId = getActiveProfileId()
-            repository.downloadDao.getByProfile(profileId).await().map { DownloadBuilder.fromDownload(it) }
+            repository.downloadDao.getByProfile(profileId).map { DownloadBuilder.fromDownload(it) }
         }
     }
 
@@ -811,7 +817,7 @@ class BlancBridge(
      */
     @JavascriptInterface
     fun downloadsClearCompleted(): String {
-        asyncVoid { repository.downloadDao.clearCompletedByProfile(getActiveProfileId()).await() }
+        asyncVoid { repository.downloadDao.clearCompletedByProfile(getActiveProfileId()) }
         return gson.toJson(BridgeProtocol.Response(java.util.UUID.randomUUID().toString()))
     }
 
@@ -917,7 +923,7 @@ object TabRecordBuilder {
             isLoading = tab.isLoading,
             progress = tab.progress,
             blockedCount = tab.blockedCount,
-            isActive = tab.id == tab.windowId?.let { TabManager.getInstance(null)?.getActiveTabId() }
+            isActive = tab.isActive
         )
     }
 }
@@ -937,7 +943,7 @@ object WindowProjectionBuilder {
             tabIds = tabs.map { it.id },
             groups = groups.map { GroupProjectionBuilder.fromGroup(it) },
             overlay = null, // Overlay state managed by React
-            closedTabs = [], // Would come from ClosedTabDao
+            closedTabs = emptyList(), // Would come from ClosedTabDao
             workspaceId = tabs.firstOrNull()?.workspaceId,
             permissionPromptOpen = false
         )

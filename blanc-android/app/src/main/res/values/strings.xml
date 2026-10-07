@@ -54,7 +54,7 @@
     <!-- Settings -->
     <string name="settings_general">General</string>
     <string name="settings_search">Search Engine</string>
-    <string name="settings_privacy">Privacy & Security</string>
+    <string name="settings_privacy">Privacy &amp; Security</string>
     <string name="settings_appearance">Appearance</string>
     <string name="settings_advanced">Advanced</string>
     <string name="settings_about">About</string>
@@ -113,7 +113,7 @@
     <string name="unpin_favorite">Unpin</string>
     
     <!-- Adblock -->
-    <string name="adblock_enabled">Block ads & trackers</string>
+    <string name="adblock_enabled">Block ads &amp; trackers</string>
     <string name="adblock_exceptions">Exceptions</string>
     <string name="adblock_stats">%1$d blocked this session</string>
     

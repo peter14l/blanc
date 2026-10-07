@@ -1,23 +1,36 @@
 package me.bnfy.blanc.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,25 +40,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Rect
-import androidx.compose.ui.graphics.toRect
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.OnGloballyPositionedModifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.runtime.collectAsState
 import me.bnfy.blanc.bridge.BridgeProtocol
 import me.bnfy.blanc.storage.Repository
 import me.bnfy.blanc.tab.Tab
+import me.bnfy.blanc.tab.TabGroup
 import me.bnfy.blanc.tab.TabManager
 import me.bnfy.blanc.adblock.AdblockEngine
 import me.bnfy.blanc.bridge.BlancBridge
-import kotlinx.coroutines.flow.collectAsStateWithLifecycle
-import androidx.lifecycle.Lifecycle
-import androidx.compose.runtime.collectAsStateWithLifecycle
 import me.bnfy.blanc.R
 import me.bnfy.blanc.ui.pages.NewTabPage
 import me.bnfy.blanc.ui.pages.SettingsPage
@@ -53,10 +64,6 @@ import me.bnfy.blanc.ui.pages.BookmarksPage
 import me.bnfy.blanc.ui.pages.HistoryPage
 import me.bnfy.blanc.ui.pages.DownloadsPage
 import me.bnfy.blanc.storage.DownloadEntity
-import androidx.compose.material3.windowsizeclass.WindowSizeClass
-import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
-import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
-import androidx.compose.ui.platform.LocalConfiguration
 
 /**
  * Main browser screen with navigation state management.
@@ -67,38 +74,37 @@ fun BrowserScreen(
     repository: Repository,
     adblockEngine: AdblockEngine,
     blancBridge: BlancBridge,
-    onFileChooser: (android.webkit.ValueCallback<Array<android.net.Uri>>, List<String>) -> Unit,
+    onFileChooser: FileChooserHandler,
     onRequestPermission: (String, String, (Boolean) -> Unit) -> Unit
 ) {
     // Navigation state
-    val currentScreen by remember { mutableStateOf<Screen>(Screen.Browser) }
-    val showTabSwitcher by remember { mutableStateOf(false) }
-    val showMenu by remember { mutableStateOf(false) }
-    val showFindInPage by remember { mutableStateOf(false) }
+    var currentScreen by remember { mutableStateOf<Screen>(Screen.Browser) }
+    var showTabSwitcher by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showFindInPage by remember { mutableStateOf(false) }
     
-    // Window size class for responsive layout
+    // Window size for responsive layout
     val configuration = LocalConfiguration.current
-    val windowSizeClass = calculateWindowSizeClass(configuration)
-    val isTabletOrLarge = windowSizeClass.windowWidthSizeClass != WindowWidthSizeClass.Compact
+    val isTabletOrLarge = configuration.screenWidthDp >= 600
     
     // Collect reactive state from TabManager
-    val tabs by tabManager.tabsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-    val activeTabId by tabManager.activeTabIdFlow.collectAsStateWithLifecycle(initialValue = null)
-    val tabCount by tabManager.tabCountFlow.collectAsStateWithLifecycle(initialValue = 0)
-    val groups by tabManager.groupsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-    val windows by tabManager.windowsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-    val activeWindowId by tabManager.activeWindowIdFlow.collectAsStateWithLifecycle(initialValue = "default")
+    val tabs by tabManager.tabsFlow.collectAsState(initial = emptyList())
+    val activeTabId by tabManager.activeTabIdFlow.collectAsState(initial = null)
+    val tabCount by tabManager.tabCountFlow.collectAsState(initial = 0)
+    val groups by tabManager.groupsFlow.collectAsState(initial = emptyList())
+    val windows by tabManager.windowsFlow.collectAsState(initial = emptyList())
+    val activeWindowId by tabManager.activeWindowIdFlow.collectAsState(initial = "default")
     
     val activeTab = tabs.find { it.id == activeTabId }
     
     // Per-tab loading state (would come from individual tab observation in real implementation)
-    val isLoading by remember { mutableStateOf(false) }
-    val progress by remember { mutableStateOf(0) }
-    val blockedCount by remember { mutableStateOf(0) }
-    val canGoBack by remember { mutableStateOf(false) }
-    val canGoForward by remember { mutableStateOf(false) }
-    val addressBarText by remember { mutableStateOf("") }
-    val isAddressBarFocused by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf(0) }
+    var blockedCount by remember { mutableStateOf(0) }
+    var canGoBack by remember { mutableStateOf(false) }
+    var canGoForward by remember { mutableStateOf(false) }
+    var addressBarText by remember { mutableStateOf("") }
+    var isAddressBarFocused by remember { mutableStateOf(false) }
     
     Box(modifier = Modifier.fillMaxSize()) {
         if (isTabletOrLarge && currentScreen == Screen.Browser) {
@@ -230,188 +236,187 @@ fun BrowserScreen(
                 onBack = { currentScreen = Screen.Browser }
             )
         }
+    }
         
-        // Sidebar for tablet layout
-        @Composable
-        fun SidebarPane(
-            tabs: List<Tab>,
-            activeTabId: String?,
-            groups: List<TabGroup>,
-            onTabClick: (String) -> Unit,
-            onTabClose: (String) -> Unit,
-            onNewTab: () -> Unit,
-            onNewPrivateTab: () -> Unit,
-            onShowBookmarks: () -> Unit,
-            onShowHistory: () -> Unit,
-            onShowDownloads: () -> Unit,
-            modifier: Modifier = Modifier
-        ) {
-            Surface(
-                modifier = modifier
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.surfaceContainer),
-                tonalElevation = 4.dp
+    // Tab switcher overlay
+    if (showTabSwitcher) {
+        TabSwitcherOverlay(
+            tabs = tabs,
+            activeTabId = activeTabId,
+            onTabClick = { tabId ->
+                tabManager.switchTab(tabId)
+                showTabSwitcher = false
+            },
+            onTabClose = { tabId ->
+                tabManager.closeTab(tabId)
+            },
+            onNewTab = { 
+                tabManager.createTab()
+                showTabSwitcher = false
+            },
+            onNewPrivateTab = {
+                tabManager.createPrivateTab()
+                showTabSwitcher = false
+            },
+            onDismiss = { showTabSwitcher = false }
+        )
+    }
+    
+    // Menu overlay
+    if (showMenu) {
+        MenuOverlay(
+            activeTab = activeTab,
+            onDismiss = { showMenu = false },
+            onNewTab = { tabManager.createTab(); showMenu = false },
+            onNewPrivateTab = { tabManager.createPrivateTab(); showMenu = false },
+            onBookmarks = { currentScreen = Screen.Bookmarks; showMenu = false },
+            onHistory = { currentScreen = Screen.History; showMenu = false },
+            onDownloads = { currentScreen = Screen.Downloads; showMenu = false },
+            onSettings = { currentScreen = Screen.Settings; showMenu = false },
+            onFindInPage = { showFindInPage = true; showMenu = false },
+            onShare = { /* Share */ showMenu = false },
+            onCopyUrl = { /* Copy URL */ showMenu = false },
+            onDesktopSite = { /* Toggle desktop site */ showMenu = false }
+        )
+    }
+    
+    // Find in page overlay
+    if (showFindInPage) {
+        FindInPageOverlay(
+            activeTab = activeTab,
+            onDismiss = { showFindInPage = false },
+            onFindNext = { /* Find next */ },
+            onFindPrevious = { /* Find previous */ }
+        )
+    }
+}
+}
+
+// Sidebar for tablet layout
+@Composable
+fun SidebarPane(
+    tabs: List<Tab>,
+    activeTabId: String?,
+    groups: List<TabGroup>,
+    onTabClick: (String) -> Unit,
+    onTabClose: (String) -> Unit,
+    onNewTab: () -> Unit,
+    onNewPrivateTab: () -> Unit,
+    onShowBookmarks: () -> Unit,
+    onShowHistory: () -> Unit,
+    onShowDownloads: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.surfaceContainer),
+        tonalElevation = 4.dp
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    // Header
-                    Row(
+                Text(
+                    text = "Tabs",
+                    style = MaterialTheme.typography.titleLarge
+                )
+                IconButton(onClick = onNewTab) {
+                    Icon(painterResource(R.drawable.ic_add), contentDescription = "New tab")
+                }
+            }
+            
+            // Tab list
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(tabs) { tab ->
+                    val isActive = tab.id == activeTabId
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onTabClick(tab.id) },
+                        color = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        tonalElevation = if (isActive) 2.dp else 0.dp
                     ) {
-                        Text(
-                            text = "Tabs",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        IconButton(onClick = onNewTab) {
-                            Icon(painterResource(R.drawable.ic_add), contentDescription = "New tab")
-                        }
-                    }
-                    
-                    // Tab list
-                    androidx.compose.foundation.lazy.LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(vertical = 8.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        items(tabs) { tab ->
-                            val isActive = tab.id == activeTabId
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .combinedClickable(
-                                        onClick = { onTabClick(tab.id) },
-                                        onLongClick = { /* Show context menu */ }
-                                    ),
-                                color = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                tonalElevation = if (isActive) 2.dp else 0.dp
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(12.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (tab.isPrivate) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.ic_private_tab),
-                                            contentDescription = "Private",
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.Center
-                                    ) {
-                                        Text(
-                                            text = tab.title.ifBlank { tab.url },
-                                            maxLines = 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            style = MaterialTheme.typography.bodyMedium
-                                        )
-                                        Text(
-                                            text = tab.url,
-                                            maxLines = 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-                                    IconButton(onClick = { onTabClose(tab.id) }) {
-                                        Icon(painterResource(R.drawable.ic_close), contentDescription = "Close")
-                                    }
-                                }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (tab.isPrivate) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_private_tab),
+                                    contentDescription = "Private",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
-                        }
-                    }
-                    
-                    // Quick actions
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        androidx.compose.material3.OutlinedButton(onClick = onNewPrivateTab) {
-                            Icon(painterResource(R.drawable.ic_private_tab), contentDescription = "Private")
-                            Text("New Private Tab")
-                        }
-                        androidx.compose.material3.OutlinedButton(onClick = onShowBookmarks) {
-                            Icon(painterResource(R.drawable.ic_bookmark), contentDescription = "Favorites")
-                            Text("Favorites")
-                        }
-                        androidx.compose.material3.OutlinedButton(onClick = onShowHistory) {
-                            Icon(painterResource(R.drawable.ic_history), contentDescription = "History")
-                            Text("History")
-                        }
-                        androidx.compose.material3.OutlinedButton(onClick = onShowDownloads) {
-                            Icon(painterResource(R.drawable.ic_download), contentDescription = "Downloads")
-                            Text("Downloads")
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = tab.title.ifBlank { tab.url },
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = tab.url,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            IconButton(onClick = { onTabClose(tab.id) }) {
+                                Icon(painterResource(R.drawable.ic_close), contentDescription = "Close")
+                            }
                         }
                     }
                 }
             }
-        }
-        
-        // Tab switcher overlay
-        if (showTabSwitcher) {
-            TabSwitcherOverlay(
-                tabs = tabs,
-                activeTabId = activeTabId,
-                onTabClick = { tabId ->
-                    tabManager.switchTab(tabId)
-                    showTabSwitcher = false
-                },
-                onTabClose = { tabId ->
-                    tabManager.closeTab(tabId)
-                },
-                onNewTab = { 
-                    tabManager.createTab()
-                    showTabSwitcher = false
-                },
-                onNewPrivateTab = {
-                    tabManager.createPrivateTab()
-                    showTabSwitcher = false
-                },
-                onDismiss = { showTabSwitcher = false }
-            )
-        }
-        
-        // Menu overlay
-        if (showMenu) {
-            MenuOverlay(
-                activeTab = activeTab,
-                onDismiss = { showMenu = false },
-                onNewTab = { tabManager.createTab(); showMenu = false },
-                onNewPrivateTab = { tabManager.createPrivateTab(); showMenu = false },
-                onBookmarks = { currentScreen = Screen.Bookmarks; showMenu = false },
-                onHistory = { currentScreen = Screen.History; showMenu = false },
-                onDownloads = { currentScreen = Screen.Downloads; showMenu = false },
-                onSettings = { currentScreen = Screen.Settings; showMenu = false },
-                onFindInPage = { showFindInPage = true; showMenu = false },
-                onShare = { /* Share */ showMenu = false },
-                onCopyUrl = { /* Copy URL */ showMenu = false },
-                onDesktopSite = { /* Toggle desktop site */ showMenu = false }
-            )
-        }
-        
-        // Find in page overlay
-        if (showFindInPage) {
-            FindInPageOverlay(
-                activeTab = activeTab,
-                onDismiss = { showFindInPage = false },
-                onFindNext = { /* Find next */ },
-                onFindPrevious = { /* Find previous */ }
-            )
+            
+            // Quick actions
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = onNewPrivateTab) {
+                    Icon(painterResource(R.drawable.ic_private_tab), contentDescription = "Private")
+                    Text("New Private Tab")
+                }
+                OutlinedButton(onClick = onShowBookmarks) {
+                    Icon(painterResource(R.drawable.ic_bookmark), contentDescription = "Favorites")
+                    Text("Favorites")
+                }
+                OutlinedButton(onClick = onShowHistory) {
+                    Icon(painterResource(R.drawable.ic_history), contentDescription = "History")
+                    Text("History")
+                }
+                OutlinedButton(onClick = onShowDownloads) {
+                    Icon(painterResource(R.drawable.ic_download), contentDescription = "Downloads")
+                    Text("Downloads")
+                }
+            }
         }
     }
 }
@@ -442,7 +447,7 @@ fun BrowserContent(
     onTabSwitcher: () -> Unit,
     onNewTab: () -> Unit,
     onNewPrivateTab: () -> Unit,
-    onFileChooser: (android.webkit.ValueCallback<Array<android.net.Uri>>, List<String>) -> Unit,
+    onFileChooser: FileChooserHandler,
     onRequestPermission: (String, String, (Boolean) -> Unit) -> Unit,
     onShowBookmarks: () -> Unit,
     onShowHistory: () -> Unit,
@@ -450,7 +455,8 @@ fun BrowserContent(
     onShowSettings: () -> Unit,
     onShowFindInPage: () -> Unit,
     onCopyUrl: () -> Unit,
-    onDesktopSite: () -> Unit
+    onDesktopSite: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val isPrivate = activeTab?.isPrivate == true
     val isLoading = activeTab?.isLoading == true
@@ -462,7 +468,7 @@ fun BrowserContent(
     val isAddressBarFocused = false // Would track focus state
     
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Top
     ) {
         // Top app bar
@@ -684,20 +690,21 @@ fun AddressBar(
             
             // URL text field or display
             if (isEditing.value) {
-                androidx.compose.material3.TextField(
+                TextField(
                     value = text,
                     onValueChange = onTextChange,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp),
-                    keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions.Default.copy(
-                        imeAction = androidx.compose.ui.text.input.ImeAction.Go
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Go
                     ),
-                    keyboardActions = androidx.compose.ui.text.input.KeyboardActions(
-                        onDone = { onNavigate(text) }
+                    keyboardActions = KeyboardActions(
+                        onGo = { onNavigate(text) }
                     ),
-                    colors = androidx.compose.material3.TextFieldDefaults.textFieldColors(
-                        containerColor = Color.Transparent,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
                         disabledIndicatorColor = Color.Transparent
@@ -706,7 +713,7 @@ fun AddressBar(
                 )
             } else {
                 Text(
-                    text = if (text.isBlank()) activeTab?.url ?: "Search or enter address" else text,
+                    text = if (text.isBlank()) "Search or enter address" else text,
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     color = if (text.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
@@ -716,17 +723,17 @@ fun AddressBar(
                         .padding(horizontal = 12.dp)
                         .fillMaxHeight()
                         .wrapContentWidth()
-                        .combinedClickable(
-                            onClick = { isEditing.value = true; onFocusChange(true) },
-                            onLongClick = { /* Copy URL */ }
-                        )
+                        .clickable {
+                            isEditing.value = true
+                            onFocusChange(true)
+                        }
                 )
             }
             
             // Progress indicator / Reload / Stop
             if (isLoading) {
                 // Progress bar
-                androidx.compose.material.ProgressIndicator(
+                CircularProgressIndicator(
                     progress = progress / 100f,
                     modifier = Modifier
                         .size(24.dp)
@@ -805,7 +812,7 @@ fun TabSwitcherOverlay(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.5f))
-                .combinedClickable(onClick = onDismiss)
+                .clickable(onClick = onDismiss)
         )
         
         // Tab switcher panel
@@ -861,7 +868,7 @@ fun TabSwitcherOverlay(
                 }
                 
                 // Tab list
-                androidx.compose.foundation.lazy.LazyColumn(
+                LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -876,10 +883,7 @@ fun TabSwitcherOverlay(
                                 .fillMaxWidth()
                                 .height(80.dp)
                                 .clip(RoundedCornerShape(16.dp))
-                                .combinedClickable(
-                                    onClick = { onTabClick(tab.id) },
-                                    onLongClick = { /* Show tab menu */ }
-                                ),
+                                .clickable { onTabClick(tab.id) },
                             color = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                             tonalElevation = if (isActive) 2.dp else 0.dp
                         ) {
@@ -984,7 +988,7 @@ fun MenuOverlay(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.3f))
-                .combinedClickable(onClick = onDismiss)
+                .clickable(onClick = onDismiss)
         )
         
         // Menu panel
@@ -1014,7 +1018,7 @@ fun MenuOverlay(
                         iconTint = MaterialTheme.colorScheme.primary
                     )
                     
-                    androidx.compose.material.Divider(
+                    HorizontalDivider(
                         modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
                     )
                 }
@@ -1038,7 +1042,7 @@ fun MenuOverlay(
                     onClick = { onDownloads(); onDismiss() }
                 )
                 
-                androidx.compose.material.Divider(
+                HorizontalDivider(
                     modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
                 )
                 
@@ -1067,7 +1071,7 @@ fun MenuOverlay(
                     onClick = { onDesktopSite(); onDismiss() }
                 )
                 
-                androidx.compose.material.Divider(
+                HorizontalDivider(
                     modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
                 )
                 
@@ -1094,12 +1098,12 @@ fun MenuItem(
             .fillMaxWidth()
             .height(48.dp)
             .padding(horizontal = 16.dp)
-            .combinedClickable(onClick = onClick),
+            .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Icon(
-            painter = painterResource(id = icon),
+            painter = painterResource(icon),
             contentDescription = null,
             tint = iconTint
         )
@@ -1125,7 +1129,7 @@ fun FindInPageOverlay(
     
     Box(
         modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Top
+        contentAlignment = Alignment.TopCenter
     ) {
         Surface(
             modifier = Modifier
@@ -1148,20 +1152,21 @@ fun FindInPageOverlay(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
-                androidx.compose.material3.TextField(
+                TextField(
                     value = query.value,
                     onValueChange = { query.value = it },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     placeholder = { Text("Find in page") },
-                    keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions.Default.copy(
-                        imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Search
                     ),
-                    keyboardActions = androidx.compose.ui.text.input.KeyboardActions(
+                    keyboardActions = KeyboardActions(
                         onSearch = { /* Find */ }
                     ),
-                    colors = androidx.compose.material3.TextFieldDefaults.textFieldColors(
-                        containerColor = Color.Transparent,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
                         disabledIndicatorColor = Color.Transparent

@@ -14,6 +14,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
+import me.bnfy.blanc.adblock.AdblockEngine
 
 /**
  * WebViewClient implementation for handling tab navigation, loading, and errors.
@@ -103,34 +104,6 @@ class TabWebViewClient(
             // Capture thumbnail after page load
             onPageFinishedCallback?.invoke(it)
         }
-    }
-
-    /** Called when the page title is received. */
-    override fun onReceivedTitle(view: WebView?, title: String?) {
-        super.onReceivedTitle(view, title)
-        title?.let {
-            tab.title = it
-            bridge.onTabUpdated(tab.toBridgeTab())
-        }
-    }
-
-    /** Called when the favicon is received. */
-    override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
-        super.onReceivedIcon(view, icon)
-        icon?.let {
-            // Convert bitmap to data URI for storage
-            val faviconUri = bitmapToDataUri(it)
-            tab.favicon = faviconUri
-            bridge.onTabUpdated(tab.toBridgeTab())
-        }
-    }
-
-    private fun bitmapToDataUri(bitmap: Bitmap): String {
-        val outputStream = java.io.ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-        val byteArray = outputStream.toByteArray()
-        val base64 = android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
-        return "data:image/png;base64,$base64"
     }
 
     /** Called when an error occurs during loading. */
@@ -275,20 +248,4 @@ class TabWebViewClient(
         override fun getMethod(): String = "GET"
         override fun getRequestHeaders(): MutableMap<String, String> = mutableMapOf()
     }
-}
-
-/**
- * Interface for ad-blocking engine integration.
- * Implemented by the actual AdblockEngine class.
- */
-interface AdblockEngine {
-    /**
-     * Determines if a request should be blocked.
-     */
-    fun shouldBlock(url: String, request: WebResourceRequest?): Boolean
-
-    /**
-     * Creates a response for blocked requests (empty 204 or redirect).
-     */
-    fun createBlockedResponse(): WebResourceResponse
 }

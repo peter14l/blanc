@@ -144,7 +144,7 @@ class UiWebViewClient(
         override fun isRedirect(): Boolean = false
         override fun hasGesture(): Boolean = false
         override fun getMethod(): String = "GET"
-        override fun getRequestHeaders(): java.util.Map<String, String> = java.util.Collections.emptyMap()
+        override fun getRequestHeaders(): MutableMap<String, String> = mutableMapOf()
     }
 }
 
@@ -162,12 +162,11 @@ class UiWebViewFactory(private val context: Context) {
                 javaScriptEnabled = true
                 domStorageEnabled = true
                 databaseEnabled = true
-                setAppCacheEnabled(true)
                 cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
                 mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 useWideViewPort = true
                 loadWithOverviewMode = true
-                supportZoom = false
+                setSupportZoom(false)
                 builtInZoomControls = false
                 displayZoomControls = false
                 allowFileAccess = false
@@ -177,8 +176,6 @@ class UiWebViewFactory(private val context: Context) {
                 mediaPlaybackRequiresUserGesture = true
                 defaultTextEncodingName = "UTF-8"
                 saveFormData = false
-                savePassword = false
-                renderPriority = android.webkit.WebSettings.RenderPriority.HIGH
                 layoutAlgorithm = android.webkit.WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
             }
 

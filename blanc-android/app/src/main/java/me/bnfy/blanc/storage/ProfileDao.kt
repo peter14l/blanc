@@ -7,7 +7,7 @@ import androidx.room.Query
 import androidx.room.Delete
 import androidx.room.Update
 import androidx.room.Transaction
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.*
 
 /**
  * DAO for profiles and workspaces.
@@ -223,13 +223,14 @@ interface ProfileDao {
     }
 
     /** Gets full profile data with workspaces as Flow. */
-    @Transaction
     fun getProfileWithWorkspacesFlow(profileId: String): Flow<ProfileWithWorkspaces?> {
-        return getByIdFlow(profileId).map { profile ->
-            profile?.let { p ->
-                getWorkspacesByProfileFlow(profileId).map { ws -> ProfileWithWorkspaces(p, ws) }
+        return getByIdFlow(profileId).flatMapLatest { profile ->
+            if (profile == null) {
+                flowOf(null)
+            } else {
+                getWorkspacesByProfileFlow(profileId).map { ws -> ProfileWithWorkspaces(profile, ws) }
             }
-        }.distinctUntilChanged().flattenMerge()
+        }.distinctUntilChanged()
     }
 }
 

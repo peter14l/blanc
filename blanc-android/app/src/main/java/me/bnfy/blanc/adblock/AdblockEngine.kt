@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class AdblockEngine private constructor(
     private val context: Context,
-    private val cosmeticEngine: CosmeticFilterEngine
+    internal val cosmeticEngine: CosmeticFilterEngine
 ) {
 
     private val networkFilters = ConcurrentHashMap<String, MutableList<Filter>>()
@@ -38,6 +38,12 @@ class AdblockEngine private constructor(
     private val lock = ReentrantReadWriteLock()
     private val enabled = AtomicBoolean(true)
     private val initialized = AtomicBoolean(false)
+
+    val isInitialized: Boolean
+        get() = initialized.get()
+
+    val isEnabled: Boolean
+        get() = enabled.get()
 
     // Statistics
     private val totalBlocked = AtomicLong(0)
@@ -226,7 +232,7 @@ class AdblockEngine private constructor(
         return WebResourceResponse(
             "text/plain",
             "utf-8",
-            ByteArrayInputStream(emptyByteArray())
+            ByteArrayInputStream(emptyByteArray)
         )
     }
 
@@ -264,11 +270,6 @@ class AdblockEngine private constructor(
     fun setEnabled(enabled: Boolean) {
         this.enabled.set(enabled)
     }
-
-    /**
-     * Checks if the adblock engine is enabled.
-     */
-    fun isEnabled(): Boolean = enabled.get()
 
     /**
      * Reloads filter lists from assets.
@@ -351,25 +352,25 @@ class AdblockEngine private constructor(
 
         return when {
             url.endsWith(".js") || contentType.contains("javascript") -> "script"
-            url.matches(".*\\.(png|jpg|jpeg|gif|webp|svg|ico)(\\?.*)?$") || contentType.startsWith("image/") -> "image"
-            url.matches(".*\\.(css)(\\?.*)?$") || contentType.contains("css") -> "stylesheet"
+            url.matches(".*\\.(png|jpg|jpeg|gif|webp|svg|ico)(\\?.*)?$".toRegex()) || contentType.startsWith("image/") -> "image"
+            url.matches(".*\\.(css)(\\?.*)?$".toRegex()) || contentType.contains("css") -> "stylesheet"
             request.method == "POST" || contentType.contains("xml") || contentType.contains("json") -> "xmlhttprequest"
-            url.matches(".*\\.(woff|woff2|ttf|eot)(\\?.*)?$") -> "font"
+            url.matches(".*\\.(woff|woff2|ttf|eot)(\\?.*)?$".toRegex()) -> "font"
             request.isForMainFrame -> "document"
-            true -> "other"
+            else -> "other"
         }
     }
 
     private fun extractHost(url: String): String {
         return try {
-            java.net.URL(url).host.toLowerCase()
+            java.net.URL(url).host.lowercase()
         } catch (e: Exception) {
             ""
         }
     }
 
     private fun matchesDomain(host: String, domain: String): Boolean {
-        val cleanDomain = domain.trimStart("~").lowercase()
+        val cleanDomain = domain.removePrefix("~").lowercase()
         val isExclude = domain.startsWith("~")
         val matches = host == cleanDomain || host.endsWith(".${cleanDomain}")
         return if (isExclude) !matches else matches

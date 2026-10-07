@@ -200,7 +200,7 @@ impl AdblockEngine {
         Self::parse_network_filter(line, id, false)
     }
 
-    fn parse_network_filter(line: &str, id: usize, is_exception: bool) -> Option<ParsedFilter> {
+    fn parse_network_filter(line: &str, _id: usize, is_exception: bool) -> Option<ParsedFilter> {
         let (pattern_part, options_part) = line.split_once('$').unwrap_or((line, ""));
         let pattern = pattern_part.trim();
 
@@ -274,7 +274,7 @@ impl AdblockEngine {
         })
     }
 
-    fn parse_cosmetic_filter(line: &str, id: usize) -> Option<ParsedFilter> {
+    fn parse_cosmetic_filter(line: &str, _id: usize) -> Option<ParsedFilter> {
         let is_exception = line.starts_with("#@#");
         let selector = if is_exception { &line[3..] } else { &line[2..] };
 

@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<picture-in-picture-params xmlns:android="http://schemas.android.com/apk/res/android"
-    android:aspectRatio="16:9"
-    android:actions="@menu/pip_actions"
-    android:autoEnterEnabled="true" />

@@ -257,56 +257,56 @@
     
     <!-- Text Appearances -->
     <style name="TextAppearance.Blanc.HeadlineLarge" parent="TextAppearance.Material3.HeadlineLarge">
-        <item name="fontFamily">@font/inter_regular</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="fontWeight">600</item>
     </style>
     
     <style name="TextAppearance.Blanc.HeadlineMedium" parent="TextAppearance.Material3.HeadlineMedium">
-        <item name="fontFamily">@font/inter_regular</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="fontWeight">600</item>
     </style>
     
     <style name="TextAppearance.Blanc.HeadlineSmall" parent="TextAppearance.Material3.HeadlineSmall">
-        <item name="fontFamily">@font/inter_regular</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="fontWeight">600</item>
     </style>
     
     <style name="TextAppearance.Blanc.TitleLarge" parent="TextAppearance.Material3.TitleLarge">
-        <item name="fontFamily">@font/inter_medium</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
         <item name="fontWeight">500</item>
     </style>
     
     <style name="TextAppearance.Blanc.TitleMedium" parent="TextAppearance.Material3.TitleMedium">
-        <item name="fontFamily">@font/inter_medium</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
         <item name="fontWeight">500</item>
     </style>
     
     <style name="TextAppearance.Blanc.TitleSmall" parent="TextAppearance.Material3.TitleSmall">
-        <item name="fontFamily">@font/inter_medium</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
         <item name="fontWeight">500</item>
     </style>
     
     <style name="TextAppearance.Blanc.BodyLarge" parent="TextAppearance.Material3.BodyLarge">
-        <item name="fontFamily">@font/inter_regular</item>
+        <item name="android:fontFamily">sans-serif</item>
     </style>
     
     <style name="TextAppearance.Blanc.BodyMedium" parent="TextAppearance.Material3.BodyMedium">
-        <item name="fontFamily">@font/inter_regular</item>
+        <item name="android:fontFamily">sans-serif</item>
     </style>
     
     <style name="TextAppearance.Blanc.BodySmall" parent="TextAppearance.Material3.BodySmall">
-        <item name="fontFamily">@font/inter_regular</item>
+        <item name="android:fontFamily">sans-serif</item>
     </style>
     
     <style name="TextAppearance.Blanc.LabelLarge" parent="TextAppearance.Material3.LabelLarge">
-        <item name="fontFamily">@font/inter_medium</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
     
     <style name="TextAppearance.Blanc.LabelMedium" parent="TextAppearance.Material3.LabelMedium">
-        <item name="fontFamily">@font/inter_medium</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
     
     <style name="TextAppearance.Blanc.LabelSmall" parent="TextAppearance.Material3.LabelSmall">
-        <item name="fontFamily">@font/inter_regular</item>
+        <item name="android:fontFamily">sans-serif</item>
     </style>
 </resources>

@@ -250,14 +250,14 @@ class CosmeticFilterEngine {
 
     private fun extractHost(url: String): String {
         return try {
-            java.net.URL(url).host.toLowerCase()
+            java.net.URL(url).host.lowercase()
         } catch (e: Exception) {
             ""
         }
     }
 
     private fun matchesDomain(host: String, domain: String): Boolean {
-        val cleanDomain = domain.trimStart("~").lowercase()
+        val cleanDomain = domain.removePrefix("~").lowercase()
         val isExclude = domain.startsWith("~")
         val matches = host == cleanDomain || host.endsWith(".${cleanDomain}")
         return if (isExclude) !matches else matches
