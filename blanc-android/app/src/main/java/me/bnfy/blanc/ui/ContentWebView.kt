@@ -290,6 +290,7 @@ class ContentWebView(
         onPermissionRequest: ((String, String, (Boolean) -> Unit) -> Unit)? = null
     ) {
         this.tab = tab
+        tab.webView = this
         this.tabManager = tabManager
         this.onFileChooserCallback = onFileChooser
         this.onPermissionRequestCallback = onPermissionRequest
@@ -416,21 +417,23 @@ fun ContentWebViewContainer(
     modifier: Modifier = Modifier
 ) {
     if (activeTab != null) {
-        AndroidView(
-            factory = { ctx ->
-                ContentWebView(ctx).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                    bind(activeTab, tabManager, onFileChooser, onRequestPermission)
-                }
-            },
-            update = { webView ->
-                webView.bind(activeTab, tabManager, onFileChooser, onRequestPermission)
-            },
-            modifier = modifier
-        )
+        androidx.compose.runtime.key(activeTab.id) {
+            AndroidView(
+                factory = { ctx ->
+                    ContentWebView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        bind(activeTab, tabManager, onFileChooser, onRequestPermission)
+                    }
+                },
+                update = { webView ->
+                    webView.bind(activeTab, tabManager, onFileChooser, onRequestPermission)
+                },
+                modifier = modifier
+            )
+        }
     } else {
         // No active tab - show new tab page
         Box(

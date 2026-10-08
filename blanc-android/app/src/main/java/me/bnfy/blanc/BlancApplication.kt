@@ -86,10 +86,13 @@ class BlancApplication : Application() {
         get() = _tabManager ?: synchronized(this) {
             _tabManager ?: TabManager(
                 context = this,
-                bridge = blancBridge,
+                bridge = null,
                 webViewFactory = WebViewFactory.createRegular(this),
                 adblockEngine = adblockEngine
-            ).also { _tabManager = it }
+            ).also {
+                _tabManager = it
+                _blancBridge?.let { bridge -> it.setBridge(bridge) }
+            }
         }
     
     val blancBridge: BlancBridge
@@ -99,8 +102,11 @@ class BlancApplication : Application() {
                 repository = repository,
                 tabManager = tabManager,
                 adblockEngine = adblockEngine,
-                lifecycleOwner = this as androidx.lifecycle.LifecycleOwner
-            ).also { _blancBridge = it }
+                lifecycleOwner = ProcessLifecycleOwner.get()
+            ).also {
+                _blancBridge = it
+                tabManager.setBridge(it)
+            }
         }
     
     // ===== Initialization =====

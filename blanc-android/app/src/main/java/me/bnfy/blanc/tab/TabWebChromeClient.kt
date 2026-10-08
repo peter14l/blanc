@@ -36,7 +36,7 @@ import androidx.annotation.RequiresApi
 class TabWebChromeClient(
     private val tab: Tab,
     private val bridge: BlancBridge,
-    private val activity: Activity,
+    private val activity: Activity?,
     private val tabManager: TabManager
 ) : WebChromeClient() {
 
@@ -212,10 +212,11 @@ class TabWebChromeClient(
         customView = view
         customViewCallback = callback
 
+        val act = activity ?: return
         // Add to activity's view hierarchy
-        val frameLayout = FrameLayout(activity)
+        val frameLayout = FrameLayout(act)
         frameLayout.addView(view)
-        activity.setContentView(frameLayout)
+        act.setContentView(frameLayout)
     }
 
     /** Called when exiting fullscreen video. */
@@ -225,7 +226,8 @@ class TabWebChromeClient(
         customView = null
         customViewCallback = null
         // Restore WebView content
-        activity.setContentView(tab.webView)
+        val act = activity ?: return
+        tab.webView?.let { act.setContentView(it) }
     }
 
     // ===== Console Messages =====

@@ -36,10 +36,45 @@ import java.util.concurrent.ConcurrentHashMap
 @Keep
 class TabManager(
     private val context: Context,
-    private val bridge: BlancBridge,
     private val webViewFactory: WebViewFactory,
-    private val adblockEngine: AdblockEngine? = null
+    private val adblockEngine: AdblockEngine? = null,
+    bridge: BlancBridge? = null
 ) {
+
+    // Overload constructor for backwards compatibility
+    constructor(
+        context: Context,
+        bridge: BlancBridge?,
+        webViewFactory: WebViewFactory,
+        adblockEngine: AdblockEngine? = null
+    ) : this(context, webViewFactory, adblockEngine, bridge)
+
+    private var bridge: BlancBridge = bridge ?: object : BlancBridge {}
+
+    fun setBridge(bridge: BlancBridge) {
+        this.bridge = bridge
+    }
+
+    private val bridgeDelegate = object : BlancBridge {
+        override fun onTabCreated(tab: Tab) = bridge.onTabCreated(tab)
+        override fun onTabUpdated(tab: Tab) = bridge.onTabUpdated(tab)
+        override fun onTabClosed(tabId: String) = bridge.onTabClosed(tabId)
+        override fun onTabSwitched(tabId: String) = bridge.onTabSwitched(tabId)
+        override fun onNavigation(tabId: String, url: String, title: String?) = bridge.onNavigation(tabId, url, title)
+        override fun onProgress(tabId: String, progress: Int) = bridge.onProgress(tabId, progress)
+        override fun onCreateWindowRequested(url: String, isPrivate: Boolean) = bridge.onCreateWindowRequested(url, isPrivate)
+        override fun onGroupCreated(group: TabGroup) = bridge.onGroupCreated(group)
+        override fun onGroupUpdated(group: TabGroup) = bridge.onGroupUpdated(group)
+        override fun onGroupClosed(groupId: String) = bridge.onGroupClosed(groupId)
+        override fun onWindowClosed(windowId: String) = bridge.onWindowClosed(windowId)
+        override fun onWindowFocused(windowId: String) = bridge.onWindowFocused(windowId)
+        override fun onSurfaceClosed(windowId: String) = bridge.onSurfaceClosed(windowId)
+        override fun onToast(message: String) = bridge.onToast(message)
+        override fun onPermissionRequested(tabId: String, origin: String, type: String, callback: PermissionCallback) =
+            bridge.onPermissionRequested(tabId, origin, type, callback)
+        override fun onFileChooserRequested(tabId: String, mode: Int, acceptTypes: Array<String>?, capture: Boolean, callback: FileChooserCallback) =
+            bridge.onFileChooserRequested(tabId, mode, acceptTypes, capture, callback)
+    }
 
     private val tabs = ConcurrentHashMap<String, Tab>()
     private val tabOrder = mutableListOf<String>()
@@ -179,10 +214,10 @@ class TabManager(
                     WebViewFactory.createRegular(context)
                 }
 
-                val webViewClient = TabWebViewClient(tab, bridge, adblockEngine) { url ->
+                val webViewClient = TabWebViewClient(tab, bridgeDelegate, adblockEngine) { url ->
                     captureTabThumbnail(tab.id)
                 }
-                val webChromeClient = TabWebChromeClient(tab, bridge, getActivity(), this@TabManager)
+                val webChromeClient = TabWebChromeClient(tab, bridgeDelegate, getActivity(), this@TabManager)
 
                 val webView = factory.createWebView(webViewClient, webChromeClient)
                 factory.configurePrivateCookies(webView)
@@ -226,14 +261,14 @@ class TabManager(
      * Gets the Activity for WebChromeClient. In a real app, this would be passed in.
      * For now, we'll need to set it separately.
      */
-    private var activityReference: android.app.Activity? = null
+    private var activityReference: java.lang.ref.WeakReference<android.app.Activity>? = null
 
     fun setActivity(activity: android.app.Activity) {
-        activityReference = activity
+        activityReference = java.lang.ref.WeakReference(activity)
     }
 
-    private fun getActivity(): android.app.Activity {
-        return activityReference ?: throw IllegalStateException("Activity not set on TabManager")
+    private fun getActivity(): android.app.Activity? {
+        return activityReference?.get()
     }
 
     // ===== Tab Switching =====
@@ -586,10 +621,10 @@ class TabManager(
                 WebViewFactory.createRegular(context)
             }
 
-            val webViewClient = TabWebViewClient(oldTab, bridge, adblockEngine) { url ->
+            val webViewClient = TabWebViewClient(oldTab, bridgeDelegate, adblockEngine) { url ->
                 captureTabThumbnail(oldTab.id)
             }
-            val webChromeClient = TabWebChromeClient(oldTab, bridge, getActivity(), this@TabManager)
+            val webChromeClient = TabWebChromeClient(oldTab, bridgeDelegate, getActivity(), this@TabManager)
 
             val webView = factory.createWebView(webViewClient, webChromeClient)
             factory.configurePrivateCookies(webView)
@@ -688,10 +723,10 @@ class TabManager(
                     WebViewFactory.createRegular(context)
                 }
 
-                val webViewClient = TabWebViewClient(Tab(), bridge, adblockEngine) { url ->
+                val webViewClient = TabWebViewClient(Tab(), bridgeDelegate, adblockEngine) { url ->
                     captureTabThumbnail(state.id)
                 }
-                val webChromeClient = TabWebChromeClient(Tab(), bridge, getActivity(), this@TabManager)
+                val webChromeClient = TabWebChromeClient(Tab(), bridgeDelegate, getActivity(), this@TabManager)
 
                 val webView = factory.createWebView(webViewClient, webChromeClient)
                 factory.configurePrivateCookies(webView)
@@ -716,10 +751,10 @@ class TabManager(
                 )
 
                 // Re-create clients with correct tab reference
-                val newWebViewClient = TabWebViewClient(tab, bridge, adblockEngine) { url ->
+                val newWebViewClient = TabWebViewClient(tab, bridgeDelegate, adblockEngine) { url ->
                     captureTabThumbnail(tab.id)
                 }
-                val newWebChromeClient = TabWebChromeClient(tab, bridge, getActivity(), this@TabManager)
+                val newWebChromeClient = TabWebChromeClient(tab, bridgeDelegate, getActivity(), this@TabManager)
                 webView.webViewClient = newWebViewClient
                 webView.webChromeClient = newWebChromeClient
 
@@ -1061,10 +1096,10 @@ class TabManager(
                 WebViewFactory.createRegular(context)
             }
 
-            val webViewClient = TabWebViewClient(Tab(), bridge, adblockEngine) { url ->
+            val webViewClient = TabWebViewClient(Tab(), bridgeDelegate, adblockEngine) { url ->
                     captureTabThumbnail(entry.tabId)
                 }
-                val webChromeClient = TabWebChromeClient(Tab(), bridge, getActivity(), this@TabManager)
+                val webChromeClient = TabWebChromeClient(Tab(), bridgeDelegate, getActivity(), this@TabManager)
             val webView = factory.createWebView(webViewClient, webChromeClient)
             factory.configurePrivateCookies(webView)
 
@@ -1087,8 +1122,8 @@ class TabManager(
                 workspaceId = windows[windowId]?.workspaceId
             )
 
-            val newWebViewClient = TabWebViewClient(tab, bridge, adblockEngine)
-            val newWebChromeClient = TabWebChromeClient(tab, bridge, getActivity(), this@TabManager)
+            val newWebViewClient = TabWebViewClient(tab, bridgeDelegate, adblockEngine)
+            val newWebChromeClient = TabWebChromeClient(tab, bridgeDelegate, getActivity(), this@TabManager)
             webView.webViewClient = newWebViewClient
             webView.webChromeClient = newWebChromeClient
 

@@ -134,14 +134,14 @@ fun BrowserScreen(
                     onTabClick = { tabId -> tabManager.switchTab(tabId) },
                     onTabClose = { tabId -> tabManager.closeTab(tabId) },
                     onNavigate = { url ->
-                        tabManager.navigate(activeTabId!!, url)
+                        activeTabId?.let { tabManager.navigate(it, url) } ?: tabManager.createTab(url)
                     },
-                    onBack = { tabManager.goBack(activeTabId!!) },
-                    onForward = { tabManager.goForward(activeTabId!!) },
+                    onBack = { activeTabId?.let { tabManager.goBack(it) } },
+                    onForward = { activeTabId?.let { tabManager.goForward(it) } },
                     onReload = { 
                         if (activeTab?.isLoading == true) tabManager.stopActiveTab() else tabManager.reloadActiveTab() 
                     },
-                    onHome = { tabManager.navigateTo(activeTabId!!, "blanc://newtab") },
+                    onHome = { activeTabId?.let { tabManager.navigateTo(it, "blanc://newtab") } ?: tabManager.createTab("blanc://newtab") },
                     onBookmark = { /* Toggle bookmark */ },
                     onShare = { /* Share current page */ },
                     onMenu = { showMenu = true },
@@ -172,14 +172,14 @@ fun BrowserScreen(
                         onTabClick = { tabId -> tabManager.switchTab(tabId) },
                         onTabClose = { tabId -> tabManager.closeTab(tabId) },
                         onNavigate = { url ->
-                            tabManager.navigate(activeTabId!!, url)
+                            activeTabId?.let { tabManager.navigate(it, url) } ?: tabManager.createTab(url)
                         },
-                        onBack = { tabManager.goBack(activeTabId!!) },
-                        onForward = { tabManager.goForward(activeTabId!!) },
+                        onBack = { activeTabId?.let { tabManager.goBack(it) } },
+                        onForward = { activeTabId?.let { tabManager.goForward(it) } },
                         onReload = { 
                             if (activeTab?.isLoading == true) tabManager.stopActiveTab() else tabManager.reloadActiveTab() 
                         },
-                        onHome = { tabManager.navigateTo(activeTabId!!, "blanc://newtab") },
+                        onHome = { activeTabId?.let { tabManager.navigateTo(it, "blanc://newtab") } ?: tabManager.createTab("blanc://newtab") },
                         onBookmark = { /* Toggle bookmark */ },
                         onShare = { /* Share current page */ },
                         onMenu = { showMenu = true },
@@ -200,7 +200,7 @@ fun BrowserScreen(
             Screen.NewTab -> NewTabPage(
                 tabManager = tabManager,
                 onNavigate = { url ->
-                    tabManager.navigate(activeTabId!!, url)
+                    activeTabId?.let { tabManager.navigate(it, url) } ?: tabManager.createTab(url)
                     currentScreen = Screen.Browser
                 },
                 onNewTab = { tabManager.createTab() },
@@ -210,14 +210,14 @@ fun BrowserScreen(
                 onBack = { currentScreen = Screen.Browser },
                 onAddBookmark = { /* Add bookmark */ },
                 onBookmarkClick = { url ->
-                    tabManager.navigate(activeTabId!!, url)
+                    activeTabId?.let { tabManager.navigate(it, url) } ?: tabManager.createTab(url)
                     currentScreen = Screen.Browser
                 }
             )
             Screen.History -> HistoryPage(
                 onBack = { currentScreen = Screen.Browser },
                 onItemClick = { url ->
-                    tabManager.navigate(activeTabId!!, url)
+                    activeTabId?.let { tabManager.navigate(it, url) } ?: tabManager.createTab(url)
                     currentScreen = Screen.Browser
                 },
                 onClearHistory = { /* Clear history */ }

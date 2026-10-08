@@ -89,6 +89,11 @@ class MainActivity : AppCompatActivity() {
         // Handle intent (deep links, etc.)
         handleIntent(intent)
         
+        // Ensure at least one tab exists if not opened from a specific intent
+        if (tabManager?.getTabCount() == 0) {
+            tabManager?.createTab()
+        }
+        
         // Set up Compose UI
         setContent {
             MaterialTheme {
