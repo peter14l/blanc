@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -60,36 +61,44 @@ fun NewTabPage(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.surface
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding(),
             verticalArrangement = Arrangement.Top
         ) {
-            // Search bar
-            SearchBar(onSearch = onNavigate)
+            item {
+                // Search bar
+                SearchBar(onSearch = onNavigate)
+            }
             
-            // Favorites grid
+            // Favorites
             if (favorites.value.isNotEmpty()) {
-                SectionHeader(title = "Favorites", onClickAll = { /* Open bookmarks */ })
-                FavoritesGrid(
-                    items = favorites.value,
-                    onClick = { url -> onNavigate(url) }
-                )
+                item {
+                    SectionHeader(title = "Favorites", onClickAll = { /* Open bookmarks */ })
+                }
+                items(favorites.value) { item ->
+                    FavoriteCard(item = item, onClick = { onNavigate(item.url) })
+                }
             }
             
             // Recent tabs
             if (recentTabs.value.isNotEmpty()) {
-                SectionHeader(title = "Recent tabs", onClickAll = { /* Open history */ })
-                RecentTabsList(
-                    items = recentTabs.value,
-                    onClick = { url -> onNavigate(url) }
-                )
+                item {
+                    SectionHeader(title = "Recent tabs", onClickAll = { /* Open history */ })
+                }
+                items(recentTabs.value) { item ->
+                    RecentTabCard(item = item, onClick = { onNavigate(item.url) })
+                }
             }
             
-            // Footer actions
-            FooterActions(
-                onNewTab = onNewTab,
-                onNewPrivateTab = onNewPrivateTab
-            )
+            item {
+                // Footer actions
+                FooterActions(
+                    onNewTab = onNewTab,
+                    onNewPrivateTab = onNewPrivateTab
+                )
+            }
         }
     }
 }
@@ -164,62 +173,118 @@ fun SectionHeader(title: String, onClickAll: () -> Unit) {
 }
 
 @Composable
+fun FavoriteCard(
+    item: FavoriteItem,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clickable(onClick = onClick),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Favicon
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = item.title.take(1),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+            
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = item.title,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = item.url,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun RecentTabCard(
+    item: RecentTabItem,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clickable(onClick = onClick),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_history),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = item.title,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = item.url,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun FavoritesGrid(
     items: List<FavoriteItem>,
     onClick: (String) -> Unit
 ) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        items(items) { item ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(80.dp)
-                    .clickable(onClick = { onClick(item.url) }),
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Favicon
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                            .background(Color.Gray)
-                    )
-                    
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = item.title,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                        Text(
-                            text = item.url,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        items.forEach { item ->
+            FavoriteCard(item = item, onClick = { onClick(item.url) })
         }
     }
 }
@@ -229,53 +294,9 @@ fun RecentTabsList(
     items: List<RecentTabItem>,
     onClick: (String) -> Unit
 ) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(items) { item ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = { onClick(item.url) }),
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_history),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = item.title,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                        Text(
-                            text = item.url,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        items.forEach { item ->
+            RecentTabCard(item = item, onClick = { onClick(item.url) })
         }
     }
 }

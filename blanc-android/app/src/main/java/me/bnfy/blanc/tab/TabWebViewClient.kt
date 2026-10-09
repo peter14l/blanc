@@ -112,6 +112,10 @@ class TabWebViewClient(
         request: WebResourceRequest?,
         error: WebResourceError?
     ) {
+        val failingUrl = request?.url?.toString() ?: ""
+        if (failingUrl.startsWith("blanc://")) {
+            return
+        }
         super.onReceivedError(view, request, error)
         // Don't override error pages for main frame navigation errors
         // Let the WebView show its default error page
@@ -130,6 +134,9 @@ class TabWebViewClient(
         description: String,
         failingUrl: String
     ) {
+        if (failingUrl.startsWith("blanc://")) {
+            return
+        }
         super.onReceivedError(view, errorCode, description, failingUrl)
         if (failingUrl == tab.url) {
             tab.isLoading = false
@@ -148,6 +155,10 @@ class TabWebViewClient(
     /** Called for each resource request - hook for ad blocking. */
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
         val url = request?.url?.toString() ?: return super.shouldInterceptRequest(view, request)
+
+        if (url.startsWith("blanc://")) {
+            return WebResourceResponse("text/html", "UTF-8", java.io.ByteArrayInputStream("".toByteArray()))
+        }
 
         // Check with adblock engine
         adblockEngine?.let { engine ->

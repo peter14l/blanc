@@ -236,8 +236,10 @@ class TabManager(
                 val window = windows[windowId]
                 window?.tabIds?.add(tab.id)
 
-                // Load initial URL
-                webView.loadUrl(initialUrl)
+                // Load initial URL if not an internal surface
+                if (!initialUrl.startsWith("blanc://") && initialUrl != "about:blank") {
+                    webView.loadUrl(initialUrl)
+                }
 
                 // Update reactive state
                 updateReactiveState()
@@ -480,7 +482,14 @@ class TabManager(
     fun navigateTo(tabId: String, url: String): Boolean {
         return mainHandler.run {
             val tab = tabs[tabId] ?: return@run false
-            tab.webView?.loadUrl(url)
+            tab.url = url
+            if (!url.startsWith("blanc://") && url != "about:blank") {
+                tab.webView?.loadUrl(url)
+            } else {
+                tab.title = if (url.startsWith("blanc://newtab")) "New Tab" else ""
+                tab.webView?.loadUrl("about:blank")
+            }
+            updateReactiveState()
             true
         }
     }

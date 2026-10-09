@@ -147,6 +147,9 @@ class ContentWebView(
             
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val requestUrl = request?.url?.toString() ?: return super.shouldInterceptRequest(view, request)
+                if (requestUrl.startsWith("blanc://")) {
+                    return WebResourceResponse("text/html", "UTF-8", java.io.ByteArrayInputStream("".toByteArray()))
+                }
                 try {
                     val engine = BlancApplication.getInstance().adblockEngine
                     if (engine.shouldBlock(requestUrl, request)) {
@@ -199,6 +202,10 @@ class ContentWebView(
                 request: WebResourceRequest?,
                 error: android.webkit.WebResourceError?
             ) {
+                val failingUrl = request?.url?.toString() ?: ""
+                if (failingUrl.startsWith("blanc://")) {
+                    return
+                }
                 super.onReceivedError(view, request, error)
                 if (request?.isForMainFrame == true) {
                     tab?.isLoading = false
@@ -303,8 +310,8 @@ class ContentWebView(
             cookieManager.removeSessionCookies(null)
         }
         
-        // Load URL if not already loaded
-        if (tab.url != "about:blank" && tab.url != url) {
+        // Load URL if not already loaded and not an internal surface
+        if (tab.url != "about:blank" && !tab.url.startsWith("blanc://") && tab.url != url) {
             loadUrl(tab.url)
         }
     }

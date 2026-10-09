@@ -16,9 +16,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -64,6 +70,33 @@ import me.bnfy.blanc.ui.pages.BookmarksPage
 import me.bnfy.blanc.ui.pages.HistoryPage
 import me.bnfy.blanc.ui.pages.DownloadsPage
 import me.bnfy.blanc.storage.DownloadEntity
+
+/**
+ * Resolves a user input string from the address bar or search bar into a valid URL.
+ * Automatically wraps search queries with DuckDuckGo and prefixes bare domains with https://.
+ */
+fun resolveUrlOrSearch(input: String): String {
+    val trimmed = input.trim()
+    if (trimmed.isEmpty()) return "blanc://newtab"
+    if (trimmed.startsWith("blanc://") || trimmed.startsWith("about:") || trimmed.startsWith("data:") || trimmed.startsWith("javascript:")) {
+        return trimmed
+    }
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        return trimmed
+    }
+    val isDomain = (trimmed.contains(".") && !trimmed.contains(" ") && !trimmed.endsWith(".")) ||
+                   trimmed.startsWith("localhost") ||
+                   android.util.Patterns.WEB_URL.matcher(trimmed).matches()
+    return if (isDomain) {
+        "https://$trimmed"
+    } else {
+        try {
+            "https://duckduckgo.com/?q=${java.net.URLEncoder.encode(trimmed, "UTF-8")}"
+        } catch (e: Exception) {
+            "https://duckduckgo.com/?q=$trimmed"
+        }
+    }
+}
 
 /**
  * Main browser screen with navigation state management.
@@ -134,7 +167,8 @@ fun BrowserScreen(
                     onTabClick = { tabId -> tabManager.switchTab(tabId) },
                     onTabClose = { tabId -> tabManager.closeTab(tabId) },
                     onNavigate = { url ->
-                        activeTabId?.let { tabManager.navigate(it, url) } ?: tabManager.createTab(url)
+                        val resolved = resolveUrlOrSearch(url)
+                        activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
                     },
                     onBack = { activeTabId?.let { tabManager.goBack(it) } },
                     onForward = { activeTabId?.let { tabManager.goForward(it) } },
@@ -172,7 +206,8 @@ fun BrowserScreen(
                         onTabClick = { tabId -> tabManager.switchTab(tabId) },
                         onTabClose = { tabId -> tabManager.closeTab(tabId) },
                         onNavigate = { url ->
-                            activeTabId?.let { tabManager.navigate(it, url) } ?: tabManager.createTab(url)
+                            val resolved = resolveUrlOrSearch(url)
+                            activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
                         },
                         onBack = { activeTabId?.let { tabManager.goBack(it) } },
                         onForward = { activeTabId?.let { tabManager.goForward(it) } },
@@ -200,7 +235,8 @@ fun BrowserScreen(
             Screen.NewTab -> NewTabPage(
                 tabManager = tabManager,
                 onNavigate = { url ->
-                    activeTabId?.let { tabManager.navigate(it, url) } ?: tabManager.createTab(url)
+                    val resolved = resolveUrlOrSearch(url)
+                    activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
                     currentScreen = Screen.Browser
                 },
                 onNewTab = { tabManager.createTab() },
@@ -210,14 +246,16 @@ fun BrowserScreen(
                 onBack = { currentScreen = Screen.Browser },
                 onAddBookmark = { /* Add bookmark */ },
                 onBookmarkClick = { url ->
-                    activeTabId?.let { tabManager.navigate(it, url) } ?: tabManager.createTab(url)
+                    val resolved = resolveUrlOrSearch(url)
+                    activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
                     currentScreen = Screen.Browser
                 }
             )
             Screen.History -> HistoryPage(
                 onBack = { currentScreen = Screen.Browser },
                 onItemClick = { url ->
-                    activeTabId?.let { tabManager.navigate(it, url) } ?: tabManager.createTab(url)
+                    val resolved = resolveUrlOrSearch(url)
+                    activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
                     currentScreen = Screen.Browser
                 },
                 onClearHistory = { /* Clear history */ }
@@ -313,7 +351,7 @@ fun SidebarPane(
             .background(MaterialTheme.colorScheme.surfaceContainer),
         tonalElevation = 4.dp
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
             // Header
             Row(
                 modifier = Modifier
@@ -464,8 +502,14 @@ fun BrowserContent(
     val blockedCount = activeTab?.blockedCount ?: 0
     val canGoBack = activeTab?.canGoBack == true
     val canGoForward = activeTab?.canGoForward == true
-    val addressBarText = activeTab?.url ?: ""
-    val isAddressBarFocused = false // Would track focus state
+    
+    val currentUrl = activeTab?.url ?: ""
+    val isNewTab = currentUrl.isEmpty() || currentUrl == "about:blank" || currentUrl.startsWith("blanc://newtab")
+    
+    var addressBarInput by remember(activeTab?.id, currentUrl) {
+        mutableStateOf(if (isNewTab) "" else currentUrl)
+    }
+    var isAddressBarFocused by remember { mutableStateOf(false) }
     
     Column(
         modifier = modifier.fillMaxSize(),
@@ -481,11 +525,14 @@ fun BrowserContent(
             blockedCount = blockedCount,
             canGoBack = canGoBack,
             canGoForward = canGoForward,
-            addressBarText = addressBarText,
+            addressBarText = addressBarInput,
             isAddressBarFocused = isAddressBarFocused,
-            onAddressBarTextChange = { /* Update text */ },
-            onAddressBarFocusChange = { /* isAddressBarFocused = it */ },
-            onNavigate = onNavigate,
+            onAddressBarTextChange = { addressBarInput = it },
+            onAddressBarFocusChange = { isAddressBarFocused = it },
+            onNavigate = { target ->
+                isAddressBarFocused = false
+                onNavigate(target)
+            },
             onBack = onBack,
             onForward = onForward,
             onReload = onReload,
@@ -500,7 +547,7 @@ fun BrowserContent(
         
         // Content area
         Box(modifier = Modifier.fillMaxSize()) {
-            if (activeTab != null) {
+            if (!isNewTab && activeTab != null) {
                 ContentWebViewContainer(
                     tabManager = tabManager,
                     activeTab = activeTab,
@@ -509,7 +556,7 @@ fun BrowserContent(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                // No active tab - show new tab page
+                // New tab page - show Compose NewTabPage
                 NewTabPage(
                     tabManager = tabManager,
                     onNavigate = onNavigate,
@@ -560,6 +607,7 @@ fun BrowserTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .statusBarsPadding()
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -664,7 +712,22 @@ fun AddressBar(
     onBookmark: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isEditing = remember { mutableStateOf(isFocused) }
+    var isEditing by remember { mutableStateOf(isFocused) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(isFocused) {
+        isEditing = isFocused
+    }
+
+    LaunchedEffect(isEditing) {
+        if (isEditing) {
+            try {
+                focusRequester.requestFocus()
+            } catch (e: Exception) {
+                // Ignore if not attached yet
+            }
+        }
+    }
     
     Surface(
         modifier = modifier
@@ -689,18 +752,23 @@ fun AddressBar(
             )
             
             // URL text field or display
-            if (isEditing.value) {
+            if (isEditing) {
                 TextField(
                     value = text,
                     onValueChange = onTextChange,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
+                        .weight(1f)
+                        .padding(horizontal = 4.dp)
+                        .focusRequester(focusRequester),
                     keyboardOptions = KeyboardOptions(
                         imeAction = ImeAction.Go
                     ),
                     keyboardActions = KeyboardActions(
-                        onGo = { onNavigate(text) }
+                        onGo = {
+                            isEditing = false
+                            onFocusChange(false)
+                            onNavigate(text)
+                        }
                     ),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
@@ -719,12 +787,12 @@ fun AddressBar(
                     color = if (text.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     fontSize = 16.sp,
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .padding(horizontal = 12.dp)
                         .fillMaxHeight()
-                        .wrapContentWidth()
+                        .wrapContentWidth(Alignment.Start)
                         .clickable {
-                            isEditing.value = true
+                            isEditing = true
                             onFocusChange(true)
                         }
                 )
