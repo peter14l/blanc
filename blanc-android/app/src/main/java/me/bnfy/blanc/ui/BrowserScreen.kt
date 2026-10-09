@@ -374,7 +374,7 @@ fun BrowserScreen(
                 }
                 "/clear" -> {
                     coroutineScope.launch {
-                        repository.historyDao.deleteAll()
+                        repository.historyDao.clearHistory("personal")
                         activeTab?.webView?.clearCache(true)
                         Toast.makeText(context, "History and cache cleared", Toast.LENGTH_SHORT).show()
                     }
