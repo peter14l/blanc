@@ -184,7 +184,6 @@ fun BrowserScreen(
     var addressBarText by remember { mutableStateOf("") }
     var isAddressBarFocused by remember { mutableStateOf(false) }
     
-    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
     val handleBookmarkToggle: () -> Unit = {
