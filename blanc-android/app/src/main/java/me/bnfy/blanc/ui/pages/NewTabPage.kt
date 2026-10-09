@@ -102,7 +102,7 @@ fun NewTabPage(
                         onClickAll = { onOpenBookmarks?.invoke() }
                     )
                 }
-                items(favorites, key = { it.id }) { item ->
+                items(favorites, key = { "fav_${it.id}" }) { item ->
                     FavoriteCard(item = item, onClick = { onNavigate(item.url) })
                 }
             }
@@ -115,7 +115,7 @@ fun NewTabPage(
                         onClickAll = { onOpenHistory?.invoke() }
                     )
                 }
-                items(recentTabs, key = { it.id }) { item ->
+                items(recentTabs, key = { "recent_${it.id}" }) { item ->
                     RecentTabCard(item = item, onClick = { onNavigate(item.url) })
                 }
             }
@@ -380,13 +380,13 @@ data class RecentTabItem(
 )
 
 fun getDefaultFavorites(): List<FavoriteItem> = listOf(
-    FavoriteItem("1", "DuckDuckGo", "https://duckduckgo.com"),
-    FavoriteItem("2", "GitHub", "https://github.com"),
-    FavoriteItem("3", "Stack Overflow", "https://stackoverflow.com"),
-    FavoriteItem("4", "MDN Web Docs", "https://developer.mozilla.org")
+    FavoriteItem("fav_default_1", "DuckDuckGo", "https://duckduckgo.com"),
+    FavoriteItem("fav_default_2", "GitHub", "https://github.com"),
+    FavoriteItem("fav_default_3", "Stack Overflow", "https://stackoverflow.com"),
+    FavoriteItem("fav_default_4", "MDN Web Docs", "https://developer.mozilla.org")
 )
 
 fun getRecentTabs(): List<RecentTabItem> = listOf(
-    RecentTabItem("1", "Example Domain", "https://example.com", System.currentTimeMillis() - 3600000),
-    RecentTabItem("2", "Android Developers", "https://developer.android.com", System.currentTimeMillis() - 7200000)
+    RecentTabItem("recent_default_1", "Example Domain", "https://example.com", System.currentTimeMillis() - 3600000),
+    RecentTabItem("recent_default_2", "Android Developers", "https://developer.android.com", System.currentTimeMillis() - 7200000)
 )
