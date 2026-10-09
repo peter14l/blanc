@@ -16,8 +16,7 @@ class CosmeticFilterEngine {
     private val cosmeticFilters = ConcurrentHashMap<String, MutableList<Filter>>()
     private val exceptionFilters = ConcurrentHashMap<String, MutableList<Filter>>()
     private val lock = ReentrantReadWriteLock()
-    private var cachedCss: String? = null
-    private var cssDirty = true
+    private val domainCssCache = ConcurrentHashMap<String, String>()
 
     /**
      * Adds a cosmetic filter to the engine.
@@ -33,7 +32,7 @@ class CosmeticFilterEngine {
             if (filter.domains.isEmpty()) {
                 targetMap.computeIfAbsent("*") { mutableListOf() }.add(filter)
             }
-            cssDirty = true
+            domainCssCache.clear()
         } finally {
             lock.writeLock().unlock()
         }
@@ -51,7 +50,7 @@ class CosmeticFilterEngine {
                     list.removeIf { it.id == filterId }
                 }
             }
-            cssDirty = true
+            domainCssCache.clear()
         } finally {
             lock.writeLock().unlock()
         }
@@ -65,7 +64,7 @@ class CosmeticFilterEngine {
         try {
             cosmeticFilters.clear()
             exceptionFilters.clear()
-            cssDirty = true
+            domainCssCache.clear()
         } finally {
             lock.writeLock().unlock()
         }
@@ -77,9 +76,11 @@ class CosmeticFilterEngine {
      * @return CSS string to inject, or empty string if no filters apply
      */
     fun generateCssForUrl(url: String): String {
+        val host = extractHost(url).lowercase()
+        domainCssCache[host]?.let { return it }
+
         lock.readLock().lock()
         try {
-            val host = extractHost(url).lowercase()
             val applicableFilters = mutableListOf<Filter>()
             val exceptionSelectors = mutableSetOf<String>()
 
@@ -105,7 +106,9 @@ class CosmeticFilterEngine {
                 }
             }
 
-            return cssRules.toString()
+            val result = cssRules.toString()
+            domainCssCache[host] = result
+            return result
         } finally {
             lock.readLock().unlock()
         }

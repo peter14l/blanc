@@ -293,12 +293,14 @@ class TabManager(
             activeTabId?.let { prevId ->
                 tabs[prevId]?.apply {
                     webView?.visibility = WebView.INVISIBLE
+                    webView?.onPause()
                     isActive = false
                 }
             }
 
             // Show new active tab
             tab.webView?.visibility = WebView.VISIBLE
+            tab.webView?.onResume()
             tab.isActive = true
             activeTabId = tabId
             _activeTabId.value = tabId

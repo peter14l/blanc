@@ -11,6 +11,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
 // --- Brand Colors (Bowser Design System & Sunrise Theme) ---
@@ -51,6 +55,8 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = DarkTextPrimary,
     surfaceVariant = DarkSurfaceContainer,
     onSurfaceVariant = DarkTextSecondary,
+    surfaceContainerLowest = Color(0xFF0A0A0D),
+    surfaceContainerLow = Color(0xFF131317),
     surfaceContainer = DarkSurfaceContainer,
     surfaceContainerHigh = DarkSurfaceContainerHigh,
     surfaceContainerHighest = Color(0xFF2D2D38),
@@ -69,6 +75,8 @@ private val LightColorScheme = lightColorScheme(
     onSurface = LightTextPrimary,
     surfaceVariant = LightSurfaceContainer,
     onSurfaceVariant = LightTextSecondary,
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF7F7FA),
     surfaceContainer = LightSurfaceContainer,
     surfaceContainerHigh = LightSurfaceContainerHigh,
     surfaceContainerHighest = Color(0xFFDEDEE6),
@@ -87,12 +95,52 @@ private val SunriseColorScheme = lightColorScheme(
     onSurface = SunriseWarmCharcoal,
     surfaceVariant = SunriseWarmSurface,
     onSurfaceVariant = SunriseWarmMuted,
+    surfaceContainerLowest = Color(0xFFFFFDF9),
+    surfaceContainerLow = Color(0xFFF7F0E5),
     surfaceContainer = SunriseWarmSurface,
     surfaceContainerHigh = SunriseWarmSurfaceHigh,
     surfaceContainerHighest = Color(0xFFDFD5C4),
     outline = Color(0xFFDCD2C0),
     outlineVariant = Color(0xFFEAE2D4)
 )
+
+/**
+ * Material 3 Expressive Shape Tokens.
+ */
+object ExpressiveShapes {
+    /** Pill shape for floating command bar and chip controls (50% circular or 28dp radius). */
+    val Pill = RoundedCornerShape(28.dp)
+    /** Expressive Card shape with large, friendly corners (24dp). */
+    val Card = RoundedCornerShape(24.dp)
+    /** Expressive Sheet shape with rounded top corners for bottom drawers & sheets (28dp). */
+    val BottomSheet = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    /** Expressive Button shape (16dp). */
+    val Button = RoundedCornerShape(16.dp)
+    /** Small interactive tile shape (12dp). */
+    val Small = RoundedCornerShape(12.dp)
+}
+
+/**
+ * Material 3 Expressive Motion Specs.
+ */
+object ExpressiveMotion {
+    /** Playful, lively spring for interactive touch feedback, dialogs, and sheets. */
+    val BouncySpring = spring<Float>(
+        dampingRatio = Spring.DampingRatioMediumBouncy,
+        stiffness = Spring.StiffnessMediumLow
+    )
+
+    /** Snappy spring for quick responsive translations (e.g. scroll hide/reveal). */
+    val SnappySpring = spring<Float>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMedium
+    )
+
+    val PillOffsetSpring = spring<androidx.compose.ui.unit.Dp>(
+        dampingRatio = Spring.DampingRatioMediumBouncy,
+        stiffness = Spring.StiffnessMediumLow
+    )
+}
 
 /**
  * Blanc Dynamic Theme supporting System Default, Light, Dark, and Sunrise palettes.

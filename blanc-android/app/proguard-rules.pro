@@ -18,6 +18,9 @@
 # Keep Download service
 -keep class me.bnfy.blanc.download.** { *; }
 
+# Keep Utility and Suggestion models
+-keep class me.bnfy.blanc.util.** { *; }
+
 # Keep WebView related
 -keep class android.webkit.** { *; }
 -keep class androidx.webkit.** { *; }

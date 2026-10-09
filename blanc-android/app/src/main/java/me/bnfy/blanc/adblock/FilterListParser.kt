@@ -246,6 +246,19 @@ data class Filter(
         fun generateId(): String = "filter_${System.currentTimeMillis()}_${idCounter++}"
     }
 
+    val compiledPattern: Pattern? by lazy {
+        if (type == FilterType.NETWORK && pattern.isNotEmpty()) {
+            try {
+                val flags = if (options.matchCase) 0 else Pattern.CASE_INSENSITIVE
+                Pattern.compile(pattern, flags)
+            } catch (e: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+    }
+
     /**
      * Checks if this filter applies to the given URL and request context.
      */
@@ -300,7 +313,7 @@ data class Filter(
 
     private fun extractHost(url: String): String {
         return try {
-            java.net.URL(url).host.toLowerCase()
+            java.net.URL(url).host.lowercase()
         } catch (e: Exception) {
             ""
         }
@@ -325,8 +338,17 @@ data class Filter(
     }
 
     private fun matchPattern(url: String, pattern: String, matchCase: Boolean): Boolean {
-        val flags = if (matchCase) 0 else Pattern.CASE_INSENSITIVE
-        return Pattern.compile(pattern, flags).matcher(url).find()
+        val compiled = compiledPattern
+        return if (compiled != null) {
+            compiled.matcher(url).find()
+        } else {
+            val flags = if (matchCase) 0 else Pattern.CASE_INSENSITIVE
+            try {
+                Pattern.compile(pattern, flags).matcher(url).find()
+            } catch (e: Exception) {
+                false
+            }
+        }
     }
 }
 

@@ -55,6 +55,10 @@ class ContentWebView(
     private var tabManager: TabManager? = null
     private var onFileChooserCallback: FileChooserHandler? = null
     private var onPermissionRequestCallback: ((String, String, (Boolean) -> Unit) -> Unit)? = null
+    var onScrollChangeCallback: ((dy: Int, scrollY: Int) -> Unit)? = null
+    var onJsAlertCallback: ((url: String, message: String, result: JsResult) -> Unit)? = null
+    var onJsConfirmCallback: ((url: String, message: String, result: JsResult) -> Unit)? = null
+    var onJsPromptCallback: ((url: String, message: String, defaultValue: String, result: JsPromptResult) -> Unit)? = null
     
     init {
         setupWebView()
@@ -69,8 +73,8 @@ class ContentWebView(
         settings.databaseEnabled = true
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         
-        // Mixed content
-        settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        // Mixed content - strictly disallow insecure HTTP content on HTTPS
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         
         // Viewport
         settings.useWideViewPort = true
@@ -291,18 +295,39 @@ class ContentWebView(
             }
             
             override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
-                result?.confirm()
-                return true
+                if (result == null) return false
+                val callback = onJsAlertCallback
+                return if (callback != null) {
+                    callback.invoke(url ?: "", message ?: "", result)
+                    true
+                } else {
+                    result.cancel()
+                    true
+                }
             }
             
             override fun onJsConfirm(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
-                result?.confirm()
-                return true
+                if (result == null) return false
+                val callback = onJsConfirmCallback
+                return if (callback != null) {
+                    callback.invoke(url ?: "", message ?: "", result)
+                    true
+                } else {
+                    result.cancel()
+                    true
+                }
             }
             
             override fun onJsPrompt(view: WebView?, url: String?, message: String?, defaultValue: String?, result: JsPromptResult?): Boolean {
-                result?.confirm()
-                return true
+                if (result == null) return false
+                val callback = onJsPromptCallback
+                return if (callback != null) {
+                    callback.invoke(url ?: "", message ?: "", defaultValue ?: "", result)
+                    true
+                } else {
+                    result.cancel()
+                    true
+                }
             }
         }
     }
@@ -324,13 +349,12 @@ class ContentWebView(
         cookieManager.setAcceptCookie(true)
         if (tab.isPrivate) {
             cookieManager.setAcceptThirdPartyCookies(this, false)
-            cookieManager.removeSessionCookies(null)
         } else {
             cookieManager.setAcceptThirdPartyCookies(this, true)
         }
         
         // Load URL if not already loaded and not an internal surface
-        if (tab.url != "about:blank" && !tab.url.startsWith("blanc://") && tab.url != url) {
+        if (tab.url != "about:blank" && !tab.url.startsWith("blanc://") && tab.url != url && url == null) {
             loadUrl(tab.url)
         }
     }
@@ -441,8 +465,6 @@ class ContentWebView(
             null
         }
     }
-    var onScrollChangeCallback: ((dy: Int, scrollY: Int) -> Unit)? = null
-
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
         val dy = t - oldt
@@ -452,6 +474,9 @@ class ContentWebView(
 
 /**
  * Composable wrapper for ContentWebView.
+ *
+ * Reuses the existing WebView for the tab if already created, preventing duplicate allocations
+ * and preserving complete page state and scroll offset across tab switches.
  */
 @Composable
 fun ContentWebViewContainer(
@@ -459,6 +484,9 @@ fun ContentWebViewContainer(
     activeTab: Tab?,
     onFileChooser: FileChooserHandler,
     onRequestPermission: (String, String, (Boolean) -> Unit) -> Unit,
+    onJsAlert: ((url: String, message: String, result: JsResult) -> Unit)? = null,
+    onJsConfirm: ((url: String, message: String, result: JsResult) -> Unit)? = null,
+    onJsPrompt: ((url: String, message: String, defaultValue: String, result: JsPromptResult) -> Unit)? = null,
     onScrollChange: ((dy: Int, scrollY: Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -466,18 +494,38 @@ fun ContentWebViewContainer(
         androidx.compose.runtime.key(activeTab.id) {
             AndroidView(
                 factory = { ctx ->
-                    ContentWebView(ctx).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        this.onScrollChangeCallback = onScrollChange
-                        bind(activeTab, tabManager, onFileChooser, onRequestPermission)
+                    val existing = activeTab.webView as? ContentWebView
+                    if (existing != null) {
+                        (existing.parent as? ViewGroup)?.removeView(existing)
+                        existing.apply {
+                            this.onScrollChangeCallback = onScrollChange
+                            this.onJsAlertCallback = onJsAlert
+                            this.onJsConfirmCallback = onJsConfirm
+                            this.onJsPromptCallback = onJsPrompt
+                            bind(activeTab, tabManager, onFileChooser, onRequestPermission)
+                            onResume()
+                        }
+                    } else {
+                        ContentWebView(ctx).apply {
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            this.onScrollChangeCallback = onScrollChange
+                            this.onJsAlertCallback = onJsAlert
+                            this.onJsConfirmCallback = onJsConfirm
+                            this.onJsPromptCallback = onJsPrompt
+                            bind(activeTab, tabManager, onFileChooser, onRequestPermission)
+                        }
                     }
                 },
                 update = { webView ->
                     webView.onScrollChangeCallback = onScrollChange
+                    webView.onJsAlertCallback = onJsAlert
+                    webView.onJsConfirmCallback = onJsConfirm
+                    webView.onJsPromptCallback = onJsPrompt
                     webView.bind(activeTab, tabManager, onFileChooser, onRequestPermission)
+                    webView.onResume()
                 },
                 modifier = modifier
             )
@@ -504,6 +552,9 @@ fun ContentWebViewContainer(
     tabs: List<Tab>,
     onFileChooser: FileChooserHandler,
     onRequestPermission: (String, String, (Boolean) -> Unit) -> Unit,
+    onJsAlert: ((url: String, message: String, result: JsResult) -> Unit)? = null,
+    onJsConfirm: ((url: String, message: String, result: JsResult) -> Unit)? = null,
+    onJsPrompt: ((url: String, message: String, defaultValue: String, result: JsPromptResult) -> Unit)? = null,
     onScrollChange: ((dy: Int, scrollY: Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -512,6 +563,9 @@ fun ContentWebViewContainer(
         activeTab = tabs.find { it.id == activeTabId },
         onFileChooser = onFileChooser,
         onRequestPermission = onRequestPermission,
+        onJsAlert = onJsAlert,
+        onJsConfirm = onJsConfirm,
+        onJsPrompt = onJsPrompt,
         onScrollChange = onScrollChange,
         modifier = modifier
     )

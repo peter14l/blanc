@@ -71,9 +71,8 @@ class WebViewFactory private constructor(
         settings.databaseEnabled = true
         settings.cacheMode = WebSettings.LOAD_DEFAULT
 
-        // Mixed content - allow HTTPS pages to load HTTP resources (with warning)
-        // This matches desktop Blanc behavior for compatibility
-        settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        // Mixed content - strictly disallow insecure HTTP content on HTTPS pages
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
 
         // Viewport and zoom
         settings.useWideViewPort = true
@@ -138,8 +137,6 @@ class WebViewFactory private constructor(
         cookieManager.setAcceptCookie(true)
         if (isPrivate) {
             cookieManager.setAcceptThirdPartyCookies(webView, false)
-            // In private mode, we use ephemeral cookies that are cleared on close
-            cookieManager.removeSessionCookies(null)
         } else {
             cookieManager.setAcceptThirdPartyCookies(webView, true)
         }

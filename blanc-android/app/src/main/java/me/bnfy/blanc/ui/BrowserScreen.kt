@@ -101,6 +101,11 @@ import me.bnfy.blanc.ui.pages.BookmarksPage
 import me.bnfy.blanc.ui.pages.HistoryPage
 import me.bnfy.blanc.ui.pages.DownloadsPage
 import me.bnfy.blanc.storage.DownloadEntity
+import android.webkit.JsResult
+import android.webkit.JsPromptResult
+import androidx.compose.material3.AlertDialog
+import me.bnfy.blanc.ui.theme.ExpressiveShapes
+import me.bnfy.blanc.ui.theme.ExpressiveMotion
 
 fun buildSearchUrl(query: String, engine: String): String {
     val encoded = try {
@@ -205,7 +210,6 @@ fun BrowserScreen(
     var canGoForward by remember { mutableStateOf(false) }
     var addressBarText by remember { mutableStateOf("") }
     var isAddressBarFocused by remember { mutableStateOf(false) }
-    
     val coroutineScope = rememberCoroutineScope()
 
     val allFavorites by repository.favoriteDao.getAllFlow("personal").collectAsState(initial = emptyList())
@@ -855,6 +859,9 @@ fun BrowserContent(
         suggestionResult = SearchSuggestionService.fetchSuggestions(addressBarInput, defaultSearchEngine, favorites)
     }
     var isPillVisible by remember(activeTab?.id) { mutableStateOf(true) }
+    var pendingJsAlert by remember { mutableStateOf<Triple<String, String, JsResult>?>(null) }
+    var pendingJsConfirm by remember { mutableStateOf<Triple<String, String, JsResult>?>(null) }
+    var pendingJsPrompt by remember { mutableStateOf<Triple<String, String, Pair<String, JsPromptResult>>?>(null) }
     val configuration = LocalConfiguration.current
     val isLargeScreen = configuration.screenWidthDp > 600
 
@@ -874,10 +881,7 @@ fun BrowserContent(
     val pillVisible = isPillVisible || isAddressBarFocused
     val pillOffsetY by animateDpAsState(
         targetValue = if (pillVisible) 0.dp else 120.dp,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
+        animationSpec = ExpressiveMotion.PillOffsetSpring,
         label = "pill_scroll_offset"
     )
     
@@ -889,6 +893,15 @@ fun BrowserContent(
                 activeTab = activeTab,
                 onFileChooser = onFileChooser,
                 onRequestPermission = onRequestPermission,
+                onJsAlert = { url, message, result ->
+                    pendingJsAlert = Triple(url, message, result)
+                },
+                onJsConfirm = { url, message, result ->
+                    pendingJsConfirm = Triple(url, message, result)
+                },
+                onJsPrompt = { url, message, defVal, result ->
+                    pendingJsPrompt = Triple(url, message, Pair(defVal, result))
+                },
                 onScrollChange = handleScroll,
                 modifier = Modifier
                     .fillMaxSize()
@@ -1178,6 +1191,152 @@ fun BrowserContent(
                 .padding(horizontal = 16.dp, vertical = 12.dp)
                 .offset(y = pillOffsetY)
         )
+
+        // --- Material 3 Expressive JavaScript Dialogs ---
+        pendingJsAlert?.let { alert ->
+            AlertDialog(
+                onDismissRequest = {
+                    alert.third.confirm()
+                    pendingJsAlert = null
+                },
+                shape = ExpressiveShapes.Card,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                title = {
+                    Text(
+                        text = "Page Notice",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                },
+                text = {
+                    Text(
+                        text = alert.second,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            alert.third.confirm()
+                            pendingJsAlert = null
+                        },
+                        shape = ExpressiveShapes.Button
+                    ) {
+                        Text("OK")
+                    }
+                }
+            )
+        }
+
+        pendingJsConfirm?.let { confirm ->
+            AlertDialog(
+                onDismissRequest = {
+                    confirm.third.cancel()
+                    pendingJsConfirm = null
+                },
+                shape = ExpressiveShapes.Card,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                title = {
+                    Text(
+                        text = "Confirm Action",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                },
+                text = {
+                    Text(
+                        text = confirm.second,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            confirm.third.confirm()
+                            pendingJsConfirm = null
+                        },
+                        shape = ExpressiveShapes.Button
+                    ) {
+                        Text("Confirm")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = {
+                            confirm.third.cancel()
+                            pendingJsConfirm = null
+                        },
+                        shape = ExpressiveShapes.Button
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        pendingJsPrompt?.let { prompt ->
+            var promptInput by remember(prompt) { mutableStateOf(prompt.third.first) }
+            AlertDialog(
+                onDismissRequest = {
+                    prompt.third.second.cancel()
+                    pendingJsPrompt = null
+                },
+                shape = ExpressiveShapes.Card,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                title = {
+                    Text(
+                        text = "Prompt",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = prompt.second,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TextField(
+                            value = promptInput,
+                            onValueChange = { promptInput = it },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = ExpressiveShapes.Small,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                            )
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            prompt.third.second.confirm(promptInput)
+                            pendingJsPrompt = null
+                        },
+                        shape = ExpressiveShapes.Button
+                    ) {
+                        Text("OK")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = {
+                            prompt.third.second.cancel()
+                            pendingJsPrompt = null
+                        },
+                        shape = ExpressiveShapes.Button
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
     }
 }
 

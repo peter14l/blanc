@@ -215,17 +215,35 @@ class AdblockEngine private constructor(
     ): Boolean {
         lock.readLock().lock()
         try {
-            // Check domain-specific filters
             val host = extractHost(url)
-            for (domain in filterMap.keys) {
-                if (domain == "*" || matchesDomain(host, domain)) {
-                    for (filter in filterMap[domain]!!) {
-                        if (filter.matches(url, sourceUrl, requestType)) {
-                            return true
+
+            // 1. Exact host match
+            filterMap[host]?.let { list ->
+                for (filter in list) {
+                    if (filter.matches(url, sourceUrl, requestType)) return true
+                }
+            }
+
+            // 2. Parent domain match (e.g. sub.example.com -> example.com)
+            val parts = host.split(".")
+            if (parts.size > 2) {
+                for (i in 1 until parts.size - 1) {
+                    val parentDomain = parts.drop(i).joinToString(".")
+                    filterMap[parentDomain]?.let { list ->
+                        for (filter in list) {
+                            if (filter.matches(url, sourceUrl, requestType)) return true
                         }
                     }
                 }
             }
+
+            // 3. Generic filters
+            filterMap["*"]?.let { list ->
+                for (filter in list) {
+                    if (filter.matches(url, sourceUrl, requestType)) return true
+                }
+            }
+
             return false
         } finally {
             lock.readLock().unlock()
