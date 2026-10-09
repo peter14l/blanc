@@ -16,6 +16,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import me.bnfy.blanc.adblock.AdblockEngine
 import me.bnfy.blanc.storage.ClosedTabEntity
 import me.bnfy.blanc.ui.ContentWebView
+import me.bnfy.blanc.BlancApplication
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -354,6 +358,33 @@ class TabManager(
             // Remove from group
             tab.groupId?.let { groupId ->
                 tabGroups[groupId]?.tabIds?.remove(tabId)
+            }
+
+            // Record to closed tabs for recovery if non-private
+            if (!tab.isPrivate && tab.url.isNotBlank() && !tab.url.startsWith("blanc://") && tab.url != "about:blank") {
+                val entity = ClosedTabEntity(
+                    id = UUID.randomUUID().toString(),
+                    windowId = tab.windowId,
+                    tabId = tab.id,
+                    url = tab.url,
+                    title = tab.title.ifBlank { tab.url },
+                    favicon = tab.favicon,
+                    isPrivate = false,
+                    isPinned = tab.isPinned,
+                    groupId = tab.groupId,
+                    position = tab.position,
+                    navigationHistory = tab.history.joinToString(",", "[", "]") { "\"$it\"" },
+                    historyIndex = tab.historyIndex,
+                    closedAt = System.currentTimeMillis(),
+                    profileId = tab.profileId
+                )
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        BlancApplication.getInstance().repository.closedTabDao.insert(entity)
+                    } catch (e: Exception) {
+                        Log.e("TabManager", "Failed to insert closed tab", e)
+                    }
+                }
             }
 
             // Destroy WebView
@@ -870,6 +901,58 @@ class TabManager(
             updateReactiveState()
             bridge.onTabUpdated(tab.toBridgeTab())
             true
+        }
+    }
+
+    /**
+     * Toggles the pinned state of a tab.
+     */
+    fun togglePinTab(tabId: String): Boolean {
+        val tab = tabs[tabId] ?: return false
+        return setTabPinned(tabId, !tab.isPinned)
+    }
+
+    /**
+     * Toggles the muted state of a tab.
+     */
+    fun toggleMuteTab(tabId: String): Boolean {
+        val tab = tabs[tabId] ?: return false
+        return setTabMuted(tabId, !tab.isMuted)
+    }
+
+    /**
+     * Duplicates a tab by opening its URL in a new tab.
+     */
+    fun duplicateTab(tabId: String): Tab? {
+        val tab = tabs[tabId] ?: return null
+        return if (tab.isPrivate) {
+            createPrivateTab(tab.url)
+        } else {
+            createTab(tab.url)
+        }
+    }
+
+    /**
+     * Reopens the most recently closed tab for the current window.
+     */
+    fun reopenLastClosedTab(onComplete: ((Boolean) -> Unit)? = null) {
+        val windowId = activeWindowId
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val lastClosed = BlancApplication.getInstance().repository.closedTabDao.getMostRecent(windowId)
+                if (lastClosed != null) {
+                    BlancApplication.getInstance().repository.closedTabDao.deleteById(lastClosed.id)
+                    mainHandler.post {
+                        val tab = reopenClosedTab(lastClosed, windowId)
+                        onComplete?.invoke(tab != null)
+                    }
+                } else {
+                    mainHandler.post { onComplete?.invoke(false) }
+                }
+            } catch (e: Exception) {
+                Log.e("TabManager", "Failed to reopen last closed tab", e)
+                mainHandler.post { onComplete?.invoke(false) }
+            }
         }
     }
 

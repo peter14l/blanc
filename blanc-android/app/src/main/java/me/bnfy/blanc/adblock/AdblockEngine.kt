@@ -273,6 +273,9 @@ class AdblockEngine private constructor(
         return exceptions.keys.toList()
     }
 
+    fun getTotalBlocked(): Long = totalBlocked.get()
+    fun getTodayBlocked(): Long = todayBlocked.get()
+
     /**
      * Enables or disables the adblock engine.
      */

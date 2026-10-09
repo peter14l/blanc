@@ -80,6 +80,7 @@ class Repository private constructor(
     // Install ID (for telemetry)
     private val KEY_INSTALL_ID = stringPreferencesKey("install_id")
     private val KEY_SESSION_ID = stringPreferencesKey("session_id")
+    private val KEY_HAS_COMPLETED_ONBOARDING = booleanPreferencesKey("has_completed_onboarding")
 
     // Companion for singleton
     companion object {
@@ -237,6 +238,15 @@ class Repository private constructor(
     val installId: Flow<String> = preferencesFlow
         .map { it[KEY_INSTALL_ID] ?: generateInstallId() }
         .distinctUntilChanged()
+
+    /** Has completed onboarding walkthrough. */
+    val hasCompletedOnboarding: Flow<Boolean> = preferencesFlow
+        .map { it[KEY_HAS_COMPLETED_ONBOARDING] ?: false }
+        .distinctUntilChanged()
+
+    suspend fun setHasCompletedOnboarding(completed: Boolean) {
+        dataStore.edit { it[KEY_HAS_COMPLETED_ONBOARDING] = completed }
+    }
 
     /** Session ID. */
     val sessionId: Flow<String> = preferencesFlow

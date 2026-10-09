@@ -16,7 +16,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
@@ -36,6 +39,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -146,6 +150,11 @@ fun BrowserScreen(
     var showTabSwitcher by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showFindInPage by remember { mutableStateOf(false) }
+    var showShieldPopover by remember { mutableStateOf(false) }
+
+    // Onboarding and theme state
+    val hasCompletedOnboarding by repository.hasCompletedOnboarding.collectAsState(initial = true)
+    val currentTheme by repository.theme.collectAsState(initial = "system")
 
     // Persistent default search engine
     val defaultSearchEngine by repository.defaultSearchEngine.collectAsState(initial = "duckduckgo")
@@ -153,6 +162,7 @@ fun BrowserScreen(
     // Android System Back Navigation Handler
     BackHandler(enabled = true) {
         when {
+            showShieldPopover -> showShieldPopover = false
             showFindInPage -> showFindInPage = false
             showMenu -> showMenu = false
             showTabSwitcher -> showTabSwitcher = false
@@ -251,6 +261,126 @@ fun BrowserScreen(
         Toast.makeText(context, if (newMode) "Desktop site requested" else "Mobile site requested", Toast.LENGTH_SHORT).show()
     }
 
+    val activeHost = remember(activeTab?.url) {
+        try {
+            val u = activeTab?.url ?: ""
+            if (u.startsWith("http://") || u.startsWith("https://")) {
+                android.net.Uri.parse(u).host ?: ""
+            } else ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+    var isSiteException by remember(activeHost) {
+        mutableStateOf(if (activeHost.isNotBlank()) adblockEngine.isException(activeHost) else false)
+    }
+
+    val handleSlashCommand: (String) -> Boolean = { rawInput ->
+        val trimmed = rawInput.trim()
+        if (trimmed.startsWith("/")) {
+            val parts = trimmed.split("\\s+".toRegex())
+            val cmd = parts.firstOrNull()?.lowercase() ?: ""
+            when (cmd) {
+                "/new" -> {
+                    tabManager.createTab()
+                    currentScreen = Screen.Browser
+                }
+                "/private" -> {
+                    tabManager.createPrivateTab()
+                    currentScreen = Screen.Browser
+                }
+                "/close" -> {
+                    activeTabId?.let { tabManager.closeTab(it) }
+                }
+                "/reopen" -> {
+                    tabManager.reopenLastClosedTab { success ->
+                        if (!success) Toast.makeText(context, "No closed tabs to reopen", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                "/bookmarks", "/favorites" -> {
+                    currentScreen = Screen.Bookmarks
+                }
+                "/history" -> {
+                    currentScreen = Screen.History
+                }
+                "/downloads" -> {
+                    currentScreen = Screen.Downloads
+                }
+                "/settings" -> {
+                    currentScreen = Screen.Settings
+                }
+                "/find" -> {
+                    showFindInPage = true
+                }
+                "/pin" -> {
+                    activeTabId?.let {
+                        val pinned = tabManager.togglePinTab(it)
+                        Toast.makeText(context, if (pinned) "Tab pinned" else "Tab unpinned", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                "/mute" -> {
+                    activeTabId?.let {
+                        val muted = tabManager.toggleMuteTab(it)
+                        Toast.makeText(context, if (muted) "Tab muted" else "Tab unmuted", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                "/duplicate" -> {
+                    activeTabId?.let {
+                        tabManager.duplicateTab(it)
+                        Toast.makeText(context, "Tab duplicated", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                "/desktop" -> {
+                    handleDesktopSiteToggle()
+                }
+                "/block-ads" -> {
+                    if (activeHost.isNotBlank()) {
+                        adblockEngine.removeException(activeHost)
+                        coroutineScope.launch { repository.removeAdblockException(activeHost) }
+                        isSiteException = false
+                        activeTab?.webView?.reload()
+                        Toast.makeText(context, "Ad blocking enabled for $activeHost", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                "/allow-ads" -> {
+                    if (activeHost.isNotBlank()) {
+                        adblockEngine.addException(activeHost)
+                        coroutineScope.launch { repository.addAdblockException(activeHost) }
+                        isSiteException = true
+                        activeTab?.webView?.reload()
+                        Toast.makeText(context, "Ads allowed on $activeHost", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                "/theme" -> {
+                    val nextTheme = when (currentTheme.lowercase()) {
+                        "system" -> "light"
+                        "light" -> "dark"
+                        "dark" -> "sunrise"
+                        else -> "system"
+                    }
+                    coroutineScope.launch { repository.setTheme(nextTheme) }
+                    Toast.makeText(context, "Theme: ${nextTheme.replaceFirstChar { it.uppercase() }}", Toast.LENGTH_SHORT).show()
+                }
+                "/clear" -> {
+                    coroutineScope.launch {
+                        repository.historyDao.deleteAll()
+                        activeTab?.webView?.clearCache(true)
+                        Toast.makeText(context, "History and cache cleared", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                "/help" -> {
+                    Toast.makeText(context, "Commands: /new, /private, /close, /reopen, /bookmarks, /history, /downloads, /settings, /pin, /mute, /duplicate, /desktop, /block-ads, /allow-ads, /theme, /clear", Toast.LENGTH_LONG).show()
+                }
+                else -> {
+                    Toast.makeText(context, "Unknown command: $cmd", Toast.LENGTH_SHORT).show()
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         if (isTabletOrLarge && currentScreen == Screen.Browser) {
             // Two-pane layout for tablet/large screens
@@ -279,8 +409,12 @@ fun BrowserScreen(
                     onTabClick = { tabId -> tabManager.switchTab(tabId); currentScreen = Screen.Browser },
                     onTabClose = { tabId -> tabManager.closeTab(tabId) },
                     onNavigate = { url ->
-                        val resolved = resolveUrlOrSearch(url, defaultSearchEngine)
-                        activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
+                        if (url.startsWith("/")) {
+                            handleSlashCommand(url)
+                        } else {
+                            val resolved = resolveUrlOrSearch(url, defaultSearchEngine)
+                            activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
+                        }
                     },
                     onBack = { activeTabId?.let { tabManager.goBack(it) } },
                     onForward = { activeTabId?.let { tabManager.goForward(it) } },
@@ -303,6 +437,7 @@ fun BrowserScreen(
                     onShowFindInPage = { showFindInPage = true },
                     onCopyUrl = handleCopyUrl,
                     onDesktopSite = handleDesktopSiteToggle,
+                    onShieldClick = { if (activeHost.isNotBlank()) showShieldPopover = true },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -318,8 +453,12 @@ fun BrowserScreen(
                         onTabClick = { tabId -> tabManager.switchTab(tabId) },
                         onTabClose = { tabId -> tabManager.closeTab(tabId) },
                         onNavigate = { url ->
-                            val resolved = resolveUrlOrSearch(url, defaultSearchEngine)
-                            activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
+                            if (url.startsWith("/")) {
+                                handleSlashCommand(url)
+                            } else {
+                                val resolved = resolveUrlOrSearch(url, defaultSearchEngine)
+                                activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
+                            }
                         },
                         onBack = { activeTabId?.let { tabManager.goBack(it) } },
                         onForward = { activeTabId?.let { tabManager.goForward(it) } },
@@ -341,7 +480,8 @@ fun BrowserScreen(
                         onShowSettings = { currentScreen = Screen.Settings },
                         onShowFindInPage = { showFindInPage = true },
                         onCopyUrl = handleCopyUrl,
-                        onDesktopSite = handleDesktopSiteToggle
+                        onDesktopSite = handleDesktopSiteToggle,
+                        onShieldClick = { if (activeHost.isNotBlank()) showShieldPopover = true }
                     )
                 }
             Screen.NewTab -> NewTabPage(
@@ -399,12 +539,29 @@ fun BrowserScreen(
             onTabClose = { tabId ->
                 tabManager.closeTab(tabId)
             },
+            onTabPin = { tabId ->
+                tabManager.togglePinTab(tabId)
+            },
+            onTabDuplicate = { tabId ->
+                tabManager.duplicateTab(tabId)
+                showTabSwitcher = false
+                currentScreen = Screen.Browser
+            },
+            onReopenClosedTab = {
+                tabManager.reopenLastClosedTab { success ->
+                    if (!success) {
+                        Toast.makeText(context, "No closed tabs to reopen", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                showTabSwitcher = false
+                currentScreen = Screen.Browser
+            },
             onNewTab = { 
                 tabManager.createTab()
                 showTabSwitcher = false
                 currentScreen = Screen.Browser
             },
-            onNewPrivateTab = {
+            onNewPrivateTab = { 
                 tabManager.createPrivateTab()
                 showTabSwitcher = false
                 currentScreen = Screen.Browser
@@ -437,6 +594,44 @@ fun BrowserScreen(
         FindInPageOverlay(
             activeTab = activeTab,
             onDismiss = { showFindInPage = false }
+        )
+    }
+
+    // Site protection Shield Popover
+    if (showShieldPopover && activeHost.isNotBlank()) {
+        ShieldPopover(
+            host = activeHost,
+            blockedOnPage = activeTab?.blockedCount ?: 0,
+            isSiteException = isSiteException,
+            onToggleSiteException = { host, disableProtection ->
+                if (disableProtection) {
+                    adblockEngine.addException(host)
+                    coroutineScope.launch { repository.addAdblockException(host) }
+                    isSiteException = true
+                } else {
+                    adblockEngine.removeException(host)
+                    coroutineScope.launch { repository.removeAdblockException(host) }
+                    isSiteException = false
+                }
+                activeTab?.webView?.reload()
+            },
+            onOpenSettings = {
+                showShieldPopover = false
+                currentScreen = Screen.Settings
+            },
+            onDismiss = { showShieldPopover = false }
+        )
+    }
+
+    // First-run Onboarding tour
+    if (!hasCompletedOnboarding) {
+        OnboardingDialog(
+            onDismiss = {
+                coroutineScope.launch { repository.setHasCompletedOnboarding(true) }
+            },
+            onComplete = {
+                coroutineScope.launch { repository.setHasCompletedOnboarding(true) }
+            }
         )
     }
     }
@@ -606,6 +801,7 @@ fun BrowserContent(
     onShowFindInPage: () -> Unit,
     onCopyUrl: () -> Unit,
     onDesktopSite: () -> Unit,
+    onShieldClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isPrivate = activeTab?.isPrivate == true
@@ -622,6 +818,8 @@ fun BrowserContent(
         mutableStateOf(if (isNewTab) "" else currentUrl)
     }
     var isAddressBarFocused by remember { mutableStateOf(false) }
+    val configuration = LocalConfiguration.current
+    val isLargeScreen = configuration.screenWidthDp > 600
     
     Box(modifier = modifier.fillMaxSize()) {
         // Content area takes full screen
@@ -645,6 +843,62 @@ fun BrowserContent(
                 onOpenBookmarks = onShowBookmarks,
                 onOpenHistory = onShowHistory
             )
+        }
+
+        // Slash command suggestions popup floating above the pill
+        val matchingCommands = remember(addressBarInput) {
+            if (addressBarInput.startsWith("/")) SlashCommands.filter(addressBarInput) else emptyList()
+        }
+        if (isAddressBarFocused && matchingCommands.isNotEmpty()) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .padding(bottom = 78.dp, start = 16.dp, end = 16.dp)
+                    .then(if (isLargeScreen) Modifier.width(600.dp) else Modifier.fillMaxWidth())
+                    .clip(RoundedCornerShape(20.dp)),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                tonalElevation = 8.dp,
+                shadowElevation = 8.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            ) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp)
+                        .padding(vertical = 4.dp)
+                ) {
+                    items(matchingCommands) { cmd ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    isAddressBarFocused = false
+                                    addressBarInput = ""
+                                    onNavigate(cmd.command)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = cmd.command,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = cmd.description,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // Bottom floating pill directly on top of the content of the screen
@@ -675,6 +929,7 @@ fun BrowserContent(
             onTabSwitcher = onTabSwitcher,
             onNewTab = onNewTab,
             onNewPrivateTab = onNewPrivateTab,
+            onShieldClick = onShieldClick,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
@@ -712,6 +967,7 @@ fun BottomFloatingIslandBar(
     onTabSwitcher: () -> Unit,
     onNewTab: () -> Unit,
     onNewPrivateTab: () -> Unit,
+    onShieldClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isPrivate = activeTab?.isPrivate == true
@@ -793,6 +1049,7 @@ fun BottomFloatingIslandBar(
                     onNavigate = onNavigate,
                     onReload = onReload,
                     onBookmark = onBookmark,
+                    onShieldClick = onShieldClick,
                     modifier = Modifier
                         .weight(1f)
                         .padding(horizontal = 2.dp)
@@ -857,6 +1114,7 @@ fun IslandAddressBar(
     onNavigate: (String) -> Unit,
     onReload: () -> Unit,
     onBookmark: () -> Unit,
+    onShieldClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isEditing by remember { mutableStateOf(isFocused) }
@@ -904,7 +1162,10 @@ fun IslandAddressBar(
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                    modifier = Modifier.padding(end = 4.dp)
+                    modifier = Modifier
+                        .padding(end = 4.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onShieldClick)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
@@ -926,12 +1187,17 @@ fun IslandAddressBar(
                     }
                 }
             } else {
-                Icon(
-                    painter = painterResource(R.drawable.ic_search),
-                    contentDescription = "Search",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(16.dp)
-                )
+                IconButton(
+                    onClick = onShieldClick,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_shield),
+                        contentDescription = "Shield Protection",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(6.dp))
@@ -1031,7 +1297,8 @@ fun IslandAddressBar(
 }
 
 /**
- * Tab switcher overlay - shows all tabs in a grid.
+/**
+ * Tab switcher overlay - shows all tabs in a grid with pinned shelf, actions, and restore capability.
  */
 @Composable
 fun TabSwitcherOverlay(
@@ -1039,10 +1306,15 @@ fun TabSwitcherOverlay(
     activeTabId: String?,
     onTabClick: (String) -> Unit,
     onTabClose: (String) -> Unit,
+    onTabPin: (String) -> Unit,
+    onTabDuplicate: (String) -> Unit,
+    onReopenClosedTab: () -> Unit,
     onNewTab: () -> Unit,
     onNewPrivateTab: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val pinnedTabs = tabs.filter { it.isPinned }
+
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -1058,8 +1330,8 @@ fun TabSwitcherOverlay(
         // Tab switcher panel
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .fillMaxHeight(0.8f)
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.85f)
                 .clip(RoundedCornerShape(24.dp)),
             color = MaterialTheme.colorScheme.surfaceContainer,
             tonalElevation = 8.dp
@@ -1069,50 +1341,84 @@ fun TabSwitcherOverlay(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Tabs",
-                        style = MaterialTheme.typography.headlineSmall
+                        text = "Tabs (${tabs.size})",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
                     )
                     
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IconButton(onClick = { onNewPrivateTab(); onDismiss() }) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_private_tab),
-                                contentDescription = "New private tab",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text("Private")
-                        }
-                        
-                        IconButton(onClick = { onNewTab(); onDismiss() }) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_tab),
-                                contentDescription = "New tab",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text("New Tab")
-                        }
-                        
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_close),
-                                contentDescription = "Close",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_close),
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                // Pinned tabs shelf (horizontal row)
+                if (pinnedTabs.isNotEmpty()) {
+                    Text(
+                        text = "PINNED",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                    )
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(pinnedTabs) { pTab ->
+                            val isCurrent = pTab.id == activeTabId
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { onTabClick(pTab.id) },
+                                color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                tonalElevation = 2.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_pin_filled),
+                                        contentDescription = "Pinned",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = pTab.title.ifBlank { pTab.url },
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.widthIn(max = 120.dp),
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
                     }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
                 }
                 
                 // Tab list
                 LazyColumn(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
+                        .weight(1f)
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(tabs) { tab ->
@@ -1121,7 +1427,7 @@ fun TabSwitcherOverlay(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(80.dp)
+                                .height(74.dp)
                                 .clip(RoundedCornerShape(16.dp))
                                 .clickable { onTabClick(tab.id) },
                             color = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
@@ -1130,21 +1436,10 @@ fun TabSwitcherOverlay(
                             Row(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Thumbnail placeholder
-                                Box(
-                                    modifier = Modifier
-                                        .width(120.dp)
-                                        .height(60.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(Color.Gray)
-                                ) {
-                                    // TODO: Load tab thumbnail
-                                }
-                                
                                 // Tab info
                                 Column(
                                     modifier = Modifier.weight(1f),
@@ -1152,7 +1447,7 @@ fun TabSwitcherOverlay(
                                     horizontalAlignment = Alignment.Start
                                 ) {
                                     Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         if (tab.isPrivate) {
@@ -1160,7 +1455,15 @@ fun TabSwitcherOverlay(
                                                 painter = painterResource(R.drawable.ic_private_tab),
                                                 contentDescription = "Private",
                                                 tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(18.dp)
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                        if (tab.isPinned) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_pin_filled),
+                                                contentDescription = "Pinned",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(14.dp)
                                             )
                                         }
                                         Text(
@@ -1168,31 +1471,113 @@ fun TabSwitcherOverlay(
                                             maxLines = 1,
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                             color = MaterialTheme.colorScheme.onSurface,
-                                            style = MaterialTheme.typography.titleMedium
+                                            style = MaterialTheme.typography.titleSmall
                                         )
                                     }
-                                    
+                                    Spacer(Modifier.height(2.dp))
                                     Text(
                                         text = tab.url,
                                         maxLines = 1,
                                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 12.sp
+                                        fontSize = 11.sp
                                     )
                                 }
                                 
-                                // Close button
-                                IconButton(
-                                    onClick = { onTabClose(tab.id) },
-                                    modifier = Modifier.size(40.dp)
+                                // Tab Action Buttons
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                                 ) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_close),
-                                        contentDescription = "Close",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    IconButton(
+                                        onClick = { onTabPin(tab.id) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(if (tab.isPinned) R.drawable.ic_pin_filled else R.drawable.ic_pin),
+                                            contentDescription = if (tab.isPinned) "Unpin" else "Pin",
+                                            tint = if (tab.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { onTabDuplicate(tab.id) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_tab),
+                                            contentDescription = "Duplicate",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { onTabClose(tab.id) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_close),
+                                            contentDescription = "Close",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
                             }
+                        }
+                    }
+                }
+
+                // Bottom bar
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = onReopenClosedTab,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_refresh),
+                            contentDescription = "Reopen",
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Reopen Closed", fontSize = 12.sp)
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { onNewPrivateTab(); onDismiss() },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_private_tab),
+                                contentDescription = "Private",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Private", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = { onNewTab(); onDismiss() },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_add),
+                                contentDescription = "New Tab",
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("New Tab", fontSize = 12.sp)
                         }
                     }
                 }
