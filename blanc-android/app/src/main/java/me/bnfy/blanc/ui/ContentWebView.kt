@@ -441,6 +441,13 @@ class ContentWebView(
             null
         }
     }
+    var onScrollChangeCallback: ((dy: Int, scrollY: Int) -> Unit)? = null
+
+    override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
+        super.onScrollChanged(l, t, oldl, oldt)
+        val dy = t - oldt
+        onScrollChangeCallback?.invoke(dy, t)
+    }
 }
 
 /**
@@ -452,6 +459,7 @@ fun ContentWebViewContainer(
     activeTab: Tab?,
     onFileChooser: FileChooserHandler,
     onRequestPermission: (String, String, (Boolean) -> Unit) -> Unit,
+    onScrollChange: ((dy: Int, scrollY: Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (activeTab != null) {
@@ -463,10 +471,12 @@ fun ContentWebViewContainer(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
+                        this.onScrollChangeCallback = onScrollChange
                         bind(activeTab, tabManager, onFileChooser, onRequestPermission)
                     }
                 },
                 update = { webView ->
+                    webView.onScrollChangeCallback = onScrollChange
                     webView.bind(activeTab, tabManager, onFileChooser, onRequestPermission)
                 },
                 modifier = modifier
@@ -494,6 +504,7 @@ fun ContentWebViewContainer(
     tabs: List<Tab>,
     onFileChooser: FileChooserHandler,
     onRequestPermission: (String, String, (Boolean) -> Unit) -> Unit,
+    onScrollChange: ((dy: Int, scrollY: Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     ContentWebViewContainer(
@@ -501,6 +512,7 @@ fun ContentWebViewContainer(
         activeTab = tabs.find { it.id == activeTabId },
         onFileChooser = onFileChooser,
         onRequestPermission = onRequestPermission,
+        onScrollChange = onScrollChange,
         modifier = modifier
     )
 }

@@ -20,6 +20,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.offset
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
@@ -33,6 +37,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -196,6 +201,12 @@ fun BrowserScreen(
     var isAddressBarFocused by remember { mutableStateOf(false) }
     
     val coroutineScope = rememberCoroutineScope()
+
+    val allFavorites by repository.favoriteDao.getAllFlow("personal").collectAsState(initial = emptyList())
+    val isBookmarked = remember(activeTab?.url, allFavorites) {
+        val u = activeTab?.url ?: ""
+        u.isNotBlank() && u != "about:blank" && !u.startsWith("blanc://") && allFavorites.any { it.url == u }
+    }
 
     val handleBookmarkToggle: () -> Unit = {
         val currentUrl = activeTab?.url ?: ""
@@ -423,6 +434,7 @@ fun BrowserScreen(
                     },
                     onHome = { activeTabId?.let { tabManager.navigateTo(it, "blanc://newtab") } ?: tabManager.createTab("blanc://newtab") },
                     onBookmark = handleBookmarkToggle,
+                    isBookmarked = isBookmarked,
                     onShare = handleShare,
                     onMenu = { showMenu = true },
                     onTabSwitcher = { showTabSwitcher = true },
@@ -467,6 +479,7 @@ fun BrowserScreen(
                         },
                         onHome = { activeTabId?.let { tabManager.navigateTo(it, "blanc://newtab") } ?: tabManager.createTab("blanc://newtab") },
                         onBookmark = handleBookmarkToggle,
+                        isBookmarked = isBookmarked,
                         onShare = handleShare,
                         onMenu = { showMenu = true },
                         onTabSwitcher = { showTabSwitcher = true },
@@ -574,6 +587,7 @@ fun BrowserScreen(
     if (showMenu) {
         MenuOverlay(
             activeTab = activeTab,
+            isBookmarked = isBookmarked,
             onDismiss = { showMenu = false },
             onNewTab = { tabManager.createTab(); showMenu = false; currentScreen = Screen.Browser },
             onNewPrivateTab = { tabManager.createPrivateTab(); showMenu = false; currentScreen = Screen.Browser },
@@ -787,6 +801,7 @@ fun BrowserContent(
     onReload: () -> Unit,
     onHome: () -> Unit,
     onBookmark: () -> Unit,
+    isBookmarked: Boolean = false,
     onShare: () -> Unit,
     onMenu: () -> Unit,
     onTabSwitcher: () -> Unit,
@@ -818,8 +833,32 @@ fun BrowserContent(
         mutableStateOf(if (isNewTab) "" else currentUrl)
     }
     var isAddressBarFocused by remember { mutableStateOf(false) }
+    var isPillVisible by remember(activeTab?.id) { mutableStateOf(true) }
     val configuration = LocalConfiguration.current
     val isLargeScreen = configuration.screenWidthDp > 600
+
+    val handleScroll: (Int, Int) -> Unit = { dy, scrollY ->
+        if (scrollY <= 20) {
+            // Near top of page, always show
+            if (!isPillVisible) isPillVisible = true
+        } else if (dy > 12) {
+            // Scrolling down into the page: swipe down and hide pill
+            if (isPillVisible) isPillVisible = false
+        } else if (dy < -12) {
+            // Scrolling up towards the top: swipe up and reveal pill
+            if (!isPillVisible) isPillVisible = true
+        }
+    }
+
+    val pillVisible = isPillVisible || isAddressBarFocused
+    val pillOffsetY by animateDpAsState(
+        targetValue = if (pillVisible) 0.dp else 120.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "pill_scroll_offset"
+    )
     
     Box(modifier = modifier.fillMaxSize()) {
         // Content area takes full screen
@@ -829,6 +868,7 @@ fun BrowserContent(
                 activeTab = activeTab,
                 onFileChooser = onFileChooser,
                 onRequestPermission = onRequestPermission,
+                onScrollChange = handleScroll,
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
@@ -857,6 +897,7 @@ fun BrowserContent(
                     .imePadding()
                     .padding(bottom = 78.dp, start = 16.dp, end = 16.dp)
                     .then(if (isLargeScreen) Modifier.width(600.dp) else Modifier.fillMaxWidth())
+                    .offset(y = pillOffsetY)
                     .clip(RoundedCornerShape(20.dp)),
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
                 tonalElevation = 8.dp,
@@ -924,6 +965,7 @@ fun BrowserContent(
             onReload = onReload,
             onHome = onHome,
             onBookmark = onBookmark,
+            isBookmarked = isBookmarked,
             onShare = onShare,
             onMenu = onMenu,
             onTabSwitcher = onTabSwitcher,
@@ -935,6 +977,7 @@ fun BrowserContent(
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
+                .offset(y = pillOffsetY)
         )
     }
 }
@@ -962,6 +1005,7 @@ fun BottomFloatingIslandBar(
     onReload: () -> Unit,
     onHome: () -> Unit,
     onBookmark: () -> Unit,
+    isBookmarked: Boolean = false,
     onShare: () -> Unit,
     onMenu: () -> Unit,
     onTabSwitcher: () -> Unit,
@@ -1007,36 +1051,38 @@ fun BottomFloatingIslandBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Back button
-                IconButton(
-                    onClick = onBack,
-                    enabled = canGoBack,
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_back),
-                        contentDescription = "Back",
-                        tint = if (canGoBack) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                // Forward button (only shown if forward history exists)
-                if (canGoForward) {
+                if (!isAddressBarFocused) {
+                    // Back button
                     IconButton(
-                        onClick = onForward,
+                        onClick = onBack,
+                        enabled = canGoBack,
                         modifier = Modifier.size(38.dp)
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.ic_forward),
-                            contentDescription = "Forward",
-                            tint = MaterialTheme.colorScheme.onSurface,
+                            painter = painterResource(R.drawable.ic_back),
+                            contentDescription = "Back",
+                            tint = if (canGoBack) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                             modifier = Modifier.size(20.dp)
                         )
                     }
+
+                    // Forward button (only shown if forward history exists)
+                    if (canGoForward) {
+                        IconButton(
+                            onClick = onForward,
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_forward),
+                                contentDescription = "Forward",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
 
-                // Center Island Address / Search Pill
+                // Center Island Address / Search Pill (takes full remaining width)
                 IslandAddressBar(
                     isPrivate = isPrivate,
                     isLoading = isLoading,
@@ -1044,6 +1090,7 @@ fun BottomFloatingIslandBar(
                     blockedCount = blockedCount,
                     text = addressBarText,
                     isFocused = isAddressBarFocused,
+                    isBookmarked = isBookmarked,
                     onTextChange = onAddressBarTextChange,
                     onFocusChange = onAddressBarFocusChange,
                     onNavigate = onNavigate,
@@ -1055,43 +1102,58 @@ fun BottomFloatingIslandBar(
                         .padding(horizontal = 2.dp)
                 )
 
-                // Tab Switcher Button (with stylish tab count badge)
-                Surface(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable(onClick = onTabSwitcher),
-                    color = if (isPrivate) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(
-                        1.5.dp,
-                        if (isPrivate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                if (isAddressBarFocused) {
+                    // Cancel search button
+                    IconButton(
+                        onClick = { onAddressBarFocusChange(false) },
+                        modifier = Modifier.size(38.dp)
                     ) {
-                        Text(
-                            text = "${tabs.size.coerceAtLeast(1)}",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isPrivate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        Icon(
+                            painter = painterResource(R.drawable.ic_close),
+                            contentDescription = "Cancel",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                }
+                } else {
+                    // Tab Switcher Button (with stylish tab count badge)
+                    Surface(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(onClick = onTabSwitcher),
+                        color = if (isPrivate) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(
+                            1.5.dp,
+                            if (isPrivate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "${tabs.size.coerceAtLeast(1)}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isPrivate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
 
-                // Menu button
-                IconButton(
-                    onClick = onMenu,
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_menu),
-                        contentDescription = "Menu",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    // Menu button
+                    IconButton(
+                        onClick = onMenu,
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_menu),
+                            contentDescription = "Menu",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
@@ -1114,6 +1176,7 @@ fun IslandAddressBar(
     onNavigate: (String) -> Unit,
     onReload: () -> Unit,
     onBookmark: () -> Unit,
+    isBookmarked: Boolean = false,
     onShieldClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -1227,6 +1290,10 @@ fun IslandAddressBar(
                         unfocusedIndicatorColor = Color.Transparent,
                         disabledIndicatorColor = Color.Transparent
                     ),
+                    textStyle = TextStyle(
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
                     singleLine = true,
                     placeholder = {
                         Text(
@@ -1272,10 +1339,10 @@ fun IslandAddressBar(
                     modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_bookmark),
-                        contentDescription = "Bookmark",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(15.dp)
+                        painter = painterResource(if (isBookmarked) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark),
+                        contentDescription = if (isBookmarked) "Bookmarked" else "Bookmark",
+                        tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
 
@@ -1296,7 +1363,6 @@ fun IslandAddressBar(
     }
 }
 
-/**
 /**
  * Tab switcher overlay - shows all tabs in a grid with pinned shelf, actions, and restore capability.
  */
@@ -1592,6 +1658,7 @@ fun TabSwitcherOverlay(
 @Composable
 fun MenuOverlay(
     activeTab: Tab?,
+    isBookmarked: Boolean = false,
     onDismiss: () -> Unit,
     onNewTab: () -> Unit,
     onNewPrivateTab: () -> Unit,
@@ -1677,9 +1744,10 @@ fun MenuOverlay(
                 // Page actions
                 if (activeTab != null && !activeTab.url.startsWith("blanc://") && activeTab.url != "about:blank") {
                     MenuItem(
-                        icon = R.drawable.ic_bookmark,
-                        text = "Bookmark page",
-                        onClick = { onBookmark(); onDismiss() }
+                        icon = if (isBookmarked) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark,
+                        text = if (isBookmarked) "Remove from favorites" else "Add to favorites",
+                        onClick = { onBookmark(); onDismiss() },
+                        iconTint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                     )
                 }
 
