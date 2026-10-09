@@ -38,42 +38,44 @@ class TabManager(
     private val context: Context,
     private val webViewFactory: WebViewFactory,
     private val adblockEngine: AdblockEngine? = null,
-    bridge: BlancBridge? = null
+    initialBridge: BlancBridge? = null
 ) {
 
-    // Overload constructor for backwards compatibility
+    // Overload constructor for backwards compatibility with TabManager(context, bridge, webViewFactory)
     constructor(
         context: Context,
         bridge: BlancBridge?,
-        webViewFactory: WebViewFactory,
-        adblockEngine: AdblockEngine? = null
-    ) : this(context, webViewFactory, adblockEngine, bridge)
+        webViewFactory: WebViewFactory
+    ) : this(context, webViewFactory, null, bridge)
 
-    private var bridge: BlancBridge = bridge ?: object : BlancBridge {}
+    private var currentBridge: BlancBridge = initialBridge ?: object : BlancBridge {}
+
+    val bridge: BlancBridge
+        get() = currentBridge
 
     fun setBridge(bridge: BlancBridge) {
-        this.bridge = bridge
+        this.currentBridge = bridge
     }
 
     private val bridgeDelegate = object : BlancBridge {
-        override fun onTabCreated(tab: Tab) = bridge.onTabCreated(tab)
-        override fun onTabUpdated(tab: Tab) = bridge.onTabUpdated(tab)
-        override fun onTabClosed(tabId: String) = bridge.onTabClosed(tabId)
-        override fun onTabSwitched(tabId: String) = bridge.onTabSwitched(tabId)
-        override fun onNavigation(tabId: String, url: String, title: String?) = bridge.onNavigation(tabId, url, title)
-        override fun onProgress(tabId: String, progress: Int) = bridge.onProgress(tabId, progress)
-        override fun onCreateWindowRequested(url: String, isPrivate: Boolean) = bridge.onCreateWindowRequested(url, isPrivate)
-        override fun onGroupCreated(group: TabGroup) = bridge.onGroupCreated(group)
-        override fun onGroupUpdated(group: TabGroup) = bridge.onGroupUpdated(group)
-        override fun onGroupClosed(groupId: String) = bridge.onGroupClosed(groupId)
-        override fun onWindowClosed(windowId: String) = bridge.onWindowClosed(windowId)
-        override fun onWindowFocused(windowId: String) = bridge.onWindowFocused(windowId)
-        override fun onSurfaceClosed(windowId: String) = bridge.onSurfaceClosed(windowId)
-        override fun onToast(message: String) = bridge.onToast(message)
+        override fun onTabCreated(tab: Tab) = currentBridge.onTabCreated(tab)
+        override fun onTabUpdated(tab: Tab) = currentBridge.onTabUpdated(tab)
+        override fun onTabClosed(tabId: String) = currentBridge.onTabClosed(tabId)
+        override fun onTabSwitched(tabId: String) = currentBridge.onTabSwitched(tabId)
+        override fun onNavigation(tabId: String, url: String, title: String?) = currentBridge.onNavigation(tabId, url, title)
+        override fun onProgress(tabId: String, progress: Int) = currentBridge.onProgress(tabId, progress)
+        override fun onCreateWindowRequested(url: String, isPrivate: Boolean) = currentBridge.onCreateWindowRequested(url, isPrivate)
+        override fun onGroupCreated(group: TabGroup) = currentBridge.onGroupCreated(group)
+        override fun onGroupUpdated(group: TabGroup) = currentBridge.onGroupUpdated(group)
+        override fun onGroupClosed(groupId: String) = currentBridge.onGroupClosed(groupId)
+        override fun onWindowClosed(windowId: String) = currentBridge.onWindowClosed(windowId)
+        override fun onWindowFocused(windowId: String) = currentBridge.onWindowFocused(windowId)
+        override fun onSurfaceClosed(windowId: String) = currentBridge.onSurfaceClosed(windowId)
+        override fun onToast(message: String) = currentBridge.onToast(message)
         override fun onPermissionRequested(tabId: String, origin: String, type: String, callback: PermissionCallback) =
-            bridge.onPermissionRequested(tabId, origin, type, callback)
+            currentBridge.onPermissionRequested(tabId, origin, type, callback)
         override fun onFileChooserRequested(tabId: String, mode: Int, acceptTypes: Array<String>?, capture: Boolean, callback: FileChooserCallback) =
-            bridge.onFileChooserRequested(tabId, mode, acceptTypes, capture, callback)
+            currentBridge.onFileChooserRequested(tabId, mode, acceptTypes, capture, callback)
     }
 
     private val tabs = ConcurrentHashMap<String, Tab>()

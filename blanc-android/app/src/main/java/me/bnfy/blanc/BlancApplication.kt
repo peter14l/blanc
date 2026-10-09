@@ -86,12 +86,11 @@ class BlancApplication : Application() {
         get() = _tabManager ?: synchronized(this) {
             _tabManager ?: TabManager(
                 context = this,
-                bridge = null,
                 webViewFactory = WebViewFactory.createRegular(this),
                 adblockEngine = adblockEngine
-            ).also {
-                _tabManager = it
-                _blancBridge?.let { bridge -> it.setBridge(bridge) }
+            ).also { manager ->
+                _tabManager = manager
+                _blancBridge?.let { bridge -> manager.setBridge(bridge) }
             }
         }
     
