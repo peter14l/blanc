@@ -34,16 +34,6 @@ class AdblockWebViewClient(
         return super.shouldInterceptRequest(view, request)
     }
 
-    /** Legacy API for older Android versions. */
-    @Suppress("DEPRECATION")
-    override fun shouldInterceptRequest(view: WebView?, url: String?): WebResourceResponse? {
-        url?.let {
-            val request = WebResourceRequestWrapper(it)
-            return shouldInterceptRequest(view, request)
-        }
-        return super.shouldInterceptRequest(view, url)
-    }
-
     /** Called when a page finishes loading - inject cosmetic filters. */
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
@@ -118,10 +108,6 @@ class AdblockWebViewClientDecorator(
 
     @Suppress("DEPRECATION")
     override fun shouldInterceptRequest(view: WebView?, url: String?): WebResourceResponse? {
-        url?.let {
-            val request = WebResourceRequestWrapper(it)
-            return shouldInterceptRequest(view, request)
-        }
         return delegate.shouldInterceptRequest(view, url)
     }
 

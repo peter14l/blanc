@@ -33,10 +33,7 @@ class TabWebViewClient(
     /** Tracks whether the current navigation was initiated by user action. */
     private var isUserNavigation = false
 
-    /** Called when the WebView is about to load a new URL. */
-    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-        val url = request?.url?.toString() ?: return false
-
+    private fun handleUrlLoading(url: String): Boolean {
         // Handle special URLs
         return when {
             url.startsWith("blanc://") -> {
@@ -58,14 +55,17 @@ class TabWebViewClient(
         }
     }
 
+    /** Called when the WebView is about to load a new URL. */
+    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+        val url = request?.url?.toString() ?: return false
+        return handleUrlLoading(url)
+    }
+
     /** Legacy API for older Android versions. */
     @Suppress("DEPRECATION")
     override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-        url?.let {
-            val request = WebResourceRequestWrapper(it)
-            return shouldOverrideUrlLoading(view, request)
-        }
-        return false
+        val target = url ?: return false
+        return handleUrlLoading(target)
     }
 
     /** Called when a page starts loading. */
