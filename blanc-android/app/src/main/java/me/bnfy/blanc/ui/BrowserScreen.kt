@@ -411,6 +411,7 @@ fun BrowserScreen(
             onDismiss = { showFindInPage = false }
         )
     }
+    }
 }
 
 // Sidebar for tablet layout
