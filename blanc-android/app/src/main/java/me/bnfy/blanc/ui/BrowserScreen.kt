@@ -1,5 +1,6 @@
 package me.bnfy.blanc.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -85,11 +86,26 @@ import me.bnfy.blanc.ui.pages.HistoryPage
 import me.bnfy.blanc.ui.pages.DownloadsPage
 import me.bnfy.blanc.storage.DownloadEntity
 
+fun buildSearchUrl(query: String, engine: String): String {
+    val encoded = try {
+        java.net.URLEncoder.encode(query, "UTF-8")
+    } catch (e: Exception) {
+        query
+    }
+    return when (engine.lowercase()) {
+        "google" -> "https://www.google.com/search?q=$encoded"
+        "bing" -> "https://www.bing.com/search?q=$encoded"
+        "brave" -> "https://search.brave.com/search?q=$encoded"
+        "ecosia" -> "https://www.ecosia.org/search?q=$encoded"
+        else -> "https://duckduckgo.com/?q=$encoded"
+    }
+}
+
 /**
  * Resolves a user input string from the address bar or search bar into a valid URL.
- * Automatically wraps search queries with DuckDuckGo and prefixes bare domains with https://.
+ * Automatically wraps search queries with the selected search engine and prefixes bare domains with https://.
  */
-fun resolveUrlOrSearch(input: String): String {
+fun resolveUrlOrSearch(input: String, searchEngine: String = "duckduckgo"): String {
     val trimmed = input.trim()
     if (trimmed.isEmpty()) return "blanc://newtab"
     if (trimmed.startsWith("blanc://") || trimmed.startsWith("about:") || trimmed.startsWith("data:") || trimmed.startsWith("javascript:")) {
@@ -98,17 +114,15 @@ fun resolveUrlOrSearch(input: String): String {
     if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
         return trimmed
     }
-    val isDomain = (trimmed.contains(".") && !trimmed.contains(" ") && !trimmed.endsWith(".")) ||
-                   trimmed.startsWith("localhost") ||
-                   android.util.Patterns.WEB_URL.matcher(trimmed).matches()
+    val hasWhitespace = trimmed.any { it.isWhitespace() }
+    val isDomain = !hasWhitespace && (
+        trimmed.startsWith("localhost") ||
+        (trimmed.contains(".") && !trimmed.startsWith(".") && !trimmed.endsWith("."))
+    )
     return if (isDomain) {
         "https://$trimmed"
     } else {
-        try {
-            "https://duckduckgo.com/?q=${java.net.URLEncoder.encode(trimmed, "UTF-8")}"
-        } catch (e: Exception) {
-            "https://duckduckgo.com/?q=$trimmed"
-        }
+        buildSearchUrl(trimmed, searchEngine)
     }
 }
 
@@ -124,11 +138,28 @@ fun BrowserScreen(
     onFileChooser: FileChooserHandler,
     onRequestPermission: (String, String, (Boolean) -> Unit) -> Unit
 ) {
+    val context = LocalContext.current
+
     // Navigation state
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Browser) }
     var showTabSwitcher by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showFindInPage by remember { mutableStateOf(false) }
+
+    // Persistent default search engine
+    val defaultSearchEngine by repository.defaultSearchEngine.collectAsState(initial = "duckduckgo")
+
+    // Android System Back Navigation Handler
+    BackHandler(enabled = true) {
+        when {
+            showFindInPage -> showFindInPage = false
+            showMenu -> showMenu = false
+            showTabSwitcher -> showTabSwitcher = false
+            currentScreen != Screen.Browser -> currentScreen = Screen.Browser
+            tabManager.canGoBack() -> tabManager.goBack()
+            else -> (context as? android.app.Activity)?.finish()
+        }
+    }
     
     // Window size for responsive layout
     val configuration = LocalConfiguration.current
@@ -254,7 +285,7 @@ fun BrowserScreen(
                     onTabClick = { tabId -> tabManager.switchTab(tabId) },
                     onTabClose = { tabId -> tabManager.closeTab(tabId) },
                     onNavigate = { url ->
-                        val resolved = resolveUrlOrSearch(url)
+                        val resolved = resolveUrlOrSearch(url, defaultSearchEngine)
                         activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
                     },
                     onBack = { activeTabId?.let { tabManager.goBack(it) } },
@@ -293,7 +324,7 @@ fun BrowserScreen(
                         onTabClick = { tabId -> tabManager.switchTab(tabId) },
                         onTabClose = { tabId -> tabManager.closeTab(tabId) },
                         onNavigate = { url ->
-                            val resolved = resolveUrlOrSearch(url)
+                            val resolved = resolveUrlOrSearch(url, defaultSearchEngine)
                             activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
                         },
                         onBack = { activeTabId?.let { tabManager.goBack(it) } },
@@ -323,7 +354,7 @@ fun BrowserScreen(
                 tabManager = tabManager,
                 repository = repository,
                 onNavigate = { url ->
-                    val resolved = resolveUrlOrSearch(url)
+                    val resolved = resolveUrlOrSearch(url, defaultSearchEngine)
                     activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
                     currentScreen = Screen.Browser
                 },
@@ -336,7 +367,7 @@ fun BrowserScreen(
                 onBack = { currentScreen = Screen.Browser },
                 repository = repository,
                 onBookmarkClick = { url ->
-                    val resolved = resolveUrlOrSearch(url)
+                    val resolved = resolveUrlOrSearch(url, defaultSearchEngine)
                     activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
                     currentScreen = Screen.Browser
                 }
@@ -345,7 +376,7 @@ fun BrowserScreen(
                 onBack = { currentScreen = Screen.Browser },
                 repository = repository,
                 onItemClick = { url ->
-                    val resolved = resolveUrlOrSearch(url)
+                    val resolved = resolveUrlOrSearch(url, defaultSearchEngine)
                     activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
                     currentScreen = Screen.Browser
                 }
@@ -613,7 +644,9 @@ fun BrowserContent(
                 tabManager = tabManager,
                 onNavigate = onNavigate,
                 onNewTab = onNewTab,
-                onNewPrivateTab = onNewPrivateTab
+                onNewPrivateTab = onNewPrivateTab,
+                onOpenBookmarks = onShowBookmarks,
+                onOpenHistory = onShowHistory
             )
         }
 

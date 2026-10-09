@@ -20,6 +20,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -96,7 +98,8 @@ class MainActivity : AppCompatActivity() {
         
         // Set up Compose UI
         setContent {
-            MaterialTheme {
+            val themeMode by repository!!.theme.collectAsState(initial = "system")
+            me.bnfy.blanc.ui.theme.BlancTheme(theme = themeMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.surface
@@ -122,17 +125,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        
-        // Handle back press
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (tabManager?.goBack() != true) {
-                    // Check if there's a find bar or panel open
-                    // For now, just finish
-                    finish()
-                }
-            }
-        })
     }
 
     override fun onNewIntent(intent: Intent) {
