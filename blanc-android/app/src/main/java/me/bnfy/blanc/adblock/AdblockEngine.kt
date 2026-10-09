@@ -196,7 +196,6 @@ class AdblockEngine private constructor(
         }
 
         // Check per-host exceptions (user allowlist)
-        val host = extractHost(url)
         if (exceptions.containsKey(host)) {
             return false
         }
