@@ -80,9 +80,13 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import me.bnfy.blanc.storage.Favorite
 import java.util.UUID
 import me.bnfy.blanc.bridge.BridgeProtocol
+import me.bnfy.blanc.util.SearchSuggestionService
+import me.bnfy.blanc.util.SuggestionResult
+import me.bnfy.blanc.util.NavSite
 import me.bnfy.blanc.storage.Repository
 import me.bnfy.blanc.tab.Tab
 import me.bnfy.blanc.tab.TabGroup
@@ -419,6 +423,8 @@ fun BrowserScreen(
                     activeTab = activeTab,
                     tabs = tabs,
                     activeTabId = activeTabId,
+                    defaultSearchEngine = defaultSearchEngine,
+                    favorites = allFavorites,
                     onTabClick = { tabId -> tabManager.switchTab(tabId); currentScreen = Screen.Browser },
                     onTabClose = { tabId -> tabManager.closeTab(tabId) },
                     onNavigate = { url ->
@@ -464,6 +470,8 @@ fun BrowserScreen(
                         activeTab = activeTab,
                         tabs = tabs,
                         activeTabId = activeTabId,
+                        defaultSearchEngine = defaultSearchEngine,
+                        favorites = allFavorites,
                         onTabClick = { tabId -> tabManager.switchTab(tabId) },
                         onTabClose = { tabId -> tabManager.closeTab(tabId) },
                         onNavigate = { url ->
@@ -795,6 +803,8 @@ fun BrowserContent(
     activeTab: Tab?,
     tabs: List<Tab>,
     activeTabId: String?,
+    defaultSearchEngine: String = "duckduckgo",
+    favorites: List<Favorite> = emptyList(),
     onTabClick: (String) -> Unit,
     onTabClose: (String) -> Unit,
     onNavigate: (String) -> Unit,
@@ -835,6 +845,15 @@ fun BrowserContent(
         mutableStateOf(if (isNewTab) "" else currentUrl)
     }
     var isAddressBarFocused by remember { mutableStateOf(false) }
+    var suggestionResult by remember { mutableStateOf(SuggestionResult()) }
+    LaunchedEffect(addressBarInput, defaultSearchEngine, isAddressBarFocused, favorites) {
+        if (!isAddressBarFocused || addressBarInput.startsWith("/") || addressBarInput.trim().isEmpty()) {
+            suggestionResult = SuggestionResult()
+            return@LaunchedEffect
+        }
+        delay(120)
+        suggestionResult = SearchSuggestionService.fetchSuggestions(addressBarInput, defaultSearchEngine, favorites)
+    }
     var isPillVisible by remember(activeTab?.id) { mutableStateOf(true) }
     val configuration = LocalConfiguration.current
     val isLargeScreen = configuration.screenWidthDp > 600
@@ -938,6 +957,184 @@ fun BrowserContent(
                                 maxLines = 1,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
+                        }
+                    }
+                }
+            }
+        } else if (isAddressBarFocused && addressBarInput.trim().isNotEmpty() && !addressBarInput.startsWith("/")) {
+            // Omnibox suggestions popup with top-priority suggested websites
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .padding(bottom = 78.dp, start = 16.dp, end = 16.dp)
+                    .then(if (isLargeScreen) Modifier.width(600.dp) else Modifier.fillMaxWidth())
+                    .offset(y = pillOffsetY)
+                    .clip(RoundedCornerShape(20.dp)),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                tonalElevation = 8.dp,
+                shadowElevation = 8.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            ) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp)
+                        .padding(vertical = 4.dp)
+                ) {
+                    // 1. Top Priority: Suggested Websites (NavSites: Bookmarks, Popular, Navigation matches)
+                    if (suggestionResult.navSites.isNotEmpty()) {
+                        items(suggestionResult.navSites) { site ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        isAddressBarFocused = false
+                                        onNavigate(site.url)
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val isFav = site.badge.equals("Bookmark", ignoreCase = true)
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        painter = painterResource(if (isFav) R.drawable.ic_bookmark_filled else R.drawable.ic_launch),
+                                        contentDescription = site.badge,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = site.title,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontSize = 14.sp,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.secondaryContainer,
+                                            tonalElevation = 1.dp
+                                        ) {
+                                            Text(
+                                                text = site.badge,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = site.domain,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        item {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                            )
+                        }
+                    }
+
+                    // 2. Primary Search Action
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    isAddressBarFocused = false
+                                    val target = resolveUrlOrSearch(addressBarInput, defaultSearchEngine)
+                                    onNavigate(target)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_find),
+                                contentDescription = "Search",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Search \"${addressBarInput.trim()}\"",
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 14.sp,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "with ${defaultSearchEngine.replaceFirstChar { it.uppercase() }}",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // 3. Live query suggestions
+                    if (suggestionResult.querySuggestions.isNotEmpty()) {
+                        items(suggestionResult.querySuggestions) { query ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        isAddressBarFocused = false
+                                        val target = buildSearchUrl(query, defaultSearchEngine)
+                                        onNavigate(target)
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_find),
+                                    contentDescription = "Suggestion",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = query,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                                IconButton(
+                                    onClick = { addressBarInput = query },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_forward),
+                                        contentDescription = "Fill in address bar",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
