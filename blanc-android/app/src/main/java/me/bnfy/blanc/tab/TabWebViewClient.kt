@@ -172,16 +172,6 @@ class TabWebViewClient(
         return super.shouldInterceptRequest(view, request)
     }
 
-    /** Legacy intercept request. */
-    @Suppress("DEPRECATION")
-    override fun shouldInterceptRequest(view: WebView?, url: String?): WebResourceResponse? {
-        url?.let {
-            val request = WebResourceRequestWrapper(it)
-            return shouldInterceptRequest(view, request)
-        }
-        return super.shouldInterceptRequest(view, url)
-    }
-
     /** Handles HTTP authentication requests. */
     override fun onReceivedHttpAuthRequest(
         view: WebView?,
@@ -246,17 +236,5 @@ class TabWebViewClient(
                 // Other blanc:// URLs
             }
         }
-    }
-
-    /**
-     * Wrapper to unify WebResourceRequest API across Android versions.
-     */
-    private class WebResourceRequestWrapper(private val url: String) : WebResourceRequest {
-        override fun getUrl(): android.net.Uri = android.net.Uri.parse(url)
-        override fun isForMainFrame(): Boolean = true
-        override fun isRedirect(): Boolean = false
-        override fun hasGesture(): Boolean = false
-        override fun getMethod(): String = "GET"
-        override fun getRequestHeaders(): MutableMap<String, String> = mutableMapOf()
     }
 }
