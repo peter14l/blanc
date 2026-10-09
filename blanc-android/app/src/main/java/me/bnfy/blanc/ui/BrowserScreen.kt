@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.LaunchedEffect
@@ -1046,7 +1048,7 @@ fun BottomFloatingIslandBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .height(60.dp)
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -1200,15 +1202,19 @@ fun IslandAddressBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(42.dp)
-            .clip(RoundedCornerShape(21.dp)),
+            .height(46.dp)
+            .clip(RoundedCornerShape(23.dp)),
         color = if (isPrivate) MaterialTheme.colorScheme.surface.copy(alpha = 0.9f) else MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 10.dp)
+                .clickable(enabled = !isEditing) {
+                    isEditing = true
+                    onFocusChange(true)
+                },
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Shield or Private Icon
@@ -1267,12 +1273,18 @@ fun IslandAddressBar(
 
             // URL or Search field
             if (isEditing) {
-                TextField(
+                BasicTextField(
                     value = text,
                     onValueChange = onTextChange,
                     modifier = Modifier
                         .weight(1f)
                         .focusRequester(focusRequester),
+                    textStyle = TextStyle(
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    singleLine = true,
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     keyboardOptions = KeyboardOptions(
                         imeAction = ImeAction.Go
                     ),
@@ -1283,24 +1295,20 @@ fun IslandAddressBar(
                             onNavigate(text)
                         }
                     ),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent
-                    ),
-                    textStyle = TextStyle(
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    singleLine = true,
-                    placeholder = {
-                        Text(
-                            "Search or enter URL",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
+                    decorationBox = { innerTextField ->
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            if (text.isEmpty()) {
+                                Text(
+                                    text = "Search or enter URL",
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            }
+                            innerTextField()
+                        }
                     }
                 )
 
@@ -1314,7 +1322,7 @@ fun IslandAddressBar(
                             painter = painterResource(R.drawable.ic_close),
                             contentDescription = "Clear",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
@@ -1325,12 +1333,7 @@ fun IslandAddressBar(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     color = if (text.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurface,
                     fontSize = 14.sp,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable {
-                            isEditing = true
-                            onFocusChange(true)
-                        }
+                    modifier = Modifier.weight(1f)
                 )
 
                 // Bookmark button
