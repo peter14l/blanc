@@ -11,6 +11,8 @@
     <color name="surface_container">#FFE8E8E8</color>
     <color name="surface_container_high">#FFE0E0E0</color>
     <color name="surface_container_highest">#FFD8D8D8</color>
+    <color name="on_surface">#FF1A1A1A</color>
+    <color name="on_surface_variant">#FF737373</color>
     
     <!-- Primary (Sunrise Gold) -->
     <color name="primary">#FFC8A030</color>
@@ -57,6 +59,8 @@
     <color name="surface_container_light">#FFE8E8E8</color>
     <color name="surface_container_high_light">#FFE0E0E0</color>
     <color name="surface_container_highest_light">#FFD8D8D8</color>
+    <color name="on_surface_light">#FF1A1A1A</color>
+    <color name="on_surface_variant_light">#FF737373</color>
     
     <color name="primary_light">#FFC8A030</color>
     <color name="primary_container_light">#FFFFF3E0</color>
@@ -96,6 +100,8 @@
     <color name="surface_container_dark">#FF333333</color>
     <color name="surface_container_high_dark">#FF3A3A3A</color>
     <color name="surface_container_highest_dark">#FF424242</color>
+    <color name="on_surface_dark">#FFE0E0E0</color>
+    <color name="on_surface_variant_dark">#FFA0A0A0</color>
     
     <color name="primary_dark">#FFFFD600</color>
     <color name="primary_container_dark">#FF3D3300</color>

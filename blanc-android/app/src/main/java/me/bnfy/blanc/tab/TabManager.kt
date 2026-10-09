@@ -517,24 +517,14 @@ class TabManager(
      * Navigates back in the active tab's history.
      */
     fun goBack(): Boolean {
-        return activeTabId?.let {
-            val tab = tabs[it]
-            val url = tab?.goBack()
-            url?.let { tab?.webView?.loadUrl(it) }
-            url != null
-        } ?: false
+        return activeTabId?.let { goBack(it) } ?: false
     }
 
     /**
      * Navigates forward in the active tab's history.
      */
     fun goForward(): Boolean {
-        return activeTabId?.let {
-            val tab = tabs[it]
-            val url = tab?.goForward()
-            url?.let { tab?.webView?.loadUrl(it) }
-            url != null
-        } ?: false
+        return activeTabId?.let { goForward(it) } ?: false
     }
 
     /**
@@ -826,9 +816,14 @@ class TabManager(
     fun goBack(tabId: String): Boolean {
         return mainHandler.run {
             val tab = tabs[tabId] ?: return@run false
-            val url = tab.goBack()
-            url?.let { tab.webView?.loadUrl(it) }
-            url != null
+            if (tab.webView?.canGoBack() == true) {
+                tab.webView?.goBack()
+                true
+            } else {
+                val url = tab.goBack()
+                url?.let { tab.webView?.loadUrl(it) }
+                url != null
+            }
         }
     }
 
@@ -838,9 +833,14 @@ class TabManager(
     fun goForward(tabId: String): Boolean {
         return mainHandler.run {
             val tab = tabs[tabId] ?: return@run false
-            val url = tab.goForward()
-            url?.let { tab.webView?.loadUrl(it) }
-            url != null
+            if (tab.webView?.canGoForward() == true) {
+                tab.webView?.goForward()
+                true
+            } else {
+                val url = tab.goForward()
+                url?.let { tab.webView?.loadUrl(it) }
+                url != null
+            }
         }
     }
 

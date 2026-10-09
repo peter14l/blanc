@@ -77,7 +77,10 @@ data class Tab(
     var profileId: String = "personal",
 
     /** Thumbnail bitmap for tab switcher (cached). */
-    var thumbnail: android.graphics.Bitmap? = null
+    var thumbnail: android.graphics.Bitmap? = null,
+
+    /** Whether desktop site mode is requested. */
+    var isDesktopMode: Boolean = false
 ) {
 
     /**

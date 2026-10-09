@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -21,34 +23,52 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import me.bnfy.blanc.BlancApplication
 import me.bnfy.blanc.R
+import me.bnfy.blanc.storage.HistoryEntry
+import me.bnfy.blanc.storage.Repository
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * History page
+ * History page connected to Room database.
  */
 @Composable
 fun HistoryPage(
     onBack: () -> Unit,
+    repository: Repository = BlancApplication.getInstance().repository,
     onItemClick: (String) -> Unit,
-    onClearHistory: () -> Unit
+    onClearHistory: (() -> Unit)? = null
 ) {
-    val historyItems = remember { mutableStateOf<List<HistoryItem>>(getSampleHistory()) }
-    val searchQuery = remember { mutableStateOf("") }
-    val isSearching = remember { mutableStateOf(false) }
-    
+    val coroutineScope = rememberCoroutineScope()
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearching by remember { mutableStateOf(false) }
+
+    val queryParam = if (searchQuery.trim().isEmpty()) null else searchQuery.trim()
+    val historyEntries by repository.historyDao.getHistoryPageFlow(
+        profileId = "personal",
+        limit = 300,
+        offset = 0,
+        query = queryParam
+    ).collectAsState(initial = emptyList())
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.surface
@@ -62,16 +82,16 @@ fun HistoryPage(
                 title = "History",
                 onBack = onBack,
                 actions = {
-                    if (isSearching.value) {
+                    if (isSearching) {
                         TextField(
-                            value = searchQuery.value,
-                            onValueChange = { searchQuery.value = it },
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
                             modifier = Modifier.width(200.dp),
                             singleLine = true,
                             placeholder = { Text("Search history") },
                             leadingIcon = { Icon(painterResource(R.drawable.ic_search), contentDescription = null) },
                             trailingIcon = {
-                                IconButton(onClick = { searchQuery.value = "" }) {
+                                IconButton(onClick = { searchQuery = "" }) {
                                     Icon(painterResource(R.drawable.ic_close), contentDescription = "Clear")
                                 }
                             },
@@ -82,38 +102,49 @@ fun HistoryPage(
                                 unfocusedIndicatorColor = Color.Transparent
                             )
                         )
-                        IconButton(onClick = { isSearching.value = false }) {
+                        IconButton(onClick = { isSearching = false; searchQuery = "" }) {
                             Icon(painterResource(R.drawable.ic_close), contentDescription = "Cancel")
                         }
                     } else {
-                        IconButton(onClick = { isSearching.value = true }) {
+                        IconButton(onClick = { isSearching = true }) {
                             Icon(painterResource(R.drawable.ic_search), contentDescription = "Search")
                         }
-                        IconButton(onClick = onClearHistory) {
-                            Icon(painterResource(R.drawable.ic_delete), contentDescription = "Clear history")
+                        if (historyEntries.isNotEmpty()) {
+                            IconButton(onClick = {
+                                if (onClearHistory != null) {
+                                    onClearHistory()
+                                } else {
+                                    coroutineScope.launch {
+                                        repository.historyDao.clearHistory("personal")
+                                    }
+                                }
+                            }) {
+                                Icon(painterResource(R.drawable.ic_delete), contentDescription = "Clear history")
+                            }
                         }
                     }
                 }
             )
-            
+
             // History list grouped by date
-            if (historyItems.value.isEmpty()) {
+            if (historyEntries.isEmpty()) {
                 EmptyState(
                     icon = R.drawable.ic_history,
-                    title = "No history",
-                    subtitle = "Your browsing history will appear here"
+                    title = if (searchQuery.isNotEmpty()) "No matching results" else "No history",
+                    subtitle = if (searchQuery.isNotEmpty()) "Try searching for a different URL or title" else "Your browsing history will appear here"
                 )
             } else {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(vertical = 16.dp),
+                        .navigationBarsPadding()
+                        .padding(vertical = 8.dp),
                     contentPadding = PaddingValues(vertical = 8.dp, horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    val grouped = historyItems.value.groupBy { formatDate(it.timestamp) }
-                    val sortedDates = grouped.keys.sortedDescending()
-                    
+                    val grouped = historyEntries.groupBy { formatDate(it.visitTime) }
+                    val sortedDates = grouped.keys.toList()
+
                     items(sortedDates) { date ->
                         Column(
                             modifier = Modifier.fillMaxWidth(),
@@ -124,17 +155,19 @@ fun HistoryPage(
                                 text = date,
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 4.dp)
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                             )
-                            
+
                             // Items for this date
-                            grouped[date]?.forEach { item ->
-                                HistoryItemCard(
-                                    item = item,
-                                    onClick = { onItemClick(item.url) },
-                                    onDelete = { 
-                                        historyItems.value = historyItems.value.filter { it.id != item.id }
+                            grouped[date]?.forEach { entry ->
+                                HistoryEntryCard(
+                                    entry = entry,
+                                    onClick = { onItemClick(entry.url) },
+                                    onDelete = {
+                                        coroutineScope.launch {
+                                            repository.historyDao.deleteById(entry.id)
+                                        }
                                     }
                                 )
                             }
@@ -147,81 +180,80 @@ fun HistoryPage(
 }
 
 @Composable
-fun HistoryItemCard(
-    item: HistoryItem,
+fun HistoryEntryCard(
+    entry: HistoryEntry,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_launch),
+                painter = painterResource(R.drawable.ic_history),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(4.dp)
             )
             Column(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = item.title,
+                    text = entry.title?.ifBlank { entry.url } ?: entry.url,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
                 )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = item.url,
+                        text = entry.url,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
+                        fontSize = 12.sp,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     Text(
-                        text = formatTime(item.timestamp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = formatTime(entry.visitTime),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         fontSize = 12.sp
                     )
                 }
             }
             IconButton(onClick = onDelete) {
-                Icon(painterResource(R.drawable.ic_delete), contentDescription = "Remove from history")
+                Icon(
+                    painter = painterResource(R.drawable.ic_close),
+                    contentDescription = "Remove from history",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
 }
 
-data class HistoryItem(
-    val id: String,
-    val title: String,
-    val url: String,
-    val timestamp: Long,
-    val favicon: String? = null,
-    val isPrivate: Boolean = false
-)
-
 fun formatDate(timestamp: Long): String {
     val date = Date(timestamp)
     val today = Date()
     val yesterday = Date(today.time - 86400000)
-    
+
     val dayFormat = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault())
-    
+
     return when {
         isSameDay(date, today) -> "Today"
         isSameDay(date, yesterday) -> "Yesterday"
@@ -238,11 +270,3 @@ fun isSameDay(date1: Date, date2: Date): Boolean {
     val format = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
     return format.format(date1) == format.format(date2)
 }
-
-fun getSampleHistory(): List<HistoryItem> = listOf(
-    HistoryItem("1", "Example Domain", "https://example.com", System.currentTimeMillis() - 1800000),
-    HistoryItem("2", "Android Developers", "https://developer.android.com", System.currentTimeMillis() - 3600000),
-    HistoryItem("3", "Kotlin Programming Language", "https://kotlinlang.org", System.currentTimeMillis() - 7200000),
-    HistoryItem("4", "GitHub", "https://github.com", System.currentTimeMillis() - 90000000),
-    HistoryItem("5", "Stack Overflow", "https://stackoverflow.com", System.currentTimeMillis() - 90000000)
-)

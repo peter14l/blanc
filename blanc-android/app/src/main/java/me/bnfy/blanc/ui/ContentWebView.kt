@@ -38,6 +38,7 @@ import me.bnfy.blanc.BlancApplication
 import me.bnfy.blanc.download.DownloadService
 import me.bnfy.blanc.storage.DownloadEntity
 import me.bnfy.blanc.tab.Tab
+import kotlinx.coroutines.launch
 import me.bnfy.blanc.tab.TabManager
 import timber.log.Timber
 
@@ -192,6 +193,21 @@ class ContentWebView(
                             BlancApplication.getInstance().adblockEngine.cosmeticEngine.injectCosmeticFilters(wv, it)
                         } catch (e: Exception) {
                             Timber.e(e, "Error injecting cosmetic filters")
+                        }
+                    }
+
+                    if (tab?.isPrivate == false && !it.startsWith("blanc://") && it != "about:blank") {
+                        BlancApplication.getInstance().scope.launch {
+                            try {
+                                BlancApplication.getInstance().repository.recordHistoryVisit(
+                                    url = it,
+                                    title = tab?.title?.ifEmpty { it } ?: it,
+                                    favicon = tab?.favicon,
+                                    profileId = tab?.profileId ?: "personal"
+                                )
+                            } catch (e: Exception) {
+                                Timber.e(e, "Error recording history visit")
+                            }
                         }
                     }
                 }
@@ -362,6 +378,24 @@ class ContentWebView(
             url.startsWith("blanc://mahjong") -> tabManager?.createTab(url)
             else -> tabManager?.createTab(url)
         }
+    }
+
+    override fun loadUrl(url: String) {
+        if (url.startsWith("blanc://")) {
+            handleBlancUrl(url)
+            super.loadUrl("about:blank")
+            return
+        }
+        super.loadUrl(url)
+    }
+
+    override fun loadUrl(url: String, additionalHttpHeaders: MutableMap<String, String>) {
+        if (url.startsWith("blanc://")) {
+            handleBlancUrl(url)
+            super.loadUrl("about:blank")
+            return
+        }
+        super.loadUrl(url, additionalHttpHeaders)
     }
     
     private fun buildUserAgentString(): String {

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,6 +33,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,7 +44,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import me.bnfy.blanc.BlancApplication
 import me.bnfy.blanc.R
+import me.bnfy.blanc.storage.Repository
 import me.bnfy.blanc.tab.TabManager
 
 /**
@@ -50,13 +55,28 @@ import me.bnfy.blanc.tab.TabManager
 @Composable
 fun NewTabPage(
     tabManager: TabManager,
+    repository: Repository = BlancApplication.getInstance().repository,
     onNavigate: (String) -> Unit,
     onNewTab: () -> Unit,
-    onNewPrivateTab: () -> Unit
+    onNewPrivateTab: () -> Unit,
+    onOpenBookmarks: (() -> Unit)? = null,
+    onOpenHistory: (() -> Unit)? = null
 ) {
-    val favorites = remember { mutableStateOf<List<FavoriteItem>>(getDefaultFavorites()) }
-    val recentTabs = remember { mutableStateOf<List<RecentTabItem>>(getRecentTabs()) }
-    
+    val dbFavorites by repository.favoriteDao.getAllFlow("personal").collectAsState(initial = emptyList())
+    val dbHistory by repository.historyDao.getHistoryPageFlow("personal", 8, 0, null).collectAsState(initial = emptyList())
+
+    val favorites = if (dbFavorites.isNotEmpty()) {
+        dbFavorites.map { FavoriteItem(it.id, it.title, it.url, it.favicon) }
+    } else {
+        getDefaultFavorites()
+    }
+
+    val recentTabs = if (dbHistory.isNotEmpty()) {
+        dbHistory.map { RecentTabItem(it.id.toString(), it.title?.ifBlank { it.url } ?: it.url, it.url, it.visitTime) }
+    } else {
+        getRecentTabs()
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.surface
@@ -64,34 +84,42 @@ fun NewTabPage(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .navigationBarsPadding(),
+            contentPadding = PaddingValues(bottom = 88.dp),
             verticalArrangement = Arrangement.Top
         ) {
             item {
                 // Search bar
                 SearchBar(onSearch = onNavigate)
             }
-            
+
             // Favorites
-            if (favorites.value.isNotEmpty()) {
+            if (favorites.isNotEmpty()) {
                 item {
-                    SectionHeader(title = "Favorites", onClickAll = { /* Open bookmarks */ })
+                    SectionHeader(
+                        title = "Favorites",
+                        onClickAll = { onOpenBookmarks?.invoke() }
+                    )
                 }
-                items(favorites.value) { item ->
+                items(favorites, key = { it.id }) { item ->
                     FavoriteCard(item = item, onClick = { onNavigate(item.url) })
                 }
             }
-            
+
             // Recent tabs
-            if (recentTabs.value.isNotEmpty()) {
+            if (recentTabs.isNotEmpty()) {
                 item {
-                    SectionHeader(title = "Recent tabs", onClickAll = { /* Open history */ })
+                    SectionHeader(
+                        title = "Recent visits",
+                        onClickAll = { onOpenHistory?.invoke() }
+                    )
                 }
-                items(recentTabs.value) { item ->
+                items(recentTabs, key = { it.id }) { item ->
                     RecentTabCard(item = item, onClick = { onNavigate(item.url) })
                 }
             }
-            
+
             item {
                 // Footer actions
                 FooterActions(

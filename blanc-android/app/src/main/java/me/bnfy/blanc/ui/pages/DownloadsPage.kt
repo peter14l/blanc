@@ -1,9 +1,11 @@
 package me.bnfy.blanc.ui.pages
 
-import androidx.compose.foundation.background
+import android.content.Intent
+import android.os.Build
+import android.provider.MediaStore
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,32 +29,114 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import com.google.gson.Gson
+import kotlinx.coroutines.launch
+import me.bnfy.blanc.BlancApplication
 import me.bnfy.blanc.R
+import me.bnfy.blanc.download.DownloadService
 import me.bnfy.blanc.storage.DownloadEntity
+import me.bnfy.blanc.storage.Repository
+import java.io.File
 
 /**
- * Downloads page
+ * Downloads page backed by Room database and foreground DownloadService.
  */
 @Composable
 fun DownloadsPage(
     onBack: () -> Unit,
-    downloads: List<DownloadEntity> = getSampleDownloads(),
-    onOpenFile: (DownloadEntity) -> Unit,
-    onShowInFolder: (DownloadEntity) -> Unit,
-    onCancel: (DownloadEntity) -> Unit,
-    onRetry: (DownloadEntity) -> Unit,
-    onClearCompleted: () -> Unit
+    repository: Repository = BlancApplication.getInstance().repository,
+    downloads: List<DownloadEntity>? = null,
+    onOpenFile: ((DownloadEntity) -> Unit)? = null,
+    onShowInFolder: ((DownloadEntity) -> Unit)? = null,
+    onCancel: ((DownloadEntity) -> Unit)? = null,
+    onRetry: ((DownloadEntity) -> Unit)? = null,
+    onClearCompleted: (() -> Unit)? = null
 ) {
-    val filteredDownloads = downloads.filter { it.state != DownloadEntity.STATE_PENDING }
-    
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val dbDownloads by repository.downloadDao.getByProfileFlow("personal").collectAsState(initial = emptyList())
+    val actualDownloads = downloads ?: dbDownloads
+
+    val handleOpenFile: (DownloadEntity) -> Unit = onOpenFile ?: { download ->
+        val path = download.targetPath.ifEmpty { download.savePath }
+        val file = File(path)
+        if (file.exists()) {
+            try {
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, download.mimeType.ifEmpty { "*/*" })
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Cannot open file: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "File not found: ${download.fileName}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val handleShowInFolder: (DownloadEntity) -> Unit = onShowInFolder ?: {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(MediaStore.Downloads.EXTERNAL_CONTENT_URI, "resource/folder")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Saved to Downloads folder", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val handleCancel: (DownloadEntity) -> Unit = onCancel ?: { download ->
+        coroutineScope.launch {
+            repository.downloadDao.cancel(download.id, System.currentTimeMillis())
+        }
+        val intent = Intent(context, DownloadService::class.java).apply {
+            action = DownloadService.ACTION_CANCEL
+            putExtra(DownloadService.EXTRA_DOWNLOAD_ID, download.id)
+        }
+        context.startService(intent)
+    }
+
+    val handleRetry: (DownloadEntity) -> Unit = onRetry ?: { download ->
+        val intent = Intent(context, DownloadService::class.java).apply {
+            action = DownloadService.ACTION_RETRY
+            putExtra(DownloadService.EXTRA_DOWNLOAD_JSON, Gson().toJson(download))
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+    }
+
+    val handleClearCompleted: () -> Unit = onClearCompleted ?: {
+        coroutineScope.launch {
+            repository.downloadDao.clearCompletedByProfile("personal")
+        }
+    }
+
+    val filteredDownloads = actualDownloads.filter { it.state != DownloadEntity.STATE_PENDING }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.surface
@@ -74,12 +159,12 @@ fun DownloadsPage(
                                 .fillMaxWidth()
                                 .padding(end = 16.dp)
                                 .wrapContentWidth()
-                                .clickable(onClick = onClearCompleted)
+                                .clickable(onClick = handleClearCompleted)
                         )
                     }
                 }
             )
-            
+
             // Downloads list
             if (filteredDownloads.isEmpty()) {
                 EmptyState(
@@ -91,17 +176,18 @@ fun DownloadsPage(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
+                        .navigationBarsPadding()
                         .padding(vertical = 16.dp),
                     contentPadding = PaddingValues(vertical = 8.dp, horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(filteredDownloads) { download ->
+                    items(filteredDownloads, key = { it.id }) { download ->
                         DownloadItemCard(
                             download = download,
-                            onOpen = { onOpenFile(download) },
-                            onShowInFolder = { onShowInFolder(download) },
-                            onCancel = { onCancel(download) },
-                            onRetry = { onRetry(download) }
+                            onOpen = { handleOpenFile(download) },
+                            onShowInFolder = { handleShowInFolder(download) },
+                            onCancel = { handleCancel(download) },
+                            onRetry = { handleRetry(download) }
                         )
                     }
                 }
@@ -122,16 +208,16 @@ fun DownloadItemCard(
     val isInProgress = download.state == DownloadEntity.STATE_IN_PROGRESS
     val isFailed = download.state == DownloadEntity.STATE_FAILED
     val isCancelled = download.state == DownloadEntity.STATE_CANCELLED
-    
+
     val progress = if (download.totalBytes > 0) {
         (download.receivedBytes * 100 / download.totalBytes).toInt()
     } else 0
-    
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
         Column(
@@ -151,7 +237,8 @@ fun DownloadItemCard(
                         text = download.fileName,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyLarge
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
                     )
                     Text(
                         text = download.url,
@@ -161,14 +248,14 @@ fun DownloadItemCard(
                         fontSize = 12.sp
                     )
                 }
-                
+
                 // Status badge
                 DownloadStatusBadge(
                     state = download.state,
                     progress = progress
                 )
             }
-            
+
             // Progress bar (for in-progress)
             if (isInProgress) {
                 LinearProgressIndicator(
@@ -191,7 +278,7 @@ fun DownloadItemCard(
                     }
                 }
             }
-            
+
             // Actions row
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -201,37 +288,31 @@ fun DownloadItemCard(
                 if (isComplete) {
                     Button(onClick = onOpen) {
                         Icon(painterResource(R.drawable.ic_launch), contentDescription = null)
-                        Text("Open")
+                        Text("Open", modifier = Modifier.padding(start = 4.dp))
                     }
                     Button(onClick = onShowInFolder) {
                         Icon(painterResource(R.drawable.ic_folder), contentDescription = null)
-                        Text("Show in folder")
+                        Text("Show in folder", modifier = Modifier.padding(start = 4.dp))
                     }
                 } else if (isFailed) {
                     Button(onClick = onRetry) {
                         Icon(painterResource(R.drawable.ic_refresh), contentDescription = null)
-                        Text("Retry")
-                    }
-                    Button(onClick = onCancel, colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                    )) {
-                        Text("Dismiss")
+                        Text("Retry", modifier = Modifier.padding(start = 4.dp))
                     }
                 } else if (isCancelled) {
                     Button(onClick = onRetry) {
                         Icon(painterResource(R.drawable.ic_refresh), contentDescription = null)
-                        Text("Retry")
+                        Text("Retry", modifier = Modifier.padding(start = 4.dp))
                     }
                 }
-                
+
                 if (isComplete || isFailed || isCancelled) {
                     Button(onClick = onCancel, colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer,
                         contentColor = MaterialTheme.colorScheme.onErrorContainer
                     )) {
                         Icon(painterResource(R.drawable.ic_delete), contentDescription = null)
-                        Text("Remove")
+                        Text("Remove", modifier = Modifier.padding(start = 4.dp))
                     }
                 }
             }
@@ -248,7 +329,7 @@ fun DownloadStatusBadge(state: Int, progress: Int) {
         DownloadEntity.STATE_CANCELLED -> "Cancelled" to MaterialTheme.colorScheme.onSurfaceVariant
         else -> "Pending" to MaterialTheme.colorScheme.onSurfaceVariant
     }
-    
+
     Surface(
         modifier = Modifier
             .height(20.dp)
@@ -273,44 +354,3 @@ fun formatBytes(bytes: Long): String {
         else -> String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
     }
 }
-
-fun getSampleDownloads(): List<DownloadEntity> = listOf(
-    DownloadEntity(
-        id = "1",
-        windowId = "default",
-        tabId = "tab1",
-        url = "https://example.com/file.pdf",
-        fileName = "document.pdf",
-        mimeType = "application/pdf",
-        totalBytes = 2048576,
-        receivedBytes = 2048576,
-        targetPath = "/storage/emulated/0/Download/Blanc/document.pdf",
-        state = DownloadEntity.STATE_COMPLETED,
-        startedAt = System.currentTimeMillis() - 3600000,
-        completedAt = System.currentTimeMillis() - 3500000
-    ),
-    DownloadEntity(
-        id = "2",
-        windowId = "default",
-        tabId = "tab2",
-        url = "https://example.com/image.png",
-        fileName = "photo.png",
-        mimeType = "image/png",
-        totalBytes = 1048576,
-        receivedBytes = 524288,
-        state = DownloadEntity.STATE_IN_PROGRESS,
-        startedAt = System.currentTimeMillis() - 60000
-    ),
-    DownloadEntity(
-        id = "3",
-        windowId = "default",
-        tabId = "tab3",
-        url = "https://example.com/broken.zip",
-        fileName = "archive.zip",
-        mimeType = "application/zip",
-        totalBytes = 0,
-        state = DownloadEntity.STATE_FAILED,
-        error = "Connection timeout",
-        startedAt = System.currentTimeMillis() - 7200000
-    )
-)

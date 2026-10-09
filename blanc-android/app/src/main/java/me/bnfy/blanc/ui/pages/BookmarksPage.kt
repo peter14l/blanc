@@ -6,46 +6,67 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import me.bnfy.blanc.BlancApplication
 import me.bnfy.blanc.R
+import me.bnfy.blanc.storage.Favorite
+import me.bnfy.blanc.storage.Repository
+import java.util.UUID
 
 /**
- * Bookmarks/Favorites page
+ * Bookmarks/Favorites page backed by Room database.
  */
 @Composable
 fun BookmarksPage(
     onBack: () -> Unit,
-    onAddBookmark: () -> Unit,
+    repository: Repository = BlancApplication.getInstance().repository,
+    onAddBookmark: (() -> Unit)? = null,
     onBookmarkClick: (String) -> Unit
 ) {
-    val bookmarks = remember { mutableStateOf<List<BookmarkItem>>(getDefaultBookmarks()) }
-    val isEditing = remember { mutableStateOf(false) }
-    
+    val coroutineScope = rememberCoroutineScope()
+    val favorites by repository.favoriteDao.getAllFlow("personal").collectAsState(initial = emptyList())
+    var isEditing by remember { mutableStateOf(false) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var editingFavorite by remember { mutableStateOf<Favorite?>(null) }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.surface
@@ -59,54 +80,157 @@ fun BookmarksPage(
                 title = "Favorites",
                 onBack = onBack,
                 actions = {
-                    if (isEditing.value) {
-                        IconButton(onClick = { isEditing.value = false }) {
-                            Text("Done", style = MaterialTheme.typography.bodyLarge)
+                    if (isEditing) {
+                        IconButton(onClick = { isEditing = false }) {
+                            Text("Done", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
                         }
                     } else {
-                        IconButton(onClick = { isEditing.value = true }) {
-                            Icon(painterResource(R.drawable.ic_edit), contentDescription = "Edit")
+                        if (favorites.isNotEmpty()) {
+                            IconButton(onClick = { isEditing = true }) {
+                                Icon(painterResource(R.drawable.ic_edit), contentDescription = "Edit")
+                            }
                         }
-                        IconButton(onClick = onAddBookmark) {
-                            Icon(painterResource(R.drawable.ic_add), contentDescription = "Add bookmark")
+                        IconButton(onClick = {
+                            if (onAddBookmark != null) onAddBookmark() else showAddDialog = true
+                        }) {
+                            Icon(painterResource(R.drawable.ic_add), contentDescription = "Add favorite")
                         }
                     }
                 }
             )
-            
+
             // Bookmarks list
-            if (bookmarks.value.isEmpty()) {
+            if (favorites.isEmpty()) {
                 EmptyState(
                     icon = R.drawable.ic_bookmark,
                     title = "No favorites yet",
-                    subtitle = "Tap + to add your first favorite",
+                    subtitle = "Tap + or use the star icon while browsing to add favorites",
                     actionText = "Add favorite",
-                    onAction = onAddBookmark
+                    onAction = { showAddDialog = true }
                 )
             } else {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(vertical = 16.dp),
+                        .navigationBarsPadding()
+                        .padding(vertical = 8.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp, horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(bookmarks.value) { bookmark ->
-                        BookmarkCard(
-                            bookmark = bookmark,
-                            isEditing = isEditing.value,
-                            onClick = { onBookmarkClick(bookmark.url) },
-                            onEdit = { /* Edit bookmark */ },
-                            onDelete = { 
-                                bookmarks.value = bookmarks.value.filter { it.id != bookmark.id }
+                    items(favorites, key = { it.id }) { favorite ->
+                        FavoriteCardItem(
+                            favorite = favorite,
+                            isEditing = isEditing,
+                            onClick = { onBookmarkClick(favorite.url) },
+                            onEdit = { editingFavorite = favorite },
+                            onDelete = {
+                                coroutineScope.launch {
+                                    repository.favoriteDao.deleteById(favorite.id)
+                                }
                             },
-                            onPin = { /* Toggle pin */ }
+                            onPin = {
+                                coroutineScope.launch {
+                                    repository.favoriteDao.setPinned(favorite.id, !favorite.isPinned, System.currentTimeMillis())
+                                }
+                            }
                         )
                     }
                 }
             }
         }
     }
+
+    // Add dialog
+    if (showAddDialog) {
+        FavoriteEditDialog(
+            title = "Add Favorite",
+            initialTitle = "",
+            initialUrl = "https://",
+            onDismiss = { showAddDialog = false },
+            onSave = { titleText, urlText ->
+                showAddDialog = false
+                coroutineScope.launch {
+                    val resolvedUrl = if (urlText.startsWith("http://") || urlText.startsWith("https://")) urlText else "https://$urlText"
+                    val fav = Favorite(
+                        id = UUID.randomUUID().toString(),
+                        url = resolvedUrl,
+                        title = titleText.ifBlank { resolvedUrl },
+                        profileId = "personal"
+                    )
+                    repository.favoriteDao.insert(fav)
+                }
+            }
+        )
+    }
+
+    // Edit dialog
+    editingFavorite?.let { fav ->
+        FavoriteEditDialog(
+            title = "Edit Favorite",
+            initialTitle = fav.title,
+            initialUrl = fav.url,
+            onDismiss = { editingFavorite = null },
+            onSave = { titleText, urlText ->
+                editingFavorite = null
+                coroutineScope.launch {
+                    val resolvedUrl = if (urlText.startsWith("http://") || urlText.startsWith("https://")) urlText else "https://$urlText"
+                    repository.favoriteDao.update(fav.copy(
+                        title = titleText.ifBlank { resolvedUrl },
+                        url = resolvedUrl,
+                        updatedAt = System.currentTimeMillis()
+                    ))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun FavoriteEditDialog(
+    title: String,
+    initialTitle: String,
+    initialUrl: String,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit
+) {
+    var titleInput by remember { mutableStateOf(initialTitle) }
+    var urlInput by remember { mutableStateOf(initialUrl) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = titleInput,
+                    onValueChange = { titleInput = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = urlInput,
+                    onValueChange = { urlInput = it },
+                    label = { Text("URL") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(titleInput.trim(), urlInput.trim()) },
+                enabled = urlInput.trim().isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -118,7 +242,7 @@ fun Toolbar(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .statusBarsPadding(),
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 4.dp
     ) {
@@ -161,7 +285,8 @@ fun EmptyState(
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(horizontal = 32.dp)
         ) {
             Icon(
                 painter = painterResource(icon),
@@ -179,9 +304,9 @@ fun EmptyState(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            actionText?.let { text ->
-                Button(onClick = onAction!!) {
-                    Text(text)
+            if (actionText != null && onAction != null) {
+                Button(onClick = onAction) {
+                    Text(actionText)
                 }
             }
         }
@@ -189,8 +314,8 @@ fun EmptyState(
 }
 
 @Composable
-fun BookmarkCard(
-    bookmark: BookmarkItem,
+fun FavoriteCardItem(
+    favorite: Favorite,
     isEditing: Boolean,
     onClick: () -> Unit,
     onEdit: () -> Unit,
@@ -200,89 +325,87 @@ fun BookmarkCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
             .clickable(
                 onClick = { if (!isEditing) onClick() }
             ),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Favicon
+            // Favicon indicator
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                    .background(Color.Gray)
-            )
-            
-            // Bookmark info
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                val initial = favorite.title.firstOrNull()?.uppercaseChar()?.toString() ?: "W"
+                Text(
+                    text = initial,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontSize = 16.sp
+                )
+            }
+
+            // Info
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = bookmark.title,
+                    text = favorite.title,
                     maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyLarge
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = bookmark.url,
+                    text = favorite.url,
                     maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
             }
-            
+
             // Actions
             if (isEditing) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IconButton(onClick = onPin) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = onPin, modifier = Modifier.size(32.dp)) {
                         Icon(
-                            painter = if (bookmark.isPinned) painterResource(R.drawable.ic_pin_filled) else painterResource(R.drawable.ic_pin),
-                            contentDescription = if (bookmark.isPinned) "Unpin" else "Pin"
+                            painter = if (favorite.isPinned) painterResource(R.drawable.ic_pin_filled) else painterResource(R.drawable.ic_pin),
+                            contentDescription = if (favorite.isPinned) "Unpin" else "Pin",
+                            tint = if (favorite.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = onEdit) {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
                         Icon(painterResource(R.drawable.ic_edit), contentDescription = "Edit")
                     }
-                    IconButton(onClick = onDelete) {
-                        Icon(painterResource(R.drawable.ic_delete), contentDescription = "Delete")
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(painterResource(R.drawable.ic_delete), contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             } else {
-                Icon(
-                    painter = if (bookmark.isPinned) painterResource(R.drawable.ic_pin_filled) else painterResource(R.drawable.ic_pin),
-                    contentDescription = null,
-                    tint = if (bookmark.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (favorite.isPinned) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_pin_filled),
+                        contentDescription = "Pinned",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
 }
-
-data class BookmarkItem(
-    val id: String,
-    val title: String,
-    val url: String,
-    val favicon: String? = null,
-    val isPinned: Boolean = false,
-    val folderId: String? = null
-)
-
-fun getDefaultBookmarks(): List<BookmarkItem> = listOf(
-    BookmarkItem("1", "DuckDuckGo", "https://duckduckgo.com", isPinned = true),
-    BookmarkItem("2", "GitHub", "https://github.com", isPinned = true),
-    BookmarkItem("3", "Stack Overflow", "https://stackoverflow.com"),
-    BookmarkItem("4", "MDN Web Docs", "https://developer.mozilla.org"),
-    BookmarkItem("5", "Android Developers", "https://developer.android.com"),
-    BookmarkItem("6", "Kotlin Lang", "https://kotlinlang.org")
-)
