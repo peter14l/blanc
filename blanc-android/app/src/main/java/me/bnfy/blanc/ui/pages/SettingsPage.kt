@@ -616,7 +616,7 @@ fun SettingsPage(
                         coroutineScope.launch {
                             try {
                                 if (clearHistorySelected) {
-                                    repository.historyDao.clear("personal")
+                                    repository.historyDao.clearHistory("personal")
                                 }
                                 if (clearCookiesSelected) {
                                     CookieManager.getInstance().removeAllCookies(null)
@@ -625,7 +625,7 @@ fun SettingsPage(
                                     WebStorage.getInstance().deleteAllData()
                                 }
                                 if (clearDownloadsSelected) {
-                                    repository.downloadDao.clearAll("personal")
+                                    repository.downloadDao.clearByProfile("personal")
                                 }
                                 Toast.makeText(context, "Browsing data cleared", Toast.LENGTH_SHORT).show()
                             } catch (e: Exception) {

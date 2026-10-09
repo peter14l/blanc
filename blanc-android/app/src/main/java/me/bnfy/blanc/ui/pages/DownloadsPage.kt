@@ -71,26 +71,31 @@ fun DownloadsPage(
     val actualDownloads = downloads ?: dbDownloads
 
     val handleOpenFile: (DownloadEntity) -> Unit = onOpenFile ?: { download ->
-        val path = download.targetPath.ifEmpty { download.savePath }
-        val file = File(path)
-        if (file.exists()) {
-            try {
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    file
-                )
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, download.mimeType.ifEmpty { "*/*" })
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val path = download.targetPath
+        if (!path.isNullOrEmpty()) {
+            val file = File(path)
+            if (file.exists()) {
+                try {
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        file
+                    )
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        val mime = download.mimeType?.ifEmpty { "*/*" } ?: "*/*"
+                        setDataAndType(uri, mime)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Cannot open file: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
-                context.startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(context, "Cannot open file: ${e.message}", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "File not found: ${download.fileName}", Toast.LENGTH_SHORT).show()
             }
         } else {
-            Toast.makeText(context, "File not found: ${download.fileName}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "File path not available", Toast.LENGTH_SHORT).show()
         }
     }
 
