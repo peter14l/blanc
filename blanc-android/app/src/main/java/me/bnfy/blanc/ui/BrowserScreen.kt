@@ -79,6 +79,7 @@ import me.bnfy.blanc.tab.TabManager
 import me.bnfy.blanc.adblock.AdblockEngine
 import me.bnfy.blanc.bridge.BlancBridge
 import me.bnfy.blanc.R
+import me.bnfy.blanc.util.UserAgentUtils
 import me.bnfy.blanc.ui.pages.NewTabPage
 import me.bnfy.blanc.ui.pages.SettingsPage
 import me.bnfy.blanc.ui.pages.BookmarksPage
@@ -239,15 +240,9 @@ fun BrowserScreen(
         activeTab?.isDesktopMode = newMode
         activeTab?.webView?.let { wv ->
             wv.settings.userAgentString = if (newMode) {
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                UserAgentUtils.DESKTOP_USER_AGENT
             } else {
-                val baseUa = android.webkit.WebSettings.getDefaultUserAgent(context)
-                val versionName = try {
-                    context.packageManager.getPackageInfo(context.packageName, 0).versionName
-                } catch (e: Exception) {
-                    "1.0"
-                }
-                "$baseUa Blanc/$versionName"
+                UserAgentUtils.buildMobileUserAgent(context)
             }
             wv.settings.useWideViewPort = newMode
             wv.settings.loadWithOverviewMode = newMode
@@ -267,8 +262,8 @@ fun BrowserScreen(
                     groups = groups,
                     onTabClick = { tabId -> tabManager.switchTab(tabId) },
                     onTabClose = { tabId -> tabManager.closeTab(tabId) },
-                    onNewTab = { tabManager.createTab() },
-                    onNewPrivateTab = { tabManager.createPrivateTab() },
+                    onNewTab = { tabManager.createTab(); currentScreen = Screen.Browser },
+                    onNewPrivateTab = { tabManager.createPrivateTab(); currentScreen = Screen.Browser },
                     onShowBookmarks = { currentScreen = Screen.Bookmarks },
                     onShowHistory = { currentScreen = Screen.History },
                     onShowDownloads = { currentScreen = Screen.Downloads },
@@ -281,7 +276,7 @@ fun BrowserScreen(
                     activeTab = activeTab,
                     tabs = tabs,
                     activeTabId = activeTabId,
-                    onTabClick = { tabId -> tabManager.switchTab(tabId) },
+                    onTabClick = { tabId -> tabManager.switchTab(tabId); currentScreen = Screen.Browser },
                     onTabClose = { tabId -> tabManager.closeTab(tabId) },
                     onNavigate = { url ->
                         val resolved = resolveUrlOrSearch(url, defaultSearchEngine)
@@ -297,8 +292,8 @@ fun BrowserScreen(
                     onShare = handleShare,
                     onMenu = { showMenu = true },
                     onTabSwitcher = { showTabSwitcher = true },
-                    onNewTab = { tabManager.createTab() },
-                    onNewPrivateTab = { tabManager.createPrivateTab() },
+                    onNewTab = { tabManager.createTab(); currentScreen = Screen.Browser },
+                    onNewPrivateTab = { tabManager.createPrivateTab(); currentScreen = Screen.Browser },
                     onFileChooser = onFileChooser,
                     onRequestPermission = onRequestPermission,
                     onShowBookmarks = { currentScreen = Screen.Bookmarks },
@@ -336,8 +331,8 @@ fun BrowserScreen(
                         onShare = handleShare,
                         onMenu = { showMenu = true },
                         onTabSwitcher = { showTabSwitcher = true },
-                        onNewTab = { tabManager.createTab() },
-                        onNewPrivateTab = { tabManager.createPrivateTab() },
+                        onNewTab = { tabManager.createTab(); currentScreen = Screen.Browser },
+                        onNewPrivateTab = { tabManager.createPrivateTab(); currentScreen = Screen.Browser },
                         onFileChooser = onFileChooser,
                         onRequestPermission = onRequestPermission,
                         onShowBookmarks = { currentScreen = Screen.Bookmarks },
@@ -357,8 +352,8 @@ fun BrowserScreen(
                     activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
                     currentScreen = Screen.Browser
                 },
-                onNewTab = { tabManager.createTab() },
-                onNewPrivateTab = { tabManager.createPrivateTab() },
+                onNewTab = { tabManager.createTab(); currentScreen = Screen.Browser },
+                onNewPrivateTab = { tabManager.createPrivateTab(); currentScreen = Screen.Browser },
                 onOpenBookmarks = { currentScreen = Screen.Bookmarks },
                 onOpenHistory = { currentScreen = Screen.History }
             )
@@ -399,6 +394,7 @@ fun BrowserScreen(
             onTabClick = { tabId ->
                 tabManager.switchTab(tabId)
                 showTabSwitcher = false
+                currentScreen = Screen.Browser
             },
             onTabClose = { tabId ->
                 tabManager.closeTab(tabId)
@@ -406,10 +402,12 @@ fun BrowserScreen(
             onNewTab = { 
                 tabManager.createTab()
                 showTabSwitcher = false
+                currentScreen = Screen.Browser
             },
             onNewPrivateTab = {
                 tabManager.createPrivateTab()
                 showTabSwitcher = false
+                currentScreen = Screen.Browser
             },
             onDismiss = { showTabSwitcher = false }
         )
@@ -420,8 +418,8 @@ fun BrowserScreen(
         MenuOverlay(
             activeTab = activeTab,
             onDismiss = { showMenu = false },
-            onNewTab = { tabManager.createTab(); showMenu = false },
-            onNewPrivateTab = { tabManager.createPrivateTab(); showMenu = false },
+            onNewTab = { tabManager.createTab(); showMenu = false; currentScreen = Screen.Browser },
+            onNewPrivateTab = { tabManager.createPrivateTab(); showMenu = false; currentScreen = Screen.Browser },
             onBookmarks = { currentScreen = Screen.Bookmarks; showMenu = false },
             onHistory = { currentScreen = Screen.History; showMenu = false },
             onDownloads = { currentScreen = Screen.Downloads; showMenu = false },

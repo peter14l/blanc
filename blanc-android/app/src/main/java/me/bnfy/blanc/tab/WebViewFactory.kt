@@ -7,6 +7,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import androidx.annotation.Keep
+import me.bnfy.blanc.util.UserAgentUtils
 
 /**
  * Factory for creating and configuring WebView instances.
@@ -54,10 +55,8 @@ class WebViewFactory private constructor(
             // Apply all settings
             configureSettings(settings)
 
-            // Private mode specific configuration
-            if (isPrivate) {
-                configurePrivateMode()
-            }
+            // Configure cookies (regular vs private)
+            configurePrivateCookies(this)
         }
         return webView
     }
@@ -125,30 +124,24 @@ class WebViewFactory private constructor(
         // Handled at CookieManager level
     }
 
-    /**
-     * Builds a custom user agent string identifying Blanc.
-     */
     private fun buildUserAgentString(): String {
-        val baseUa = WebSettings.getDefaultUserAgent(context)
-        val versionName = try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        } catch (e: Exception) {
-            "1.0"
-        }
-        return "$baseUa Blanc/$versionName"
+        return UserAgentUtils.buildMobileUserAgent(context)
     }
 
     /**
-     * Configures cookie management for private tabs.
-     * Should be called after WebView creation for private tabs.
+     * Configures cookie management for tabs.
+     * Ensures cookies and third-party cookies are properly enabled for regular tabs,
+     * which is required for search engines (like Google), login sessions, and verification challenges.
      */
     fun configurePrivateCookies(webView: WebView) {
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
         if (isPrivate) {
-            val cookieManager = CookieManager.getInstance()
-            cookieManager.setAcceptCookie(true)
             cookieManager.setAcceptThirdPartyCookies(webView, false)
             // In private mode, we use ephemeral cookies that are cleared on close
             cookieManager.removeSessionCookies(null)
+        } else {
+            cookieManager.setAcceptThirdPartyCookies(webView, true)
         }
     }
 

@@ -247,10 +247,8 @@ class TabManager(
                 // Notify bridge
                 bridge.onTabCreated(tab.toBridgeTab())
 
-                // If this is the first tab, make it active
-                if (activeTabId == null) {
-                    switchTab(tab.id)
-                }
+                // Automatically switch to the newly created tab
+                switchTab(tab.id)
 
                 onTabCountChanged?.invoke(tabs.size)
             } catch (e: Exception) {

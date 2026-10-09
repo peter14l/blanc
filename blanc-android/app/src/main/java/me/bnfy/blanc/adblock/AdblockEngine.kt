@@ -177,6 +177,16 @@ class AdblockEngine private constructor(
     fun shouldBlock(url: String, request: WebResourceRequest?): Boolean {
         if (!enabled.get()) return false
 
+        if (request?.isForMainFrame == true) {
+            return false
+        }
+
+        val host = extractHost(url)
+        // Never block human verification / anti-bot challenge services
+        if (host.contains("recaptcha") || host.contains("hcaptcha") || host.contains("challenges.cloudflare.com")) {
+            return false
+        }
+
         val sourceUrl = request?.let { getReferrerUrl(it) }
         val requestType = request?.let { getRequestType(it) } ?: "other"
 

@@ -23,6 +23,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
+import me.bnfy.blanc.util.UserAgentUtils
 import android.webkit.WebViewClient
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Box
@@ -318,12 +319,14 @@ class ContentWebView(
         this.onFileChooserCallback = onFileChooser
         this.onPermissionRequestCallback = onPermissionRequest
         
-        // Configure cookies for private mode
+        // Configure cookies for private vs regular mode
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
         if (tab.isPrivate) {
-            val cookieManager = CookieManager.getInstance()
-            cookieManager.setAcceptCookie(true)
             cookieManager.setAcceptThirdPartyCookies(this, false)
             cookieManager.removeSessionCookies(null)
+        } else {
+            cookieManager.setAcceptThirdPartyCookies(this, true)
         }
         
         // Load URL if not already loaded and not an internal surface
@@ -399,13 +402,7 @@ class ContentWebView(
     }
     
     private fun buildUserAgentString(): String {
-        val baseUa = WebSettings.getDefaultUserAgent(context)
-        val versionName = try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        } catch (e: Exception) {
-            "1.0"
-        }
-        return "$baseUa Blanc/$versionName"
+        return UserAgentUtils.buildMobileUserAgent(context)
     }
 
     /**
