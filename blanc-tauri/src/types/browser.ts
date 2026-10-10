@@ -157,4 +157,8 @@ export interface BrowserIPCContextType {
   respondToPermission?: (id: string, allow: boolean, remember: boolean) => Promise<void>;
   dismissPermissionPrompt?: () => void;
   triggerTestPermissionPrompt?: (resource: string) => void;
+
+  // Web Notifications
+  pendingWebNotification?: any;
+  setPendingWebNotification?: React.Dispatch<React.SetStateAction<any>>;
 }

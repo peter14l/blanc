@@ -17,6 +17,7 @@ import { useMouseGestures } from './hooks/useMouseGestures';
 import { GestureHUD } from './components/GestureHUD';
 import { WindowControls } from './components/WindowControls';
 import { PermissionPrompt } from './components/PermissionPrompt';
+import { NotificationToast } from './components/NotificationToast';
 import { ExternalLink, Loader2 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -59,6 +60,8 @@ export const App: React.FC = () => {
     setPendingPermissionPrompt,
     respondToPermission,
     dismissPermissionPrompt,
+    pendingWebNotification,
+    setPendingWebNotification,
   } = useBrowserIPC();
 
   const [isFindOpen, setIsFindOpen] = useState(false);
@@ -378,11 +381,20 @@ export const App: React.FC = () => {
           resource: e.data.resource || 'camera',
           tabId: activeTab?.id,
         });
+      } else if (e.data && e.data.type === 'BLANC_WEB_NOTIFICATION') {
+        setPendingWebNotification?.({
+          id: `notif-${Date.now()}`,
+          title: e.data.title || 'Notification',
+          body: e.data.body || '',
+          icon: e.data.icon || '',
+          origin: e.data.origin || activeTab?.url || '',
+          tabId: activeTab?.id,
+        });
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [activeTab, navigate, createTab, setPendingPermissionPrompt]);
+  }, [activeTab, navigate, createTab, setPendingPermissionPrompt, setPendingWebNotification]);
 
   if (isMobile) {
     return (
@@ -434,6 +446,18 @@ export const App: React.FC = () => {
         />
       </div>
 
+      {/* WEB NOTIFICATION TOAST */}
+      <NotificationToast
+        notification={pendingWebNotification}
+        onDismiss={() => setPendingWebNotification?.(null)}
+        onClick={(tabId) => {
+          if (tabId) {
+            switchTab(tabId);
+          }
+          setPendingWebNotification?.(null);
+        }}
+      />
+
       {/* SITE PERMISSIONS PROMPT (CAMERA, MICROPHONE, NOTIFICATIONS) */}
       {pendingPermissionPrompt && (
         <PermissionPrompt
@@ -479,6 +503,10 @@ export const App: React.FC = () => {
             onOpenHistory={() => {
               if (activeTab) navigate(activeTab.id, 'blanc://history');
               else createTab('blanc://history');
+            }}
+            onOpenDownloads={() => {
+              if (activeTab) navigate(activeTab.id, 'blanc://downloads');
+              else createTab('blanc://downloads');
             }}
             history={history}
             bookmarks={bookmarks}

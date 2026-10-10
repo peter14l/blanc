@@ -25,6 +25,7 @@ const isTauriMobile = (): boolean => {
 
 import { applyFontToDocument } from '../data/googleFonts';
 import { PermissionPromptData } from '../components/PermissionPrompt';
+import { WebNotificationData } from '../components/NotificationToast';
 
 // Storage Keys
 const STORAGE_KEYS = {
@@ -204,6 +205,9 @@ export function useBrowserIPC(): BrowserIPCContextType {
 
   // Site Permission Prompts (Camera, Microphone, Notifications, Geolocation)
   const [pendingPermissionPrompt, setPendingPermissionPrompt] = useState<PermissionPromptData | null>(null);
+
+  // Web Notification Toasts
+  const [pendingWebNotification, setPendingWebNotification] = useState<WebNotificationData | null>(null);
 
   const respondToPermission = useCallback(
     async (promptId: string, allow: boolean, remember: boolean): Promise<void> => {
@@ -1193,6 +1197,27 @@ export function useBrowserIPC(): BrowserIPCContextType {
       }).catch((e) => {
         console.warn('[useBrowserIPC] Failed to listen to blanc:permission-request:', e);
       });
+
+      listen<any>('blanc:web-notification', (event) => {
+        if (event.payload) {
+          setPendingWebNotification({
+            id: event.payload.id || `notif-${Date.now()}`,
+            title: event.payload.title || 'Notification',
+            body: event.payload.body || '',
+            icon: event.payload.icon || '',
+            origin: event.payload.origin || '',
+            tabId: event.payload.tabId || event.payload.tab_id,
+          });
+        }
+      }).then((fn) => {
+        if (!unlisten) unlisten = fn;
+        else {
+          const prev = unlisten;
+          unlisten = () => { prev(); fn(); };
+        }
+      }).catch((e) => {
+        console.warn('[useBrowserIPC] Failed to listen to blanc:web-notification:', e);
+      });
     }).catch(() => {});
 
     return () => {
@@ -1263,5 +1288,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
     respondToPermission,
     dismissPermissionPrompt,
     triggerTestPermissionPrompt,
+    pendingWebNotification,
+    setPendingWebNotification,
   };
 }

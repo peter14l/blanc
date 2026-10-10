@@ -159,6 +159,75 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
           window.location.reload();
         }
       }, true);
+
+      // Web Notification polyfill and bridge to Blanc shell
+      (function() {
+        if (window.__blanc_notif_hooked) return;
+        window.__blanc_notif_hooked = true;
+
+        function emitBlancNotification(title, options) {
+          options = options || {};
+          const payload = {
+            type: 'BLANC_WEB_NOTIFICATION',
+            title: String(title || 'Notification'),
+            body: String(options.body || ''),
+            icon: String(options.icon || ''),
+            tag: String(options.tag || ''),
+            origin: window.location.origin
+          };
+          try {
+            if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+              window.chrome.webview.postMessage(JSON.stringify(payload));
+            }
+          } catch(e) {}
+          try {
+            if (window.parent && window.parent !== window) {
+              window.parent.postMessage(payload, '*');
+            }
+          } catch(e) {}
+        }
+
+        function BlancNotification(title, options) {
+          emitBlancNotification(title, options);
+          const notif = {
+            title: title,
+            body: options?.body || '',
+            icon: options?.icon || '',
+            tag: options?.tag || '',
+            onclick: null,
+            onclose: null,
+            onerror: null,
+            onshow: null,
+            close: function() {}
+          };
+          setTimeout(() => { if (typeof notif.onshow === 'function') notif.onshow(); }, 50);
+          return notif;
+        }
+
+        BlancNotification.permission = 'granted';
+        BlancNotification.requestPermission = function(cb) {
+          if (typeof cb === 'function') cb('granted');
+          return Promise.resolve('granted');
+        };
+
+        try {
+          Object.defineProperty(window, 'Notification', {
+            value: BlancNotification,
+            writable: true,
+            configurable: true
+          });
+        } catch(e) {
+          window.Notification = BlancNotification;
+        }
+
+        if ('ServiceWorkerRegistration' in window && ServiceWorkerRegistration.prototype) {
+          const origShow = ServiceWorkerRegistration.prototype.showNotification;
+          ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
+            emitBlancNotification(title, options);
+            return Promise.resolve();
+          };
+        }
+      })();
     })();
     "#;
 
@@ -269,12 +338,15 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
         use webview2_com::{
             AddScriptToExecuteOnDocumentCreatedCompletedHandler,
             Microsoft::Web::WebView2::Win32::*,
+            WebMessageReceivedEventHandler,
             WebResourceRequestedEventHandler,
         };
         use windows::core::{w, Interface};
 
         let filter_app = app.clone();
         let filter_tab_id = tab_id.to_string();
+        let notif_app = app.clone();
+        let notif_tab_id = tab_id.to_string();
 
         let cosmetic_css = if let Some(state) = app.try_state::<AppState>() {
             if let Ok(adblock) = state.adblock.lock() {
@@ -426,6 +498,38 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
                         },
                     ));
                     let _ = core.add_WebResourceRequested(&handler, &mut token);
+
+                    // 4. Hook add_WebMessageReceived to receive Web Notifications from page
+                    let mut msg_token = 0i64;
+                    let msg_handler = WebMessageReceivedEventHandler::create(Box::new(
+                        move |_sender, args| {
+                            let Some(args) = args else {
+                                return Ok(());
+                            };
+                            let mut msg_pwstr = windows::core::PWSTR::null();
+                            if args.TryGetWebMessageAsString(&mut msg_pwstr).is_ok() && !msg_pwstr.is_null() {
+                                let msg = webview2_com::take_pwstr(msg_pwstr);
+                                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&msg) {
+                                    if val.get("type").and_then(|t| t.as_str()) == Some("BLANC_WEB_NOTIFICATION") {
+                                        crate::log_msg(&format!("Web notification received in tab {}: {:?}", notif_tab_id, val));
+                                        let _ = notif_app.emit(
+                                            "blanc:web-notification",
+                                            serde_json::json!({
+                                                "id": format!("notif-{}", chrono::Utc::now().timestamp_millis()),
+                                                "title": val.get("title").and_then(|t| t.as_str()).unwrap_or("Notification"),
+                                                "body": val.get("body").and_then(|b| b.as_str()).unwrap_or(""),
+                                                "icon": val.get("icon").and_then(|i| i.as_str()).unwrap_or(""),
+                                                "origin": val.get("origin").and_then(|o| o.as_str()).unwrap_or(""),
+                                                "tabId": notif_tab_id.clone(),
+                                            }),
+                                        );
+                                    }
+                                }
+                            }
+                            Ok(())
+                        },
+                    ));
+                    let _ = core.add_WebMessageReceived(&msg_handler, &mut msg_token);
                 }
             }
         });
