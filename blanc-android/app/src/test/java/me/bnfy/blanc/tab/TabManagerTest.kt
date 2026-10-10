@@ -230,4 +230,46 @@ class TabManagerTest {
         assertEquals("https://example.com", restoredTabs[0].url)
         assertEquals("https://private.com", restoredTabs[1].url)
     }
+
+    @Test
+    fun testQuietTabsHibernationState() {
+        val tab = Tab.create().copy(
+            url = "https://example.com/heavy-page",
+            title = "Heavy Page",
+            scrollX = 0,
+            scrollY = 1500
+        )
+        assertFalse(tab.isSleeping)
+        assertEquals(1500, tab.scrollY)
+
+        // Simulate Quiet Tabs eviction
+        tab.isSleeping = true
+        tab.webView = null
+
+        assertTrue(tab.isSleeping)
+        assertNull(tab.webView)
+        assertEquals("https://example.com/heavy-page", tab.url)
+        assertEquals(1500, tab.scrollY)
+
+        // Verify toBridgeTab preserves state without crashing
+        val bridgeTab = tab.toBridgeTab()
+        assertTrue(bridgeTab.isSleeping)
+        assertNull(bridgeTab.webView)
+        assertNull(bridgeTab.savedState)
+    }
+
+    @Test
+    fun testWorkspaceTabAssignment() {
+        val tab1 = Tab.create().copy(workspaceId = "work")
+        val tab2 = Tab.create().copy(workspaceId = "personal")
+        val tab3 = Tab.create().copy(workspaceId = "work")
+
+        val allTabs = listOf(tab1, tab2, tab3)
+        val workTabs = allTabs.filter { it.workspaceId == "work" }
+        val personalTabs = allTabs.filter { it.workspaceId == "personal" }
+
+        assertEquals(2, workTabs.size)
+        assertEquals(1, personalTabs.size)
+        assertTrue(workTabs.all { it.workspaceId == "work" })
+    }
 }

@@ -11,12 +11,21 @@ import {
   Github,
   Globe,
   Layers,
+  Type,
+  Image as ImageIcon,
+  MousePointer,
+  Camera,
+  Mic,
+  Bell,
+  MapPin,
 } from 'lucide-react';
 import {
   BrowserSettings,
   SearchEngine,
   ThemeMode,
 } from '../../types/browser';
+import { FontSwitcher } from '../FontSwitcher';
+import { NATURE_WALLPAPERS, applyWallpaperTheme } from '../../data/natureWallpapers';
 
 interface SettingsPageProps {
   settings: BrowserSettings;
@@ -208,7 +217,160 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </section>
 
-        {/* 3. PRIVACY & BLANC SHIELDS */}
+        {/* 3. TYPOGRAPHY & INBUILT FONT SWITCHER */}
+        <section className="space-y-3 pt-4 border-t border-white/10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">
+              <Type className="w-4 h-4 text-[#d4ad66]" />
+              <span>Typography & Google Fonts</span>
+            </div>
+            <FontSwitcher
+              currentFont={settings.fontFamily || 'Inter'}
+              onSelectFont={(font) => onUpdateSettings({ fontFamily: font })}
+            />
+          </div>
+          <p className="text-[12px] text-white/50">
+            Customize the browser's UI font family across the Floating Island, New Tab dashboard, and surfaces.
+          </p>
+
+          <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-white/40">
+              <span>Active Font: <strong className="text-white/80">{settings.fontFamily || 'Inter'}</strong></span>
+              <span className="font-mono text-[10px]">Google Fonts Catalog</span>
+            </div>
+            <p className="text-[14px] text-white/80 leading-relaxed font-ui">
+              "Minimalism is not a lack of something. It's simply the perfect amount of everything."
+            </p>
+          </div>
+        </section>
+
+        {/* 4. NATURE WALLPAPERS (START PAGE) */}
+        <section className="space-y-3 pt-4 border-t border-white/10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">
+              <ImageIcon className="w-4 h-4 text-[#d4ad66]" />
+              <span>Nature Wallpapers from the Web</span>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={settings.natureWallpaper !== false}
+                onChange={(e) => onUpdateSettings({ natureWallpaper: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d4ad66]"></div>
+            </label>
+          </div>
+          <p className="text-[12px] text-white/50">
+            Set breathtaking high-resolution nature photography as the background on new tabs. The browser frame and Island pill automatically adapt their accent colors and glow to the active image.
+          </p>
+
+          {settings.natureWallpaper !== false && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+              {NATURE_WALLPAPERS.map((wp) => {
+                const isSelected = settings.wallpaperId === wp.id || (!settings.wallpaperId && wp.id === 'emerald-lake');
+                return (
+                  <div
+                    key={wp.id}
+                    onClick={() => {
+                      applyWallpaperTheme(wp);
+                      onUpdateSettings({ wallpaperId: wp.id });
+                    }}
+                    className={`group relative rounded-2xl overflow-hidden border cursor-pointer transition-all aspect-video ${
+                      isSelected
+                        ? 'border-[#d4ad66] ring-2 ring-[#d4ad66]/40 scale-[1.02]'
+                        : 'border-white/10 hover:border-white/30'
+                    }`}
+                  >
+                    <img
+                      src={wp.thumbnailUrl}
+                      alt={wp.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-2 flex flex-col justify-end">
+                      <span className="text-[11px] font-medium text-white truncate">{wp.title}</span>
+                      <span className="text-[9px] text-white/60 truncate">{wp.location}</span>
+                    </div>
+                    {isSelected && (
+                      <div className="absolute top-2 right-2 p-1 rounded-full bg-[#d4ad66] text-black">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* 5. MOUSE GESTURES */}
+        <section className="space-y-3 pt-4 border-t border-white/10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">
+              <MousePointer className="w-4 h-4 text-[#d4ad66]" />
+              <span>Mouse Gestures & Rocker Navigation</span>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={settings.mouseGesturesEnabled !== false}
+                onChange={(e) => onUpdateSettings({ mouseGesturesEnabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d4ad66]"></div>
+            </label>
+          </div>
+          <p className="text-[12px] text-white/50">
+            Navigate rapidly between pages by right-clicking and dragging mouse gestures or using mouse rocker controls.
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1 text-[12px]">
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-3">
+              <span className="font-mono text-[16px] text-[#d4ad66] font-bold">←</span>
+              <div>
+                <p className="font-medium text-white/90">Right Drag Left</p>
+                <p className="text-[10px] text-white/40">Go Back</p>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-3">
+              <span className="font-mono text-[16px] text-[#d4ad66] font-bold">→</span>
+              <div>
+                <p className="font-medium text-white/90">Right Drag Right</p>
+                <p className="text-[10px] text-white/40">Go Forward</p>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-3">
+              <span className="font-mono text-[16px] text-emerald-400 font-bold">↑</span>
+              <div>
+                <p className="font-medium text-white/90">Right Drag Up</p>
+                <p className="text-[10px] text-white/40">New Tab</p>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-3">
+              <span className="font-mono text-[16px] text-rose-400 font-bold">↓</span>
+              <div>
+                <p className="font-medium text-white/90">Right Drag Down</p>
+                <p className="text-[10px] text-white/40">Close Tab</p>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-3">
+              <span className="font-mono text-[16px] text-sky-400 font-bold">↻</span>
+              <div>
+                <p className="font-medium text-white/90">Right Drag Up/Down</p>
+                <p className="text-[10px] text-white/40">Reload Page</p>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-3">
+              <span className="font-mono text-[13px] text-purple-400 font-bold">Rocker</span>
+              <div>
+                <p className="font-medium text-white/90">Hold Right + Left</p>
+                <p className="text-[10px] text-white/40">Instant Back</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 6. PRIVACY & BLANC SHIELDS */}
         <section className="space-y-3 pt-4 border-t border-white/10">
           <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">
             <Shield className="w-4 h-4 text-[#d4ad66]" />
@@ -289,7 +451,108 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </section>
 
-        {/* 4. STARTUP BEHAVIOR */}
+        {/* 7. SITE PERMISSIONS & MEDIA ACCESS */}
+        <section className="space-y-3 pt-4 border-t border-white/10">
+          <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">
+            <Camera className="w-4 h-4 text-[#d4ad66]" />
+            <span>Site Permissions & Media Access</span>
+          </div>
+          <p className="text-[12px] text-white/50">
+            Control default access rules for camera, microphone, notifications, and location requests made by websites (such as Instagram Web calls, Google Meet, or Discord).
+          </p>
+
+          <div className="rounded-2xl border border-white/5 bg-white/[0.02] divide-y divide-white/5">
+            {/* Camera */}
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded-xl bg-white/5 text-white/70">
+                  <Camera className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div>
+                  <span className="text-[13px] font-medium text-white/90">Camera Access</span>
+                  <p className="text-[11px] text-white/40">Used for video calls, avatar captures, and WebRTC streaming</p>
+                </div>
+              </div>
+              <select
+                value={settings.cameraPermission || 'ask'}
+                onChange={(e) => onUpdateSettings({ cameraPermission: e.target.value as any })}
+                className="bg-black/60 border border-white/10 rounded-xl px-3 py-1.5 text-[12px] text-white/90 focus:outline-none focus:border-[#d4ad66]/50"
+              >
+                <option value="ask" className="bg-[#121212] text-white">Ask each time (Default)</option>
+                <option value="allow" className="bg-[#121212] text-white">Always Allow</option>
+                <option value="block" className="bg-[#121212] text-white">Always Block</option>
+              </select>
+            </div>
+
+            {/* Microphone */}
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded-xl bg-white/5 text-white/70">
+                  <Mic className="w-4 h-4 text-sky-400" />
+                </div>
+                <div>
+                  <span className="text-[13px] font-medium text-white/90">Microphone Access</span>
+                  <p className="text-[11px] text-white/40">Used for audio calls, voice messages, and voice input</p>
+                </div>
+              </div>
+              <select
+                value={settings.microphonePermission || 'ask'}
+                onChange={(e) => onUpdateSettings({ microphonePermission: e.target.value as any })}
+                className="bg-black/60 border border-white/10 rounded-xl px-3 py-1.5 text-[12px] text-white/90 focus:outline-none focus:border-[#d4ad66]/50"
+              >
+                <option value="ask" className="bg-[#121212] text-white">Ask each time (Default)</option>
+                <option value="allow" className="bg-[#121212] text-white">Always Allow</option>
+                <option value="block" className="bg-[#121212] text-white">Always Block</option>
+              </select>
+            </div>
+
+            {/* Notifications */}
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded-xl bg-white/5 text-white/70">
+                  <Bell className="w-4 h-4 text-amber-400" />
+                </div>
+                <div>
+                  <span className="text-[13px] font-medium text-white/90">Web Notifications</span>
+                  <p className="text-[11px] text-white/40">Sites can push system notifications for incoming messages and alerts</p>
+                </div>
+              </div>
+              <select
+                value={settings.notificationsPermission || 'ask'}
+                onChange={(e) => onUpdateSettings({ notificationsPermission: e.target.value as any })}
+                className="bg-black/60 border border-white/10 rounded-xl px-3 py-1.5 text-[12px] text-white/90 focus:outline-none focus:border-[#d4ad66]/50"
+              >
+                <option value="ask" className="bg-[#121212] text-white">Ask each time (Default)</option>
+                <option value="allow" className="bg-[#121212] text-white">Always Allow</option>
+                <option value="block" className="bg-[#121212] text-white">Always Block</option>
+              </select>
+            </div>
+
+            {/* Geolocation */}
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded-xl bg-white/5 text-white/70">
+                  <MapPin className="w-4 h-4 text-purple-400" />
+                </div>
+                <div>
+                  <span className="text-[13px] font-medium text-white/90">Location & Geolocation</span>
+                  <p className="text-[11px] text-white/40">Provides accurate geographic position to mapping and weather services</p>
+                </div>
+              </div>
+              <select
+                value={settings.geolocationPermission || 'ask'}
+                onChange={(e) => onUpdateSettings({ geolocationPermission: e.target.value as any })}
+                className="bg-black/60 border border-white/10 rounded-xl px-3 py-1.5 text-[12px] text-white/90 focus:outline-none focus:border-[#d4ad66]/50"
+              >
+                <option value="ask" className="bg-[#121212] text-white">Ask each time (Default)</option>
+                <option value="allow" className="bg-[#121212] text-white">Always Allow</option>
+                <option value="block" className="bg-[#121212] text-white">Always Block</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        {/* 8. STARTUP BEHAVIOR */}
         <section className="space-y-3 pt-4 border-t border-white/10">
           <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">
             <RotateCcw className="w-4 h-4 text-[#d4ad66]" />

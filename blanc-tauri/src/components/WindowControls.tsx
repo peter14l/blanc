@@ -18,25 +18,25 @@ export const WindowControls: React.FC<WindowControlsProps> = ({
 }) => {
   if (variant === 'buttons') {
     return (
-      <div className={`flex items-center space-x-1 no-drag ${className}`}>
+      <div className={`flex items-center space-x-0.5 no-drag bg-black/40 backdrop-blur-md border border-white/10 rounded-xl px-1 py-0.5 shadow-sm ${className}`}>
         <button
           onClick={onMinimize}
           title="Minimize"
-          className="p-1 rounded hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+          className="w-7 h-7 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition-colors flex items-center justify-center"
         >
           <Minus className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={onMaximize}
           title="Maximize"
-          className="p-1 rounded hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+          className="w-7 h-7 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition-colors flex items-center justify-center"
         >
           <Square className="w-3 h-3" />
         </button>
         <button
           onClick={onClose}
           title="Close"
-          className="p-1 rounded hover:bg-red-500/20 text-white/60 hover:text-red-400 transition-colors"
+          className="w-7 h-7 rounded-lg hover:bg-[#e81123] hover:text-white text-white/70 transition-colors flex items-center justify-center"
         >
           <X className="w-3.5 h-3.5" />
         </button>

@@ -9,6 +9,9 @@ export interface Tab {
   can_go_forward: boolean;
   favicon?: string;
   is_private?: boolean;
+  is_asleep?: boolean;
+  history?: string[];
+  historyIndex?: number;
 }
 
 export type QuickSwitcherItemType =
@@ -68,6 +71,14 @@ export interface BrowserSettings {
   blockThirdPartyCookies: boolean;
   strictHttps: boolean;
   startupBehavior: StartupBehavior;
+  fontFamily?: string;
+  natureWallpaper?: boolean;
+  wallpaperId?: string;
+  mouseGesturesEnabled?: boolean;
+  cameraPermission?: 'ask' | 'allow' | 'block';
+  microphonePermission?: 'ask' | 'allow' | 'block';
+  notificationsPermission?: 'ask' | 'allow' | 'block';
+  geolocationPermission?: 'ask' | 'allow' | 'block';
 }
 
 export interface AdblockStats {
@@ -94,6 +105,8 @@ export interface BrowserIPCContextType {
   reloadTab: (tabId: string) => Promise<void>;
   goBack: (tabId: string) => Promise<void>;
   goForward: (tabId: string) => Promise<void>;
+  discardTab: (tabId: string) => Promise<boolean>;
+  sleepIdleTabs: (threshold?: string) => Promise<string[]>;
   getTabs: () => Promise<Tab[]>;
 
   // Mobile Navigation (single main WebView on Android/iOS)
@@ -137,4 +150,11 @@ export interface BrowserIPCContextType {
   settings: BrowserSettings;
   updateSettings: (updates: Partial<BrowserSettings>) => void;
   adblockStats: AdblockStats;
+
+  // Site Permissions
+  pendingPermissionPrompt?: any;
+  setPendingPermissionPrompt?: React.Dispatch<React.SetStateAction<any>>;
+  respondToPermission?: (id: string, allow: boolean, remember: boolean) => Promise<void>;
+  dismissPermissionPrompt?: () => void;
+  triggerTestPermissionPrompt?: (resource: string) => void;
 }

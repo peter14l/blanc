@@ -38,3 +38,8 @@ captures/
 
 # Room schema
 schemas/
+
+# Local scratch dumps and test apps
+err.txt
+out.txt
+desktopApp/

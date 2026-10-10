@@ -35,6 +35,7 @@ interface FloatingIslandProps {
   onOpenHistory?: () => void;
   history?: HistoryEntry[];
   bookmarks?: BookmarkType[];
+  onSuggestionsOpenChange?: (open: boolean) => void;
   className?: string;
 }
 
@@ -56,13 +57,16 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   onOpenHistory,
   history = [],
   bookmarks = [],
+  onSuggestionsOpenChange,
   className = '',
 }) => {
   const [inputUrl, setInputUrl] = useState('');
   const [isFocused, setIsFocused] = useState(false);
+  const [isUserEditing, setIsUserEditing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isPickerVisible, setIsPickerVisible] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const activeTabIdRef = useRef<string | null>(null);
 
   const { suggestions } = useSearchSuggestions({
     query: inputUrl,
@@ -75,20 +79,50 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
     if (isFocused && inputUrl.trim().length > 0 && suggestions.length > 0) {
       setIsPickerVisible(true);
       setSelectedIndex(0);
+      onSuggestionsOpenChange?.(true);
     } else {
       setIsPickerVisible(false);
+      onSuggestionsOpenChange?.(false);
     }
-  }, [suggestions, isFocused, inputUrl]);
+  }, [suggestions, isFocused, inputUrl, onSuggestionsOpenChange]);
 
-  // Synchronize input with active tab URL when not focused
+  // Global listener to focus address bar (triggered by Ctrl+L / Alt+D)
   useEffect(() => {
-    if (!isFocused && activeTab) {
-      setInputUrl(activeTab.url === 'blanc://newtab' ? '' : activeTab.url);
+    const handleFocusCommand = () => {
+      inputRef.current?.focus();
+      setTimeout(() => {
+        inputRef.current?.select();
+      }, 0);
+    };
+    window.addEventListener('blanc:focus-address-bar', handleFocusCommand);
+    return () => window.removeEventListener('blanc:focus-address-bar', handleFocusCommand);
+  }, []);
+
+  // Synchronize input with active tab URL
+  // Only synchronize when switching to a different tab, or when not actively editing
+  useEffect(() => {
+    if (!activeTab) return;
+    const tabUrl = activeTab.url === 'blanc://newtab' ? '' : activeTab.url;
+
+    if (activeTab.id !== activeTabIdRef.current) {
+      activeTabIdRef.current = activeTab.id;
+      setIsUserEditing(false);
+      setIsFocused(false);
+      setInputUrl(tabUrl);
+      return;
     }
-  }, [activeTab, isFocused]);
+
+    // On same tab: only synchronize if user is neither focused nor actively editing
+    if (!isUserEditing && !isFocused) {
+      setInputUrl(tabUrl);
+    }
+  }, [activeTab?.id, activeTab?.url, isFocused, isUserEditing]);
 
   const handleSelectSuggestion = (item: SuggestionItem) => {
     setIsPickerVisible(false);
+    setIsUserEditing(false);
+    setIsFocused(false);
+    onSuggestionsOpenChange?.(false);
     if (item.url) {
       onNavigate(item.url);
     } else if (item.query) {
@@ -122,18 +156,33 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
       if (e.key === 'Escape') {
         e.preventDefault();
         setIsPickerVisible(false);
+        setIsUserEditing(false);
+        setIsFocused(false);
+        onSuggestionsOpenChange?.(false);
+        if (activeTab) {
+          setInputUrl(activeTab.url === 'blanc://newtab' ? '' : activeTab.url);
+        }
+        inputRef.current?.blur();
         return;
       }
     }
 
     if (e.key === 'Enter') {
       if (inputUrl.trim()) {
+        setIsUserEditing(false);
+        setIsPickerVisible(false);
+        setIsFocused(false);
+        onSuggestionsOpenChange?.(false);
         onNavigate(inputUrl);
         inputRef.current?.blur();
       }
     } else if (e.key === 'Escape') {
+      setIsPickerVisible(false);
+      setIsUserEditing(false);
+      setIsFocused(false);
+      onSuggestionsOpenChange?.(false);
       if (activeTab) {
-        setInputUrl(activeTab.url);
+        setInputUrl(activeTab.url === 'blanc://newtab' ? '' : activeTab.url);
       }
       inputRef.current?.blur();
     }
@@ -151,7 +200,7 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
     <div
       data-tauri-drag-region
       className={`relative flex items-center justify-between h-[52px] w-[94%] max-w-[890px] px-4 
-        bg-slate-900/80 dark:bg-[#161616]/95 backdrop-blur-xl border border-white/10 
+        bg-slate-900/80 dark:bg-[#161616]/95 backdrop-blur-xl border border-[var(--island-border-adaptive,rgba(255,255,255,0.1))] 
         shadow-island-resting dark:shadow-[0_12px_40px_rgba(0,0,0,0.65)] 
         rounded-2xl transition-all duration-200 select-none z-50 ${className}`}
     >
@@ -208,14 +257,21 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
         onSubmit={(e) => {
           e.preventDefault();
           if (inputUrl.trim()) {
+            setIsUserEditing(false);
+            setIsFocused(false);
+            onSuggestionsOpenChange?.(false);
             onNavigate(inputUrl);
             inputRef.current?.blur();
           }
         }}
         className="flex-1 max-w-[480px] lg:max-w-[520px] mx-3 relative flex items-center h-10 px-3.5 
           bg-white/5 hover:bg-white/8 focus-within:bg-black/50 focus-within:ring-1 focus-within:ring-[#d4ad66]/60 
-          rounded-xl border border-white/10 transition-all no-drag group cursor-text"
-        onClick={() => inputRef.current?.focus()}
+          rounded-xl border border-[var(--island-border-adaptive,rgba(255,255,255,0.1))] transition-all no-drag group cursor-text"
+        onClick={() => {
+          if (document.activeElement !== inputRef.current) {
+            inputRef.current?.focus();
+          }
+        }}
       >
         <div className="mr-2.5 text-white/45 group-focus-within:text-[#d4ad66] transition-colors flex items-center shrink-0">
           {isFocused ? (
@@ -229,16 +285,29 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
           ref={inputRef}
           type="text"
           value={inputUrl}
-          onChange={(e) => setInputUrl(e.target.value)}
+          onChange={(e) => {
+            setInputUrl(e.target.value);
+            setIsUserEditing(true);
+          }}
           onFocus={() => {
             setIsFocused(true);
-            inputRef.current?.select();
+            setIsUserEditing(true);
+            setTimeout(() => {
+              inputRef.current?.select();
+            }, 0);
           }}
           onBlur={() => {
             setTimeout(() => {
-              setIsFocused(false);
-              setIsPickerVisible(false);
-            }, 200);
+              if (document.activeElement !== inputRef.current) {
+                setIsFocused(false);
+                setIsUserEditing(false);
+                setIsPickerVisible(false);
+                onSuggestionsOpenChange?.(false);
+                if (activeTab) {
+                  setInputUrl(activeTab.url === 'blanc://newtab' ? '' : activeTab.url);
+                }
+              }
+            }, 250);
           }}
           onKeyDown={handleKeyDown}
           placeholder={`Search ${searchEngine} or enter URL...`}
@@ -267,7 +336,7 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
         />
       </form>
 
-      {/* RIGHT SECTION: Shield, Bookmarks, History, Switchers, Settings */}
+      {/* RIGHT SECTION: Shield, Bookmarks, History, Switchers, Settings, Window Controls */}
       <div className="flex items-center space-x-1.5 sm:space-x-2 z-10 no-drag" data-tauri-drag-region>
         {/* Shield / Tracker counter badge */}
         <div
@@ -332,6 +401,19 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
         >
           <Settings className="w-4 h-4" />
         </button>
+
+        {/* Window Controls (Integrated for Windows / Linux on the right) */}
+        {!isMac && (
+          <>
+            <div className="h-4 w-[1px] bg-white/10 mx-0.5" />
+            <WindowControls
+              variant="buttons"
+              onMinimize={onMinimize}
+              onMaximize={onMaximize}
+              onClose={onClose}
+            />
+          </>
+        )}
       </div>
     </div>
   );

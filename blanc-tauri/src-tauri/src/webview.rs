@@ -77,17 +77,165 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
     let title_app = app.clone();
     let title_id = tab_id.to_string();
 
+    let init_script = r#"
+    (function() {
+      if (window.__blanc_nav_injected) return;
+      window.__blanc_nav_injected = true;
+
+      // Auxiliary mouse buttons (3: Back, 4: Forward)
+      window.addEventListener('mouseup', function(e) {
+        if (e.button === 3) {
+          window.history.back();
+        } else if (e.button === 4) {
+          window.history.forward();
+        }
+      }, true);
+
+      // Mouse gestures & rocker navigation inside page
+      let isRightDown = false;
+      let isLeftDown = false;
+      let startX = 0;
+      let startY = 0;
+      let didGesture = false;
+
+      window.addEventListener('mousedown', function(e) {
+        if (e.button === 0) isLeftDown = true;
+        if (e.button === 2) {
+          isRightDown = true;
+          startX = e.clientX;
+          startY = e.clientY;
+          didGesture = false;
+
+          // Rocker gesture: Left held + Right click -> Forward
+          if (isLeftDown) {
+            didGesture = true;
+            window.history.forward();
+          }
+        } else if (e.button === 0 && isRightDown) {
+          // Rocker gesture: Right held + Left click -> Back
+          didGesture = true;
+          window.history.back();
+        }
+      }, true);
+
+      window.addEventListener('mouseup', function(e) {
+        if (e.button === 0) isLeftDown = false;
+        if (e.button === 2) {
+          if (isRightDown && !didGesture) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist >= 28) {
+              didGesture = true;
+              if (Math.abs(dx) > Math.abs(dy)) {
+                if (dx < -20) window.history.back();
+                else if (dx > 20) window.history.forward();
+              } else {
+                if (dy < -20) window.scrollTo({ top: 0, behavior: 'smooth' });
+                else if (dy > 20) window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+              }
+            }
+          }
+          isRightDown = false;
+        }
+      }, true);
+
+      // Suppress context menu if gesture was performed
+      window.addEventListener('contextmenu', function(e) {
+        if (didGesture) {
+          e.preventDefault();
+          e.stopPropagation();
+          didGesture = false;
+        }
+      }, true);
+
+      // Keyboard navigation shortcuts inside webview
+      window.addEventListener('keydown', function(e) {
+        if (e.altKey && e.key === 'ArrowLeft') {
+          window.history.back();
+        } else if (e.altKey && e.key === 'ArrowRight') {
+          window.history.forward();
+        } else if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) {
+          window.location.reload();
+        }
+      }, true);
+    })();
+    "#;
+
+    let perm_app = app.clone();
+    let perm_origin = parsed_url.origin().ascii_serialization();
+    let perm_tab_id = tab_id.to_string();
+
     let builder = WebviewBuilder::new(tab_id, WebviewUrl::External(parsed_url))
-        .on_navigation(move |url| {
-            let _ = nav_app.emit(
-                "tab-navigated",
-                TabNavigated {
-                    tab_id: nav_id.clone(),
-                    url: Some(url.to_string()),
-                    title: None,
-                },
-            );
-            true
+        .initialization_script(init_script)
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        .on_permission_request(move |_webview, kind| {
+            let res_str = match kind {
+                tauri::webview::PermissionKind::Camera => "camera",
+                tauri::webview::PermissionKind::Microphone => "microphone",
+                tauri::webview::PermissionKind::Notifications => "notifications",
+                tauri::webview::PermissionKind::Geolocation => "geolocation",
+                _ => "other",
+            };
+            let _ = perm_app.emit("blanc:permission-request", serde_json::json!({
+                "id": format!("perm-{}", chrono::Utc::now().timestamp_millis()),
+                "origin": perm_origin.clone(),
+                "resource": res_str,
+                "tabId": perm_tab_id.clone(),
+            }));
+            match kind {
+                tauri::webview::PermissionKind::Camera
+                | tauri::webview::PermissionKind::Microphone
+                | tauri::webview::PermissionKind::Notifications
+                | tauri::webview::PermissionKind::Geolocation => {
+                    tauri::webview::PermissionResponse::Allow
+                }
+                _ => tauri::webview::PermissionResponse::Default,
+            }
+        })
+        .on_new_window(move |_url, _features| {
+            tauri::webview::NewWindowResponse::Allow
+        })
+        .on_navigation({
+            let nav_app = nav_app.clone();
+            let nav_id = nav_id.clone();
+            move |url| {
+                let _ = nav_app.emit(
+                    "tab-navigated",
+                    TabNavigated {
+                        tab_id: nav_id.clone(),
+                        url: Some(url.to_string()),
+                        title: None,
+                    },
+                );
+
+                // Inject cosmetic rules for newly navigated URL if active webview is navigated
+                if let Some(wv) = nav_app.get_webview(&nav_id) {
+                    if let Some(state) = nav_app.try_state::<AppState>() {
+                        if let Ok(adblock) = state.adblock.lock() {
+                            if let Some(css) = adblock.get_cosmetic_css(url.as_str()) {
+                                let inject_js = format!(
+                                    r#"
+                                    (function() {{
+                                        let style = document.getElementById('__blanc_cosmetic_style');
+                                        if (!style) {{
+                                            style = document.createElement('style');
+                                            style.id = '__blanc_cosmetic_style';
+                                            (document.head || document.documentElement).appendChild(style);
+                                        }}
+                                        style.textContent = {};
+                                    }})();
+                                    "#,
+                                    serde_json::to_string(&css).unwrap_or_default()
+                                );
+                                let _ = wv.eval(&inject_js);
+                            }
+                        }
+                    }
+                }
+
+                true
+            }
         })
         .on_document_title_changed(move |_webview, title| {
             let _ = title_app.emit(
@@ -115,6 +263,154 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
     crate::log_msg("create_tab_webview: add_child succeeded, showing and focusing");
     let _ = wv.show();
     let _ = wv.set_focus();
+
+    #[cfg(target_os = "windows")]
+    {
+        use webview2_com::{
+            AddScriptToExecuteOnDocumentCreatedCompletedHandler,
+            Microsoft::Web::WebView2::Win32::*,
+            WebResourceRequestedEventHandler,
+        };
+        use windows::core::{w, Interface};
+
+        let filter_app = app.clone();
+        let filter_tab_id = tab_id.to_string();
+
+        let cosmetic_css = if let Some(state) = app.try_state::<AppState>() {
+            if let Ok(adblock) = state.adblock.lock() {
+                adblock.get_cosmetic_css(target_url)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let cosmetic_script = cosmetic_css.map(|css| {
+            format!(
+                r#"
+                (function() {{
+                    function __blanc_inject_cosmetic() {{
+                        if (document.getElementById('__blanc_cosmetic_style')) return;
+                        const style = document.createElement('style');
+                        style.id = '__blanc_cosmetic_style';
+                        style.textContent = {};
+                        (document.head || document.documentElement).appendChild(style);
+                    }}
+                    if (document.documentElement) __blanc_inject_cosmetic();
+                    document.addEventListener('DOMContentLoaded', __blanc_inject_cosmetic);
+                }})();
+                "#,
+                serde_json::to_string(&css).unwrap_or_default()
+            )
+        });
+
+        let _ = wv.with_webview(move |platform_webview| {
+            unsafe {
+                let controller = platform_webview.controller();
+                if let Ok(core) = controller.CoreWebView2() {
+                    // 1. Attach wildcard filter for all web resource requests
+                    let _ = core.AddWebResourceRequestedFilter(
+                        w!("*"),
+                        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+                    );
+
+                    // 2. Inject cosmetic CSS rules for active domain via AddScriptToExecuteOnDocumentCreated
+                    if let Some(ref script) = cosmetic_script {
+                        let script_hstring = windows::core::HSTRING::from(script.as_str());
+                        let script_handler = AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(
+                            Box::new(|_res, _id| Ok(())),
+                        );
+                        let _ = core.AddScriptToExecuteOnDocumentCreated(&script_hstring, &script_handler);
+                    }
+
+                    // 3. Hook add_WebResourceRequested to intercept and block ad/tracker subresources
+                    let mut token = 0i64;
+                    let handler = WebResourceRequestedEventHandler::create(Box::new(
+                        move |sender, args| {
+                            let Some(args) = args else {
+                                return Ok(());
+                            };
+
+                            let Ok(request) = args.Request() else {
+                                return Ok(());
+                            };
+
+                            let mut uri_pwstr = windows::core::PWSTR::null();
+                            if request.Uri(&mut uri_pwstr).is_err() {
+                                return Ok(());
+                            }
+                            let url = webview2_com::take_pwstr(uri_pwstr);
+
+                            let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL;
+                            if args.ResourceContext(&mut context).is_err() {
+                                return Ok(());
+                            }
+
+                            let resource_type = match context {
+                                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT => "script",
+                                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE => "image",
+                                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET => "stylesheet",
+                                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST => "xmlhttprequest",
+                                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH => "fetch",
+                                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT => "subdocument",
+                                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA => "media",
+                                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FONT => "font",
+                                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_WEBSOCKET => "websocket",
+                                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING => "ping",
+                                _ => "other",
+                            };
+
+                            if let Some(state) = filter_app.try_state::<AppState>() {
+                                let should_block = if let Ok(adblock) = state.adblock.lock() {
+                                    if adblock.should_block(&url, None, resource_type) {
+                                        adblock.record_block();
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                };
+
+                                if should_block {
+                                    crate::log_msg(&format!(
+                                        "Adblock blocked subresource: {} [{}] in tab {}",
+                                        url, resource_type, filter_tab_id
+                                    ));
+
+                                    if let Ok(mut browser) = state.browser.lock() {
+                                        let _ = browser.increment_tab_blocked(&filter_tab_id, 1);
+                                        crate::emit_state_projection(&filter_app, &browser);
+                                    }
+
+                                    // Return a 403 Forbidden empty response
+                                    if let Some(core) = sender.as_ref() {
+                                        if let Ok(core2) = core.cast::<ICoreWebView2_2>() {
+                                            if let Ok(env) = core2.Environment() {
+                                                if let Ok(response) = env.CreateWebResourceResponse(
+                                                    None::<&windows::Win32::System::Com::IStream>,
+                                                    403,
+                                                    w!("Blocked"),
+                                                    w!("Content-Type: text/plain\r\n"),
+                                                ) {
+                                                    let _ = args.SetResponse(&response);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Ok(())
+                        },
+                    ));
+                    let _ = core.add_WebResourceRequested(&handler, &mut token);
+                }
+            }
+        });
+    }
+
     crate::log_msg(&format!("create_tab_webview: child webview created and shown for '{}'", tab_id));
 
     Ok(())
@@ -146,7 +442,8 @@ pub fn apply_viewport(
             let _ = wv.set_position(LogicalPosition::new(viewport.x, viewport.y));
             let _ = wv.set_size(LogicalSize::new(viewport.width, viewport.height));
             let _ = wv.show();
-            let _ = wv.set_focus();
+            // Do NOT call wv.set_focus() here: stealing focus during viewport resizing or
+            // suggestion popup toggle steals keyboard focus from the omnibox input.
         } else {
             let _ = wv.hide();
         }
@@ -219,9 +516,35 @@ pub fn close_tab_webview(_app: &AppHandle, _tab_id: &str) -> Result<(), String> 
 pub fn navigate_webview(app: &AppHandle, tab_id: &str, url: &str) -> Result<(), String> {
     if let Some(wv) = app.get_webview(tab_id) {
         match url.parse::<url::Url>() {
-            Ok(parsed) => wv
-                .navigate(parsed)
-                .map_err(|e| format!("Failed to navigate: {}", e)),
+            Ok(parsed) => {
+                wv.navigate(parsed)
+                    .map_err(|e| format!("Failed to navigate: {}", e))?;
+
+                // Inject cosmetic rules for newly navigated URL if available
+                if let Some(state) = app.try_state::<AppState>() {
+                    if let Ok(adblock) = state.adblock.lock() {
+                        if let Some(css) = adblock.get_cosmetic_css(url) {
+                            let inject_js = format!(
+                                r#"
+                                (function() {{
+                                    let style = document.getElementById('__blanc_cosmetic_style');
+                                    if (!style) {{
+                                        style = document.createElement('style');
+                                        style.id = '__blanc_cosmetic_style';
+                                        (document.head || document.documentElement).appendChild(style);
+                                    }}
+                                    style.textContent = {};
+                                }})();
+                                "#,
+                                serde_json::to_string(&css).unwrap_or_default()
+                            );
+                            let _ = wv.eval(&inject_js);
+                        }
+                    }
+                }
+
+                Ok(())
+            }
             Err(_) => Err(format!("Invalid URL: {}", url)),
         }
     } else {

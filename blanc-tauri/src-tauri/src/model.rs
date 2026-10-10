@@ -276,6 +276,8 @@ pub struct TabRecord {
     /// increment — see `adblock.rs`.
     pub blocked: u32,
     pub created_at: u64,
+    #[serde(default = "now_millis")]
+    pub last_active_at: u64,
     /// Incremented every time a quiet tab is woken, so a stale callback from an
     /// earlier hop of a redirect chain cannot resurrect dead state.
     pub wake_generation: u64,
@@ -289,6 +291,7 @@ impl TabRecord {
     pub fn new(window_id: WindowId, url: impl Into<String>, partition: SessionPartition) -> Self {
         let url = url.into();
         let title = derive_title(&url);
+        let now = now_millis();
         Self {
             id: new_id("tab"),
             window_id,
@@ -310,7 +313,8 @@ impl TabRecord {
             can_go_forward: false,
             loading: false,
             blocked: 0,
-            created_at: now_millis(),
+            created_at: now,
+            last_active_at: now,
             wake_generation: 0,
             navigation_generation: 0,
         }

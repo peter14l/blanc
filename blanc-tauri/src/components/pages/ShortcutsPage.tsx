@@ -17,31 +17,42 @@ interface ShortcutItem {
 
 const SHORTCUTS: ShortcutItem[] = [
   // Tabs & Windows
-  { id: 'new-tab', category: 'tabs', description: 'Open new tab', keys: ['⌘', 'T'] },
-  { id: 'close-tab', category: 'tabs', description: 'Close active tab', keys: ['⌘', 'W'] },
-  { id: 'reopen-tab', category: 'tabs', description: 'Reopen recently closed tab', keys: ['⌘', '⇧', 'T'] },
-  { id: 'switch-tab-next', category: 'tabs', description: 'Switch to next tab', keys: ['⌘', '⌥', '→'] },
-  { id: 'switch-tab-prev', category: 'tabs', description: 'Switch to previous tab', keys: ['⌘', '⌥', '←'] },
-  { id: 'tab-switcher', category: 'tabs', description: 'Toggle tab switcher cards', keys: ['⌘', '⇧', 'A'] },
+  { id: 'new-tab', category: 'tabs', description: 'Open new tab', keys: ['Ctrl', 'T'] },
+  { id: 'new-private-tab', category: 'tabs', description: 'Open new private tab', keys: ['Ctrl', 'Shift', 'N'] },
+  { id: 'close-tab', category: 'tabs', description: 'Close active tab', keys: ['Ctrl', 'W'] },
+  { id: 'close-all-tabs', category: 'tabs', description: 'Close all open tabs', keys: ['Ctrl', 'Shift', 'W'] },
+  { id: 'reopen-tab', category: 'tabs', description: 'Reopen recently closed tab', keys: ['Ctrl', 'Shift', 'T'] },
+  { id: 'switch-tab-cycle', category: 'tabs', description: 'Cycle to next tab', keys: ['Ctrl', 'Tab'] },
+  { id: 'switch-tab-cycle-prev', category: 'tabs', description: 'Cycle to previous tab', keys: ['Ctrl', 'Shift', 'Tab'] },
+  { id: 'jump-tab', category: 'tabs', description: 'Jump to tab 1-8 / last tab', keys: ['Ctrl', '1-9'] },
+  { id: 'tab-switcher', category: 'tabs', description: 'Toggle tab switcher cards', keys: ['Ctrl', 'Shift', 'A'] },
 
   // Navigation
-  { id: 'reload-tab', category: 'navigation', description: 'Reload active page', keys: ['⌘', 'R'] },
-  { id: 'force-reload', category: 'navigation', description: 'Force reload without cache', keys: ['⌘', '⇧', 'R'] },
-  { id: 'go-back', category: 'navigation', description: 'Navigate backward', keys: ['⌘', '['] },
-  { id: 'go-forward', category: 'navigation', description: 'Navigate forward', keys: ['⌘', ']'] },
+  { id: 'focus-address-1', category: 'navigation', description: 'Focus address / omnibox', keys: ['Ctrl', 'L'] },
+  { id: 'focus-address-2', category: 'navigation', description: 'Focus address / omnibox (alt)', keys: ['Alt', 'D'] },
+  { id: 'reload-tab', category: 'navigation', description: 'Reload active page', keys: ['F5'] },
+  { id: 'force-reload', category: 'navigation', description: 'Force reload without cache', keys: ['Ctrl', 'F5'] },
+  { id: 'go-back-alt', category: 'navigation', description: 'Navigate backward', keys: ['Alt', '←'] },
+  { id: 'go-forward-alt', category: 'navigation', description: 'Navigate forward', keys: ['Alt', '→'] },
+  { id: 'go-back-bs', category: 'navigation', description: 'Navigate backward (alt)', keys: ['Backspace'] },
+  { id: 'home-page', category: 'navigation', description: 'Go to New Tab / Home', keys: ['Alt', 'Home'] },
   { id: 'stop-loading', category: 'navigation', description: 'Stop page loading', keys: ['Esc'] },
 
   // Command Palette & Search
-  { id: 'quick-switcher', category: 'palette', description: 'Open Quick Switcher / Omnibar', keys: ['⌘', 'K'] },
-  { id: 'focus-address', category: 'palette', description: 'Focus Island command pill', keys: ['⌘', 'L'] },
-  { id: 'find-page', category: 'palette', description: 'Find in current page', keys: ['⌘', 'F'] },
+  { id: 'quick-switcher', category: 'palette', description: 'Open Quick Switcher / Omnibar', keys: ['Ctrl', 'K'] },
+  { id: 'find-page', category: 'palette', description: 'Find in current page', keys: ['Ctrl', 'F'] },
+  { id: 'zoom-in', category: 'palette', description: 'Zoom in (+10%)', keys: ['Ctrl', '+'] },
+  { id: 'zoom-out', category: 'palette', description: 'Zoom out (-10%)', keys: ['Ctrl', '-'] },
+  { id: 'zoom-reset', category: 'palette', description: 'Reset zoom level to 100%', keys: ['Ctrl', '0'] },
 
   // Utility Surfaces
-  { id: 'open-bookmarks', category: 'utility', description: 'Open Bookmarks manager', keys: ['⌘', '⇧', 'B'] },
-  { id: 'open-history', category: 'utility', description: 'Open History surface', keys: ['⌘', 'Y'] },
-  { id: 'open-downloads', category: 'utility', description: 'Open Downloads surface', keys: ['⌘', 'J'] },
-  { id: 'open-settings', category: 'utility', description: 'Open Settings surface', keys: ['⌘', ','] },
-  { id: 'open-shortcuts', category: 'utility', description: 'Open Shortcuts cheat-sheet', keys: ['⌘', '/'] },
+  { id: 'bookmark-page', category: 'utility', description: 'Bookmark current page', keys: ['Ctrl', 'D'] },
+  { id: 'open-bookmarks', category: 'utility', description: 'Open Bookmarks surface', keys: ['Ctrl', 'Shift', 'B'] },
+  { id: 'open-history', category: 'utility', description: 'Open History surface', keys: ['Ctrl', 'H'] },
+  { id: 'open-downloads', category: 'utility', description: 'Open Downloads surface', keys: ['Ctrl', 'J'] },
+  { id: 'open-settings', category: 'utility', description: 'Open Settings surface', keys: ['Ctrl', ','] },
+  { id: 'fullscreen', category: 'utility', description: 'Toggle Fullscreen / Maximize', keys: ['F11'] },
+  { id: 'open-shortcuts', category: 'utility', description: 'Open Shortcuts cheat-sheet', keys: ['Ctrl', '/'] },
 ];
 
 export const ShortcutsPage: React.FC = () => {

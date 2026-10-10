@@ -23,6 +23,9 @@ const isTauriMobile = (): boolean => {
   return /Android|iPhone|iPad|iPod/i.test(ua);
 };
 
+import { applyFontToDocument } from '../data/googleFonts';
+import { PermissionPromptData } from '../components/PermissionPrompt';
+
 // Storage Keys
 const STORAGE_KEYS = {
   TABS: 'blanc_tabs',
@@ -41,6 +44,14 @@ const DEFAULT_SETTINGS: BrowserSettings = {
   blockThirdPartyCookies: true,
   strictHttps: true,
   startupBehavior: 'newtab',
+  fontFamily: 'Inter',
+  natureWallpaper: true,
+  wallpaperId: 'emerald-lake',
+  mouseGesturesEnabled: true,
+  cameraPermission: 'ask',
+  microphonePermission: 'ask',
+  notificationsPermission: 'ask',
+  geolocationPermission: 'ask',
 };
 
 const DEFAULT_FAVORITES: Favorite[] = [
@@ -128,6 +139,8 @@ const DEFAULT_INITIAL_TABS: Tab[] = [
     blocked_trackers: 0,
     can_go_back: false,
     can_go_forward: false,
+    history: ['blanc://newtab'],
+    historyIndex: 0,
   },
 ];
 
@@ -189,6 +202,43 @@ export function useBrowserIPC(): BrowserIPCContextType {
 
   const isTauriAvailable = useMemo(() => isTauri(), []);
 
+  // Site Permission Prompts (Camera, Microphone, Notifications, Geolocation)
+  const [pendingPermissionPrompt, setPendingPermissionPrompt] = useState<PermissionPromptData | null>(null);
+
+  const respondToPermission = useCallback(
+    async (promptId: string, allow: boolean, remember: boolean): Promise<void> => {
+      if (isTauriAvailable) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('permission_respond', {
+            id: promptId,
+            allow,
+            remember,
+          });
+        } catch (err) {
+          console.warn('[useBrowserIPC] permission_respond error:', err);
+        }
+      }
+      setPendingPermissionPrompt(null);
+    },
+    [isTauriAvailable]
+  );
+
+  const dismissPermissionPrompt = useCallback(() => {
+    setPendingPermissionPrompt(null);
+  }, []);
+
+  const triggerTestPermissionPrompt = useCallback(
+    (resource: string = 'camera-microphone') => {
+      setPendingPermissionPrompt({
+        id: `perm-${Date.now()}`,
+        origin: 'https://instagram.com',
+        resource,
+      });
+    },
+    []
+  );
+
   // Sync settings and apply theme
   useEffect(() => {
     setStored(STORAGE_KEYS.SETTINGS, settings);
@@ -205,6 +255,10 @@ export function useBrowserIPC(): BrowserIPCContextType {
       root.classList.add('theme-sunrise');
     } else if (settings.theme === 'patron') {
       root.classList.add('theme-patron');
+    }
+
+    if (settings.fontFamily) {
+      applyFontToDocument(settings.fontFamily);
     }
   }, [settings]);
 
@@ -248,6 +302,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
               title: t.title,
               is_active: t.id === mainWin.activeTabId,
               is_loading: t.loading ?? false,
+              is_asleep: t.asleep ?? false,
               blocked_trackers: t.blocked ?? 0,
               can_go_back: t.can_go_back ?? false,
               can_go_forward: t.can_go_forward ?? false,
@@ -412,6 +467,8 @@ export function useBrowserIPC(): BrowserIPCContextType {
         blocked_trackers: 0,
         can_go_back: false,
         can_go_forward: false,
+        history: [defaultUrl],
+        historyIndex: 0,
       };
 
       setTabs((prev) => [
@@ -534,11 +591,66 @@ export function useBrowserIPC(): BrowserIPCContextType {
         prev.map((t) => ({
           ...t,
           is_active: t.id === tabId,
+          is_asleep: t.id === tabId ? false : t.is_asleep,
         }))
       );
     },
     [isTauriAvailable]
   );
+
+  // Discard / put an inactive tab to sleep to immediately reclaim RAM
+  const discardTab = useCallback(
+    async (tabId: string): Promise<boolean> => {
+      if (isTauriAvailable) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const discarded = await invoke<boolean>('discard_tab', { tab_id: tabId, tabId });
+          if (discarded) {
+            setTabs((prev) =>
+              prev.map((t) => (t.id === tabId ? { ...t, is_asleep: true } : t))
+            );
+            return true;
+          }
+        } catch (err) {
+          console.warn('[useBrowserIPC] Tauri discard_tab error:', err);
+        }
+      }
+      return false;
+    },
+    [isTauriAvailable]
+  );
+
+  // Evict all eligible idle tabs in background
+  const sleepIdleTabs = useCallback(
+    async (threshold: string = '1h'): Promise<string[]> => {
+      if (isTauriAvailable) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const evicted = await invoke<string[]>('sleep_idle_tabs', { threshold, window: 'main' });
+          if (Array.isArray(evicted) && evicted.length > 0) {
+            setTabs((prev) =>
+              prev.map((t) => (evicted.includes(t.id) ? { ...t, is_asleep: true } : t))
+            );
+            return evicted;
+          }
+        } catch (err) {
+          console.warn('[useBrowserIPC] Tauri sleep_idle_tabs error:', err);
+        }
+      }
+      return [];
+    },
+    [isTauriAvailable]
+  );
+
+  // Helper to test if a URL is an internal Blanc surface
+  const isInternalUrl = (url: string): boolean => {
+    return (
+      url.startsWith('blanc://') ||
+      url === 'about:blank' ||
+      url === 'about:newtab' ||
+      !url
+    );
+  };
 
   // Navigate tab
   const navigate = useCallback(
@@ -546,10 +658,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
       let cleanUrl = url.trim();
 
       // Check for internal pages
-      const isInternal =
-        cleanUrl.startsWith('blanc://') ||
-        cleanUrl === 'about:blank' ||
-        cleanUrl === 'about:newtab';
+      const isInternal = isInternalUrl(cleanUrl);
 
       if (!isInternal) {
         if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
@@ -607,18 +716,28 @@ export function useBrowserIPC(): BrowserIPCContextType {
         prev.map((t) => {
           if (t.id === tabId) {
             const pastHistory = (t as any).history || [t.url];
-            const currIndex = (t as any).historyIndex ?? 0;
-            const newHistory = [...pastHistory.slice(0, currIndex + 1), cleanUrl];
+            const currIndex = (t as any).historyIndex ?? (pastHistory.length - 1);
+            let newHistory: string[];
+            let newIndex: number;
+
+            if (pastHistory[currIndex] === cleanUrl) {
+              newHistory = pastHistory;
+              newIndex = currIndex;
+            } else {
+              newHistory = [...pastHistory.slice(0, currIndex + 1), cleanUrl];
+              newIndex = newHistory.length - 1;
+            }
+
             return {
               ...t,
               url: cleanUrl,
               title,
-              is_loading: true,
-              can_go_back: newHistory.length > 1,
+              is_loading: !isInternal,
+              can_go_back: newIndex > 0,
               can_go_forward: false,
               blocked_trackers: t.blocked_trackers + addedBlocked,
               history: newHistory,
-              historyIndex: newHistory.length - 1,
+              historyIndex: newIndex,
             } as Tab;
           }
           return t;
@@ -626,11 +745,13 @@ export function useBrowserIPC(): BrowserIPCContextType {
       );
 
       // Simulate load completion
-      setTimeout(() => {
-        setTabs((prev) =>
-          prev.map((t) => (t.id === tabId ? { ...t, is_loading: false } : t))
-        );
-      }, 350);
+      if (!isInternal) {
+        setTimeout(() => {
+          setTabs((prev) =>
+            prev.map((t) => (t.id === tabId ? { ...t, is_loading: false } : t))
+          );
+        }, 350);
+      }
     },
     [isTauriAvailable, settings, addHistoryEntry]
   );
@@ -638,7 +759,10 @@ export function useBrowserIPC(): BrowserIPCContextType {
   // Reload tab
   const reloadTab = useCallback(
     async (tabId: string): Promise<void> => {
-      if (isTauriAvailable) {
+      const targetTab = tabs.find((t) => t.id === tabId);
+      const isInternal = targetTab ? isInternalUrl(targetTab.url) : false;
+
+      if (isTauriAvailable && !isInternal) {
         try {
           const { invoke } = await import('@tauri-apps/api/core');
           await invoke('reload_tab', { tab_id: tabId, tabId });
@@ -656,81 +780,143 @@ export function useBrowserIPC(): BrowserIPCContextType {
         );
       }, 350);
     },
-    [isTauriAvailable]
+    [isTauriAvailable, tabs]
   );
 
   // Go Back
   const goBack = useCallback(
     async (tabId: string): Promise<void> => {
-      if (isTauriAvailable) {
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('go_back', { tab_id: tabId, tabId });
-        } catch (err) {
-          console.warn('[useBrowserIPC] Tauri go_back failed:', err);
+      const targetTab = tabs.find((t) => t.id === tabId);
+      if (!targetTab) return;
+
+      const hist: string[] = (targetTab as any).history || [targetTab.url];
+      const idx: number = (targetTab as any).historyIndex ?? 0;
+
+      if (idx <= 0) return;
+
+      const nextIdx = idx - 1;
+      const targetUrl = hist[nextIdx];
+      const currentUrl = targetTab.url;
+
+      const currentIsInternal = isInternalUrl(currentUrl);
+      const targetIsInternal = isInternalUrl(targetUrl);
+
+      if (!currentIsInternal && !targetIsInternal) {
+        // Both pages are in child webview: invoke native history back
+        if (isTauriAvailable) {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke('go_back', { tab_id: tabId, tabId });
+          } catch (err) {
+            console.warn('[useBrowserIPC] Tauri go_back failed:', err);
+          }
+        }
+      } else {
+        // Navigating to or from internal page
+        if (isTauriAvailable) {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke('navigate', { tab_id: tabId, tabId, url: targetUrl });
+          } catch (err) {
+            console.warn('[useBrowserIPC] Tauri navigate back failed:', err);
+          }
         }
       }
 
       setTabs((prev) =>
         prev.map((t) => {
           if (t.id === tabId) {
-            const hist = (t as any).history || [];
-            const idx = (t as any).historyIndex ?? 0;
-            if (idx > 0) {
-              const nextIdx = idx - 1;
-              const targetUrl = hist[nextIdx];
-              return {
-                ...t,
-                url: targetUrl,
-                title: getTabTitleFromUrl(targetUrl),
-                can_go_back: nextIdx > 0,
-                can_go_forward: true,
-                historyIndex: nextIdx,
-              } as Tab;
-            }
+            return {
+              ...t,
+              url: targetUrl,
+              title: getTabTitleFromUrl(targetUrl),
+              can_go_back: nextIdx > 0,
+              can_go_forward: true,
+              historyIndex: nextIdx,
+              is_loading: !targetIsInternal,
+            } as Tab;
           }
           return t;
         })
       );
+
+      if (!targetIsInternal) {
+        setTimeout(() => {
+          setTabs((prev) =>
+            prev.map((t) => (t.id === tabId ? { ...t, is_loading: false } : t))
+          );
+        }, 300);
+      }
     },
-    [isTauriAvailable]
+    [isTauriAvailable, tabs]
   );
 
   // Go Forward
   const goForward = useCallback(
     async (tabId: string): Promise<void> => {
-      if (isTauriAvailable) {
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('go_forward', { tab_id: tabId, tabId });
-        } catch (err) {
-          console.warn('[useBrowserIPC] Tauri go_forward failed:', err);
+      const targetTab = tabs.find((t) => t.id === tabId);
+      if (!targetTab) return;
+
+      const hist: string[] = (targetTab as any).history || [targetTab.url];
+      const idx: number = (targetTab as any).historyIndex ?? 0;
+
+      if (idx >= hist.length - 1) return;
+
+      const nextIdx = idx + 1;
+      const targetUrl = hist[nextIdx];
+      const currentUrl = targetTab.url;
+
+      const currentIsInternal = isInternalUrl(currentUrl);
+      const targetIsInternal = isInternalUrl(targetUrl);
+
+      if (!currentIsInternal && !targetIsInternal) {
+        // Both pages are in child webview: invoke native history forward
+        if (isTauriAvailable) {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke('go_forward', { tab_id: tabId, tabId });
+          } catch (err) {
+            console.warn('[useBrowserIPC] Tauri go_forward failed:', err);
+          }
+        }
+      } else {
+        // Navigating to or from internal page
+        if (isTauriAvailable) {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke('navigate', { tab_id: tabId, tabId, url: targetUrl });
+          } catch (err) {
+            console.warn('[useBrowserIPC] Tauri navigate forward failed:', err);
+          }
         }
       }
 
       setTabs((prev) =>
         prev.map((t) => {
           if (t.id === tabId) {
-            const hist = (t as any).history || [];
-            const idx = (t as any).historyIndex ?? 0;
-            if (idx < hist.length - 1) {
-              const nextIdx = idx + 1;
-              const targetUrl = hist[nextIdx];
-              return {
-                ...t,
-                url: targetUrl,
-                title: getTabTitleFromUrl(targetUrl),
-                can_go_back: true,
-                can_go_forward: nextIdx < hist.length - 1,
-                historyIndex: nextIdx,
-              } as Tab;
-            }
+            return {
+              ...t,
+              url: targetUrl,
+              title: getTabTitleFromUrl(targetUrl),
+              can_go_back: true,
+              can_go_forward: nextIdx < hist.length - 1,
+              historyIndex: nextIdx,
+              is_loading: !targetIsInternal,
+            } as Tab;
           }
           return t;
         })
       );
+
+      if (!targetIsInternal) {
+        setTimeout(() => {
+          setTabs((prev) =>
+            prev.map((t) => (t.id === tabId ? { ...t, is_loading: false } : t))
+          );
+        }, 300);
+      }
     },
-    [isTauriAvailable]
+    [isTauriAvailable, tabs]
   );
 
   // Window Controls
@@ -896,18 +1082,24 @@ export function useBrowserIPC(): BrowserIPCContextType {
         if (proj && Array.isArray(proj.windows)) {
           const mainWin = proj.windows.find((w: any) => w.label === 'main') || proj.windows[0];
           if (mainWin && Array.isArray(mainWin.tabs) && mainWin.tabs.length > 0) {
-            setTabs(
-              mainWin.tabs.map((t: any) => ({
-                id: t.id,
-                url: t.url,
-                title: t.title,
-                is_active: t.id === mainWin.activeTabId,
-                is_loading: t.loading ?? false,
-                blocked_trackers: t.blocked ?? 0,
-                can_go_back: t.can_go_back ?? false,
-                can_go_forward: t.can_go_forward ?? false,
-                favicon: t.favicon,
-              }))
+            setTabs((prev) =>
+              mainWin.tabs.map((t: any) => {
+                const existing = prev.find((p) => p.id === t.id);
+                return {
+                  id: t.id,
+                  url: t.url,
+                  title: t.title,
+                  is_active: t.id === mainWin.activeTabId,
+                  is_loading: t.loading ?? false,
+                  is_asleep: t.asleep ?? false,
+                  blocked_trackers: t.blocked ?? 0,
+                  can_go_back: existing ? existing.can_go_back : (t.can_go_back ?? false),
+                  can_go_forward: existing ? existing.can_go_forward : (t.can_go_forward ?? false),
+                  history: existing?.history || [t.url],
+                  historyIndex: existing?.historyIndex ?? 0,
+                  favicon: t.favicon,
+                };
+              })
             );
           }
           if (typeof proj.totalBlocked === 'number') {
@@ -939,11 +1131,36 @@ export function useBrowserIPC(): BrowserIPCContextType {
             if (t.id === tab_id) {
               const updatedUrl = url || t.url;
               const updatedTitle = title || (url ? getTabTitleFromUrl(url) : t.title);
+
+              const hist: string[] = (t as any).history || [t.url];
+              const idx: number = (t as any).historyIndex ?? (hist.length - 1);
+
+              let newHist = [...hist];
+              let newIdx = idx;
+
+              if (url && url !== hist[idx]) {
+                if (idx > 0 && hist[idx - 1] === url) {
+                  // User navigated back natively
+                  newIdx = idx - 1;
+                } else if (idx < hist.length - 1 && hist[idx + 1] === url) {
+                  // User navigated forward natively
+                  newIdx = idx + 1;
+                } else {
+                  // Link clicked inside the webpage
+                  newHist = [...hist.slice(0, idx + 1), url];
+                  newIdx = newHist.length - 1;
+                }
+              }
+
               return {
                 ...t,
                 url: updatedUrl,
                 title: updatedTitle,
                 is_loading: false,
+                history: newHist,
+                historyIndex: newIdx,
+                can_go_back: newIdx > 0,
+                can_go_forward: newIdx < newHist.length - 1,
               };
             }
             return t;
@@ -957,6 +1174,24 @@ export function useBrowserIPC(): BrowserIPCContextType {
         }
       }).catch((e) => {
         console.warn('[useBrowserIPC] Failed to listen to tab-navigated:', e);
+      });
+      listen<any>('blanc:permission-request', (event) => {
+        if (event.payload) {
+          setPendingPermissionPrompt({
+            id: event.payload.id || `perm-${Date.now()}`,
+            origin: event.payload.origin || 'Site',
+            resource: event.payload.resource || 'camera',
+            tabId: event.payload.tabId || event.payload.tab_id,
+          });
+        }
+      }).then((fn) => {
+        if (!unlisten) unlisten = fn;
+        else {
+          const prev = unlisten;
+          unlisten = () => { prev(); fn(); };
+        }
+      }).catch((e) => {
+        console.warn('[useBrowserIPC] Failed to listen to blanc:permission-request:', e);
       });
     }).catch(() => {});
 
@@ -994,6 +1229,8 @@ export function useBrowserIPC(): BrowserIPCContextType {
     reloadTab,
     goBack,
     goForward,
+    discardTab,
+    sleepIdleTabs,
     mobileNavigate,
     mobileReload,
     mobileGoBack,
@@ -1021,5 +1258,10 @@ export function useBrowserIPC(): BrowserIPCContextType {
     settings,
     updateSettings,
     adblockStats,
+    pendingPermissionPrompt,
+    setPendingPermissionPrompt,
+    respondToPermission,
+    dismissPermissionPrompt,
+    triggerTestPermissionPrompt,
   };
 }

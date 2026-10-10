@@ -80,7 +80,20 @@ data class Tab(
     var thumbnail: android.graphics.Bitmap? = null,
 
     /** Whether desktop site mode is requested. */
-    var isDesktopMode: Boolean = false
+    var isDesktopMode: Boolean = false,
+
+    /** Whether this tab is currently sleeping/discarded to save memory (Quiet Tabs). */
+    var isSleeping: Boolean = false,
+
+    /** Timestamp of when this tab was last active (switched away). */
+    var lastActiveAt: Long = System.currentTimeMillis(),
+
+    /** Saved scroll position for Quiet Tabs restoration. */
+    var scrollX: Int = 0,
+    var scrollY: Int = 0,
+
+    /** Saved WebView state bundle for Quiet Tabs restoration. */
+    var savedState: android.os.Bundle? = null
 ) {
 
     /**
@@ -146,7 +159,7 @@ data class Tab(
      * The WebView reference is not copied (set to null) since it's not serializable.
      */
     fun toBridgeTab(): Tab {
-        return this.copy(webView = null)
+        return this.copy(webView = null, savedState = null)
     }
 
     companion object {

@@ -109,6 +109,24 @@ class TabManager(
 
     private var onTabCountChanged: ((Int) -> Unit)? = null
 
+    // ===== Quiet Tabs & Workspaces State =====
+    private var quietTabsDelayMs: Long = 60 * 60 * 1000L // 1 hour default
+    private var quietTabsEnabled: Boolean = true
+    private var activeWorkspaceId: String? = null
+
+    private val quietTabsRunnable = object : Runnable {
+        override fun run() {
+            try {
+                if (quietTabsEnabled) {
+                    sleepIdleTabs(quietTabsDelayMs)
+                }
+            } catch (e: Exception) {
+                Log.e("TabManager", "Quiet Tabs background check failed", e)
+            }
+            mainHandler.postDelayed(this, 60_000L)
+        }
+    }
+
     // Thumbnail capture
     private val thumbnailExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var thumbnailCaptureRunnable: Runnable? = null
@@ -289,12 +307,18 @@ class TabManager(
             val tab = tabs[tabId]
             if (tab == null) return@run false
 
+            // Restore WebView if evicted by Quiet Tabs
+            if (tab.isSleeping || tab.webView == null) {
+                restoreTab(tab)
+            }
+
             // Hide previously active tab
             activeTabId?.let { prevId ->
                 tabs[prevId]?.apply {
                     webView?.visibility = WebView.INVISIBLE
                     webView?.onPause()
                     isActive = false
+                    lastActiveAt = System.currentTimeMillis()
                 }
             }
 
@@ -302,6 +326,7 @@ class TabManager(
             tab.webView?.visibility = WebView.VISIBLE
             tab.webView?.onResume()
             tab.isActive = true
+            tab.lastActiveAt = System.currentTimeMillis()
             activeTabId = tabId
             _activeTabId.value = tabId
 
@@ -593,6 +618,7 @@ class TabManager(
      */
     fun destroy() {
         mainHandler.post {
+            mainHandler.removeCallbacks(quietTabsRunnable)
             closeAllTabs()
             tabs.clear()
             tabOrder.clear()
@@ -703,13 +729,191 @@ class TabManager(
         }
     }
 
+    // ===== Quiet Tabs Management =====
+
     /**
-     * Handles low memory warning.
-     * Could destroy background tabs to free memory.
+     * Evicts the heavy native WebView instance of a background tab (Quiet Tabs).
+     * Preserves tab metadata, title, URL, navigation history, and scroll coordinates.
+     */
+    fun discardTab(tabId: String): Boolean {
+        return mainHandler.run {
+            val tab = tabs[tabId] ?: return@run false
+            // Never discard the active tab, a currently loading tab, or an already sleeping tab
+            if (tab.id == activeTabId || tab.isLoading || tab.webView == null || tab.isSleeping) {
+                return@run false
+            }
+
+            val wv = tab.webView ?: return@run false
+
+            // Save scroll position
+            tab.scrollX = wv.scrollX
+            tab.scrollY = wv.scrollY
+
+            // Save state bundle
+            val bundle = android.os.Bundle()
+            try {
+                wv.saveState(bundle)
+                tab.savedState = bundle
+            } catch (e: Exception) {
+                Log.w("TabManager", "Failed to save WebView state bundle for tab ${tab.id}", e)
+            }
+
+            // Clean up and detach WebView
+            (wv.parent as? android.view.ViewGroup)?.removeView(wv)
+            wv.stopLoading()
+            wv.clearHistory()
+            wv.removeAllViews()
+            wv.destroy()
+
+            tab.webView = null
+            tab.isSleeping = true
+
+            updateReactiveState()
+            bridge.onTabUpdated(tab.toBridgeTab())
+            Log.d("TabManager", "Quiet Tabs evicted tab ${tab.id} (URL: ${tab.url})")
+            true
+        }
+    }
+
+    /**
+     * Wakes/restores a tab whose WebView was evicted by Quiet Tabs.
+     */
+    fun restoreTab(tab: Tab): WebView {
+        tab.webView?.let { existing ->
+            if (!tab.isSleeping) return existing
+        }
+
+        val factory = if (tab.isPrivate) {
+            WebViewFactory.createPrivate(context)
+        } else {
+            WebViewFactory.createRegular(context)
+        }
+
+        val webViewClient = TabWebViewClient(tab, bridgeDelegate, adblockEngine) { _ ->
+            captureTabThumbnail(tab.id)
+        }
+        val webChromeClient = TabWebChromeClient(tab, bridgeDelegate, getActivity(), this@TabManager)
+
+        val webView = factory.createWebView(webViewClient, webChromeClient)
+        factory.configurePrivateCookies(webView)
+        factory.applyAdblockSettings(webView)
+
+        tab.webView = webView
+        tab.isSleeping = false
+
+        // Attempt to restore navigation state if preserved
+        var restored = false
+        tab.savedState?.let { bundle ->
+            try {
+                if (webView.restoreState(bundle) != null) {
+                    restored = true
+                }
+            } catch (e: Exception) {
+                Log.w("TabManager", "Failed to restore WebView bundle state for tab ${tab.id}", e)
+            }
+        }
+
+        if (!restored && !tab.url.startsWith("blanc://") && tab.url != "about:blank") {
+            webView.loadUrl(tab.url)
+        }
+
+        if (tab.scrollX > 0 || tab.scrollY > 0) {
+            webView.scrollTo(tab.scrollX, tab.scrollY)
+        }
+
+        updateReactiveState()
+        bridge.onTabUpdated(tab.toBridgeTab())
+        return webView
+    }
+
+    /**
+     * Restores a tab by its ID.
+     */
+    fun restoreTab(tabId: String): Boolean {
+        return mainHandler.run {
+            val tab = tabs[tabId] ?: return@run false
+            if (tab.isSleeping || tab.webView == null) {
+                restoreTab(tab)
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    /**
+     * Checks background tabs and evicts those idle longer than [idleTimeoutMs].
+     */
+    fun sleepIdleTabs(idleTimeoutMs: Long = quietTabsDelayMs, ignorePinned: Boolean = false): Int {
+        return mainHandler.run {
+            val now = System.currentTimeMillis()
+            var discardedCount = 0
+            val eligible = tabs.values.filter { tab ->
+                tab.id != activeTabId &&
+                !tab.isLoading &&
+                !tab.isSleeping &&
+                tab.webView != null &&
+                (ignorePinned || !tab.isPinned) &&
+                (now - tab.lastActiveAt) >= idleTimeoutMs
+            }
+            eligible.forEach { tab ->
+                if (discardTab(tab.id)) {
+                    discardedCount++
+                }
+            }
+            discardedCount
+        }
+    }
+
+    /**
+     * Configures the Quiet Tabs delay setting.
+     * Accepts: "off", "30m", "1h", "6h"
+     */
+    fun setQuietTabsDelay(delayStr: String) {
+        when (delayStr.lowercase()) {
+            "off" -> {
+                quietTabsEnabled = false
+            }
+            "30m" -> {
+                quietTabsEnabled = true
+                quietTabsDelayMs = 30 * 60 * 1000L
+            }
+            "1h" -> {
+                quietTabsEnabled = true
+                quietTabsDelayMs = 60 * 60 * 1000L
+            }
+            "6h" -> {
+                quietTabsEnabled = true
+                quietTabsDelayMs = 6 * 60 * 60 * 1000L
+            }
+            else -> {
+                quietTabsEnabled = true
+                quietTabsDelayMs = 60 * 60 * 1000L
+            }
+        }
+    }
+
+    /**
+     * Handles low memory warning from Android OS.
+     * Evicts background tab WebViews to free memory (Quiet Tabs).
      */
     fun onTrimMemory(level: Int) {
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
-            // Could implement tab hibernation here
+            mainHandler.post {
+                val ignorePinned = level >= android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE
+                val candidates = tabs.values.filter { tab ->
+                    tab.id != activeTabId &&
+                    !tab.isLoading &&
+                    !tab.isSleeping &&
+                    tab.webView != null &&
+                    (ignorePinned || !tab.isPinned)
+                }.sortedBy { it.lastActiveAt }
+
+                candidates.forEach { tab ->
+                    discardTab(tab.id)
+                }
+                Log.i("TabManager", "onTrimMemory level=$level triggered Quiet Tabs eviction on ${candidates.size} tabs")
+            }
         }
     }
 
@@ -971,6 +1175,9 @@ class TabManager(
         windows["default"] = defaultWindow
         windowOrder.add("default")
         activeWindowId = "default"
+
+        // Schedule Quiet Tabs periodic eviction (every 60s)
+        mainHandler.postDelayed(quietTabsRunnable, 60_000L)
     }
 
     fun createGroup(windowId: String, name: String): TabGroup {
@@ -1321,6 +1528,47 @@ class TabManager(
                 }
             }
             tabOrder.add(insertIndex.coerceAtMost(tabOrder.size), tabId)
+        }
+    }
+
+    // ===== Workspace Methods =====
+
+    fun getActiveWorkspaceId(): String? = activeWorkspaceId
+
+    fun setActiveWorkspace(workspaceId: String?) {
+        this.activeWorkspaceId = workspaceId
+        val window = windows[activeWindowId]
+        if (window != null) {
+            window.workspaceId = workspaceId
+        }
+    }
+
+    fun getTabsForWorkspace(workspaceId: String): List<Tab> {
+        return mainHandler.run {
+            tabs.values.filter { it.workspaceId == workspaceId }
+        }
+    }
+
+    fun assignTabToWorkspace(tabId: String, workspaceId: String?): Boolean {
+        return mainHandler.run {
+            val tab = tabs[tabId] ?: return@run false
+            tab.workspaceId = workspaceId
+            updateReactiveState()
+            bridge.onTabUpdated(tab.toBridgeTab())
+            true
+        }
+    }
+
+    fun switchWorkspace(workspaceId: String): Boolean {
+        return mainHandler.run {
+            setActiveWorkspace(workspaceId)
+            val workspaceTabs = getTabsForWorkspace(workspaceId)
+            if (workspaceTabs.isNotEmpty()) {
+                val firstTab = workspaceTabs.first()
+                switchTab(firstTab.id)
+            }
+            updateReactiveState()
+            true
         }
     }
 }

@@ -13,10 +13,14 @@ import {
   Bookmark,
   History,
   Settings,
+  RefreshCw,
+  MapPin,
 } from 'lucide-react';
 import { Favorite, BrowserSettings, AdblockStats, HistoryEntry, Bookmark as BookmarkType } from '../../types/browser';
 import { useSearchSuggestions, SuggestionItem } from '../../hooks/useSearchSuggestions';
 import { SuggestionPicker } from '../SuggestionPicker';
+import { NATURE_WALLPAPERS, NatureWallpaper, applyWallpaperTheme } from '../../data/natureWallpapers';
+import { FontSwitcher } from '../FontSwitcher';
 
 interface NewTabPageProps {
   favorites: Favorite[];
@@ -29,6 +33,7 @@ interface NewTabPageProps {
   settings: BrowserSettings;
   adblockStats: AdblockStats;
   currentTabBlockedTrackers?: number;
+  onUpdateSettings?: (updates: Partial<BrowserSettings>) => void;
 }
 
 const SEARCH_ENGINES = [
@@ -60,12 +65,40 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
   settings,
   adblockStats,
   currentTabBlockedTrackers = 0,
+  onUpdateSettings,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeEngine, setActiveEngine] = useState<string>(settings.searchEngine || 'Google');
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
   const [greeting, setGreeting] = useState('Welcome');
+
+  // Nature wallpaper state (default active)
+  const [wallpaperIndex, setWallpaperIndex] = useState(() => {
+    if (settings.wallpaperId) {
+      const idx = NATURE_WALLPAPERS.findIndex((w) => w.id === settings.wallpaperId);
+      if (idx !== -1) return idx;
+    }
+    return 0; // Emerald Alpine Lake by default
+  });
+
+  const activeWallpaper: NatureWallpaper =
+    NATURE_WALLPAPERS[wallpaperIndex] || NATURE_WALLPAPERS[0];
+
+  // Adapt browser frame and tokens to the active wallpaper
+  useEffect(() => {
+    if (settings.natureWallpaper !== false) {
+      applyWallpaperTheme(activeWallpaper);
+    }
+  }, [activeWallpaper, settings.natureWallpaper]);
+
+  const handleNextWallpaper = () => {
+    const nextIdx = (wallpaperIndex + 1) % NATURE_WALLPAPERS.length;
+    setWallpaperIndex(nextIdx);
+    const nextWp = NATURE_WALLPAPERS[nextIdx];
+    applyWallpaperTheme(nextWp);
+    onUpdateSettings?.({ wallpaperId: nextWp.id });
+  };
 
   const [isFocused, setIsFocused] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -224,11 +257,39 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
     .slice(0, 4);
 
   return (
-    <div className="w-full h-full overflow-y-auto bg-[#0a0a0a] text-white flex flex-col items-center select-none font-ui relative">
-      {/* AMBIENT BACKGROUND GLOW */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[950px] h-[450px] bg-gradient-to-b from-[#d4ad66]/12 via-[#d4ad66]/[0.02] to-transparent rounded-full blur-3xl pointer-events-none -z-0" />
+    <div className="w-full h-full overflow-y-auto bg-[#0a0a0a] text-white flex flex-col items-center select-none font-ui relative z-0">
+      {/* NATURE WALLPAPER BACKGROUND FROM THE WEB */}
+      {settings.natureWallpaper !== false && activeWallpaper && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 bg-[#0e1215]">
+          <img
+            src={activeWallpaper.url}
+            alt={activeWallpaper.title}
+            loading="eager"
+            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700 filter brightness-[0.75] contrast-[1.08]"
+          />
+          {/* Subtle gradient overlay to ensure UI legibility */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/50" />
+          {/* Ambient accent glow adapted from wallpaper */}
+          <div
+            style={{
+              backgroundColor: activeWallpaper?.glowColor || 'rgba(212, 173, 102, 0.15)',
+            }}
+            className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] rounded-full blur-3xl transition-colors duration-500 opacity-80"
+          />
+        </div>
+      )}
 
-      <div className="w-full max-w-5xl lg:max-w-6xl px-6 sm:px-12 md:px-16 py-12 sm:py-20 flex flex-col items-center z-10 my-auto space-y-10 sm:space-y-14">
+      {/* AMBIENT BACKGROUND GLOW FOR FALLBACK */}
+      {settings.natureWallpaper === false && (
+        <div
+          style={{
+            backgroundColor: activeWallpaper?.glowColor || 'rgba(212, 173, 102, 0.12)',
+          }}
+          className="absolute top-0 left-1/2 -translate-x-1/2 w-[950px] h-[450px] rounded-full blur-3xl pointer-events-none z-0 transition-colors duration-500"
+        />
+      )}
+
+      <div className="w-full max-w-5xl lg:max-w-6xl px-6 sm:px-12 md:px-16 py-12 sm:py-20 flex flex-col items-center z-10 my-auto space-y-10 sm:space-y-14 relative">
         {/* TOP BRAND EMBLEM & TIME */}
         <div className="flex flex-col items-center text-center space-y-4">
           <div
@@ -574,6 +635,42 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
           <span><span className="text-white/60">⌘W</span> Close Tab</span>
           <span>•</span>
           <span><span className="text-white/60">⌘,</span> Settings</span>
+        </div>
+
+        {/* BOTTOM PERSONALIZATION BAR (WALLPAPER CONTROLS & FONT SWITCHER) */}
+        <div className="flex flex-wrap items-center justify-between gap-4 w-full pt-4 border-t border-white/10 text-[12px]">
+          {/* Wallpaper location & credit badge */}
+          {activeWallpaper && settings.natureWallpaper !== false ? (
+            <div className="flex items-center space-x-2 text-white/50 hover:text-white/80 transition-colors">
+              <MapPin className="w-3.5 h-3.5 text-[#d4ad66] shrink-0" />
+              <span className="font-medium text-white/70">{activeWallpaper.location}</span>
+              <span className="text-white/30">•</span>
+              <span className="text-white/40">Photo by {activeWallpaper.photographer}</span>
+            </div>
+          ) : (
+            <div />
+          )}
+
+          {/* Controls: Next Wallpaper & Font Switcher */}
+          <div className="flex items-center space-x-2.5 ml-auto">
+            {settings.natureWallpaper !== false && (
+              <button
+                type="button"
+                onClick={handleNextWallpaper}
+                title="Shuffle Nature Wallpaper"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 hover:border-white/20 text-white/80 hover:text-white transition-all active:scale-95 cursor-pointer shadow-sm text-[12px]"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-[#d4ad66]" />
+                <span>Next Nature View</span>
+              </button>
+            )}
+
+            <FontSwitcher
+              currentFont={settings.fontFamily || 'Inter'}
+              onSelectFont={(font) => onUpdateSettings?.({ fontFamily: font })}
+              compact
+            />
+          </div>
         </div>
       </div>
 

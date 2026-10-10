@@ -255,6 +255,55 @@ impl BrowserState {
         }
 
         runtime.active_tab_id = Some(tab_id.to_string());
+        if let Some(t) = self.tabs.get_mut(tab_id) {
+            t.last_active_at = now_millis();
+            if t.asleep {
+                t.asleep = false;
+                t.wake_generation += 1;
+            }
+        }
+        Ok(())
+    }
+
+    /// Evaluates all tabs in a window to gather candidates for tab discarding / sleep.
+    pub fn get_sleep_candidates(&self, window_label: &str) -> Vec<crate::sleep::SleepCandidate> {
+        let Some(runtime) = self.windows.get(window_label) else {
+            return Vec::new();
+        };
+
+        runtime
+            .tab_order
+            .iter()
+            .filter_map(|id| {
+                let tab = self.tabs.get(id)?;
+                let is_active = runtime.active_tab_id.as_deref() == Some(id);
+                Some(crate::sleep::SleepCandidate {
+                    id: tab.id.clone(),
+                    is_active,
+                    is_visible: is_active,
+                    is_asleep: tab.asleep,
+                    is_loading: tab.loading,
+                    is_audible: tab.audible,
+                    is_muted: tab.muted,
+                    is_capturing: tab.capturing,
+                    is_pinned: tab.pinned,
+                    is_private: tab.is_private(),
+                    has_pending_permissions: false,
+                    opener_tab_id: tab.opener_tab_id.clone(),
+                    child_popup_count: 0,
+                    last_active_at: tab.last_active_at,
+                })
+            })
+            .collect()
+    }
+
+    /// Marks a tab as quiet/asleep.
+    pub fn mark_tab_asleep(&mut self, tab_id: &str) -> Result<(), String> {
+        let tab = self
+            .tabs
+            .get_mut(tab_id)
+            .ok_or_else(|| format!("Tab '{}' not found", tab_id))?;
+        tab.asleep = true;
         Ok(())
     }
 
@@ -681,5 +730,31 @@ mod tests {
         // No more closed tabs
         let empty = state.reopen_last_closed_tab("main").unwrap();
         assert!(empty.is_none());
+    }
+
+    #[test]
+    fn quiet_tabs_candidate_lifecycle() {
+        let mut state = BrowserState::new();
+        state.ensure_window("main", None, false);
+
+        let t1 = state.create_tab("main", Some("https://site-a.com".into()), false, None).unwrap();
+        let t2 = state.create_tab("main", Some("https://site-b.com".into()), false, None).unwrap();
+
+        // t2 is active, t1 is inactive
+        let candidates = state.get_sleep_candidates("main");
+        assert_eq!(candidates.len(), 2);
+
+        let c1 = candidates.iter().find(|c| c.id == t1.id).unwrap();
+        assert!(!c1.is_active);
+        assert!(!c1.is_asleep);
+
+        // Put t1 to sleep
+        state.mark_tab_asleep(&t1.id).unwrap();
+        assert!(state.tabs.get(&t1.id).unwrap().asleep);
+
+        // Switching back to t1 wakes it
+        state.switch_tab(&t1.id).unwrap();
+        assert!(!state.tabs.get(&t1.id).unwrap().asleep);
+        assert_eq!(state.tabs.get(&t1.id).unwrap().wake_generation, 1);
     }
 }

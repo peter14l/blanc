@@ -13,6 +13,10 @@ import { ShortcutsPage } from './components/pages/ShortcutsPage';
 import { DiagnosticsPage } from './components/pages/DiagnosticsPage';
 import { FindCapsule } from './components/FindCapsule';
 import { useWebPageLoader } from './hooks/useWebPageLoader';
+import { useMouseGestures } from './hooks/useMouseGestures';
+import { GestureHUD } from './components/GestureHUD';
+import { WindowControls } from './components/WindowControls';
+import { PermissionPrompt } from './components/PermissionPrompt';
 import { ExternalLink, Loader2 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -51,23 +55,73 @@ export const App: React.FC = () => {
     settings,
     updateSettings,
     adblockStats,
+    pendingPermissionPrompt,
+    setPendingPermissionPrompt,
+    respondToPermission,
+    dismissPermissionPrompt,
   } = useBrowserIPC();
 
   const [isFindOpen, setIsFindOpen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1.0);
+  const [isOmniboxSuggestionsOpen, setIsOmniboxSuggestionsOpen] = useState(false);
 
-  // Global Keyboard Shortcuts
+  // Mouse Gestures & Rocker Navigation
+  const { hudState } = useMouseGestures({
+    enabled: settings.mouseGesturesEnabled !== false,
+    onGoBack: () => {
+      if (activeTab) goBack(activeTab.id);
+    },
+    onGoForward: () => {
+      if (activeTab) goForward(activeTab.id);
+    },
+    onReload: () => {
+      if (activeTab) reloadTab(activeTab.id);
+    },
+    onNewTab: () => {
+      createTab('blanc://newtab');
+    },
+    onCloseTab: () => {
+      if (activeTab) closeTab(activeTab.id);
+    },
+    onReopenClosedTab: () => {
+      reopenClosedTab();
+    },
+  });
+
+  // Global Keyboard Shortcuts (Standard Browser Navigation)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMeta = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
 
-      if (isMeta && e.key.toLowerCase() === 'k') {
+      const isInputActive = () => {
+        const el = document.activeElement;
+        if (!el) return false;
+        const tag = el.tagName.toLowerCase();
+        return (
+          tag === 'input' ||
+          tag === 'textarea' ||
+          (el as HTMLElement).isContentEditable
+        );
+      };
+
+      // Omnibox focus: Ctrl+L, Alt+D, F6
+      if ((isMeta && key === 'l') || (e.altKey && key === 'd') || e.key === 'F6') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('blanc:focus-address-bar'));
+      }
+      // Quick Switcher: Ctrl+K
+      else if (isMeta && key === 'k') {
         e.preventDefault();
         toggleQuickSwitcher();
-      } else if (isMeta && e.key.toLowerCase() === 'f') {
+      }
+      // In-page Find: Ctrl+F
+      else if (isMeta && key === 'f') {
         e.preventDefault();
         setIsFindOpen((prev) => !prev);
-      } else if (isMeta && (e.key === '=' || e.key === '+')) {
+      }
+      // Zoom Controls: Ctrl+=, Ctrl+-, Ctrl+0
+      else if (isMeta && (e.key === '=' || e.key === '+')) {
         e.preventDefault();
         setZoomLevel((prev) => Math.min(3.0, Number((prev + 0.1).toFixed(1))));
       } else if (isMeta && e.key === '-') {
@@ -76,38 +130,89 @@ export const App: React.FC = () => {
       } else if (isMeta && e.key === '0') {
         e.preventDefault();
         setZoomLevel(1.0);
-      } else if (isMeta && e.key.toLowerCase() === 't') {
+      }
+      // Reload / Hard Reload: F5, Ctrl+R, Ctrl+F5, Ctrl+Shift+R
+      else if (e.key === 'F5' || (isMeta && key === 'r')) {
+        e.preventDefault();
+        if (activeTab) {
+          reloadTab(activeTab.id);
+        }
+      }
+      // New Tab: Ctrl+T / Reopen Closed Tab: Ctrl+Shift+T
+      else if (isMeta && key === 't') {
         e.preventDefault();
         if (e.shiftKey) {
           reopenClosedTab();
         } else {
           createTab('blanc://newtab');
         }
-      } else if (isMeta && e.key.toLowerCase() === 'w') {
+      }
+      // New Private / Incognito Tab: Ctrl+Shift+N
+      else if (isMeta && e.shiftKey && key === 'n') {
         e.preventDefault();
-        if (activeTab) {
+        createTab('blanc://newtab');
+      }
+      // New Tab from Window: Ctrl+N
+      else if (isMeta && !e.shiftKey && key === 'n') {
+        e.preventDefault();
+        createTab('blanc://newtab');
+      }
+      // Close Tab: Ctrl+W or Ctrl+F4 / Close All: Ctrl+Shift+W
+      else if ((isMeta && key === 'w') || (isMeta && e.key === 'F4')) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          closeAllTabs();
+        } else if (activeTab) {
           closeTab(activeTab.id);
         }
-      } else if (isMeta && e.key.toLowerCase() === 'r') {
-        e.preventDefault();
-        if (activeTab) {
-          reloadTab(activeTab.id);
-        }
-      } else if (isMeta && (e.key === '[' || e.key === 'ArrowLeft') && e.altKey) {
+      }
+      // Back: Alt+Left, Alt+[, or Backspace (when not typing in an input)
+      else if (
+        (e.altKey && e.key === 'ArrowLeft') ||
+        (isMeta && (e.key === '[' || e.key === 'ArrowLeft') && e.altKey) ||
+        (e.key === 'Backspace' && !isMeta && !e.altKey && !isInputActive())
+      ) {
         e.preventDefault();
         if (activeTab) goBack(activeTab.id);
-      } else if (isMeta && (e.key === ']' || e.key === 'ArrowRight') && e.altKey) {
+      }
+      // Forward: Alt+Right, Alt+], or Shift+Backspace (when not typing in an input)
+      else if (
+        (e.altKey && e.key === 'ArrowRight') ||
+        (isMeta && (e.key === ']' || e.key === 'ArrowRight') && e.altKey) ||
+        (e.key === 'Backspace' && e.shiftKey && !isMeta && !e.altKey && !isInputActive())
+      ) {
         e.preventDefault();
         if (activeTab) goForward(activeTab.id);
-      } else if (isMeta && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'h'))) {
+      }
+      // Tab Switching: Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+PageUp, Ctrl+PageDown
+      else if (
+        (isMeta && e.key === 'Tab') ||
+        (isMeta && (e.key === 'PageDown' || e.key === 'PageUp'))
+      ) {
+        e.preventDefault();
+        if (tabs.length > 1) {
+          const currentIdx = tabs.findIndex((t) => t.id === activeTab?.id);
+          const isReverse = e.shiftKey || e.key === 'PageUp';
+          const nextIdx = isReverse
+            ? (currentIdx - 1 + tabs.length) % tabs.length
+            : (currentIdx + 1) % tabs.length;
+          switchTab(tabs[nextIdx].id);
+        }
+      }
+      // History: Ctrl+H or Ctrl+Y
+      else if (isMeta && (key === 'h' || key === 'y')) {
         e.preventDefault();
         if (activeTab) navigate(activeTab.id, 'blanc://history');
         else createTab('blanc://history');
-      } else if (isMeta && (e.key.toLowerCase() === 'b' && e.shiftKey)) {
+      }
+      // Bookmarks Page: Ctrl+Shift+B or Ctrl+Shift+O
+      else if (isMeta && e.shiftKey && (key === 'b' || key === 'o')) {
         e.preventDefault();
         if (activeTab) navigate(activeTab.id, 'blanc://bookmarks');
         else createTab('blanc://bookmarks');
-      } else if (isMeta && e.key.toLowerCase() === 'd') {
+      }
+      // Add Bookmark: Ctrl+D
+      else if (isMeta && key === 'd' && !e.altKey) {
         e.preventDefault();
         if (activeTab && !bookmarks.some((b) => b.url === activeTab.url)) {
           addBookmark({
@@ -116,24 +221,43 @@ export const App: React.FC = () => {
             folder: 'Bookmarks',
           });
         }
-      } else if (isMeta && e.key >= '1' && e.key <= '9') {
+      }
+      // Number key 1-9 to jump to tab: Ctrl+1..9
+      else if (isMeta && e.key >= '1' && e.key <= '9') {
         e.preventDefault();
         const targetIdx = e.key === '9' ? tabs.length - 1 : parseInt(e.key, 10) - 1;
         if (tabs[targetIdx]) {
           switchTab(tabs[targetIdx].id);
         }
-      } else if (isMeta && e.key === ',') {
+      }
+      // Settings: Ctrl+,
+      else if (isMeta && e.key === ',') {
         e.preventDefault();
         if (activeTab) navigate(activeTab.id, 'blanc://settings');
         else createTab('blanc://settings');
-      } else if (isMeta && e.key.toLowerCase() === 'j') {
+      }
+      // Downloads: Ctrl+J
+      else if (isMeta && key === 'j') {
         e.preventDefault();
         if (activeTab) navigate(activeTab.id, 'blanc://downloads');
         else createTab('blanc://downloads');
-      } else if (isMeta && e.key === '/') {
+      }
+      // Shortcuts: Ctrl+/
+      else if (isMeta && e.key === '/') {
         e.preventDefault();
         if (activeTab) navigate(activeTab.id, 'blanc://shortcuts');
         else createTab('blanc://shortcuts');
+      }
+      // Fullscreen / Maximize toggle: F11
+      else if (e.key === 'F11') {
+        e.preventDefault();
+        maximizeWindow();
+      }
+      // Home page: Alt+Home
+      else if (e.altKey && e.key === 'Home') {
+        e.preventDefault();
+        if (activeTab) navigate(activeTab.id, 'blanc://newtab');
+        else createTab('blanc://newtab');
       }
     };
 
@@ -145,6 +269,7 @@ export const App: React.FC = () => {
     bookmarks,
     addBookmark,
     closeTab,
+    closeAllTabs,
     createTab,
     reopenClosedTab,
     switchTab,
@@ -153,6 +278,7 @@ export const App: React.FC = () => {
     goForward,
     navigate,
     toggleQuickSwitcher,
+    maximizeWindow,
   ]);
 
   // Determine current active page type
@@ -196,7 +322,7 @@ export const App: React.FC = () => {
     const updateNativeViewport = () => {
       if (!mainRef.current) return;
       const rect = mainRef.current.getBoundingClientRect();
-      const hidden = isInternalPage || isQuickSwitcherOpen || isTabSwitcherOpen;
+      const hidden = isInternalPage || isQuickSwitcherOpen || isTabSwitcherOpen || isOmniboxSuggestionsOpen;
       setViewport(rect.left, rect.top, rect.width, rect.height, hidden);
     };
 
@@ -223,6 +349,7 @@ export const App: React.FC = () => {
     isInternalPage,
     isQuickSwitcherOpen,
     isTabSwitcherOpen,
+    isOmniboxSuggestionsOpen,
     setViewport,
   ]);
 
@@ -244,11 +371,18 @@ export const App: React.FC = () => {
         } else {
           createTab(e.data.url);
         }
+      } else if (e.data && e.data.type === 'BLANC_PERMISSION_REQUEST') {
+        setPendingPermissionPrompt?.({
+          id: `perm-${Date.now()}`,
+          origin: e.data.origin || activeTab?.url || 'Site',
+          resource: e.data.resource || 'camera',
+          tabId: activeTab?.id,
+        });
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [activeTab, navigate, createTab]);
+  }, [activeTab, navigate, createTab, setPendingPermissionPrompt]);
 
   if (isMobile) {
     return (
@@ -287,8 +421,30 @@ export const App: React.FC = () => {
         !isInternalPage && isTauriAvailable ? 'bg-transparent' : 'bg-[#0e0e0e]'
       } text-white overflow-hidden font-ui select-none`}
     >
+      {/* AMBIENT WALLPAPER GLOW IN SHELL */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[320px] rounded-full blur-[140px] pointer-events-none opacity-40 bg-[var(--wallpaper-glow,rgba(212,173,102,0.1))] transition-colors duration-500 z-0" />
+
+      {/* TOP-RIGHT WINDOW CONTROLS (MINIMIZE, MAXIMIZE, CLOSE) */}
+      <div className="fixed top-3.5 right-4 z-50 pointer-events-auto flex items-center">
+        <WindowControls
+          variant="buttons"
+          onMinimize={minimizeWindow}
+          onMaximize={maximizeWindow}
+          onClose={closeWindow}
+        />
+      </div>
+
+      {/* SITE PERMISSIONS PROMPT (CAMERA, MICROPHONE, NOTIFICATIONS) */}
+      {pendingPermissionPrompt && (
+        <PermissionPrompt
+          prompt={pendingPermissionPrompt}
+          onRespond={(id, allow, remember) => respondToPermission?.(id, allow, remember)}
+          onDismiss={() => dismissPermissionPrompt?.()}
+        />
+      )}
+
       {/* TOP FLOATING ISLAND CONTAINER (Blanc Faux Header Strip) */}
-      <header className="fixed top-0 left-0 right-0 h-[78px] bg-[#0e0e0e] flex items-center justify-center pointer-events-none z-30 pt-2 transition-colors duration-150">
+      <header className="fixed top-0 left-0 right-0 h-[78px] bg-[#0e0e0e] flex items-center justify-center pointer-events-none z-50 pt-2 transition-colors duration-150">
         <div className="pointer-events-auto w-full flex justify-center px-4">
           <FloatingIsland
             activeTab={activeTab}
@@ -326,6 +482,7 @@ export const App: React.FC = () => {
             }}
             history={history}
             bookmarks={bookmarks}
+            onSuggestionsOpenChange={setIsOmniboxSuggestionsOpen}
           />
         </div>
       </header>
@@ -334,7 +491,7 @@ export const App: React.FC = () => {
       <main
         ref={mainRef}
         style={{ zoom: zoomLevel }}
-        className={`absolute inset-x-3 sm:inset-x-4 top-[80px] bottom-3 sm:bottom-4 rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col z-10 ${
+        className={`absolute inset-x-3 sm:inset-x-4 top-[80px] bottom-3 sm:bottom-4 rounded-2xl border border-[var(--island-border-adaptive,rgba(255,255,255,0.1))] shadow-2xl overflow-hidden flex flex-col z-10 ${
           !isInternalPage && isTauriAvailable
             ? 'bg-transparent pointer-events-none'
             : 'bg-[#0e0e0e] pointer-events-auto'
@@ -356,6 +513,7 @@ export const App: React.FC = () => {
             settings={settings}
             adblockStats={adblockStats}
             currentTabBlockedTrackers={activeTab?.blocked_trackers || 0}
+            onUpdateSettings={updateSettings}
           />
         )}
 
@@ -550,6 +708,9 @@ export const App: React.FC = () => {
         isOpen={isFindOpen}
         onClose={() => setIsFindOpen(false)}
       />
+
+      {/* MOUSE GESTURES HUD OVERLAY */}
+      <GestureHUD state={hudState} />
     </div>
   );
 };

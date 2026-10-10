@@ -157,6 +157,7 @@ dependencies = [
  "tauri-build",
  "url",
  "urlencoding",
+ "webview2-com",
  "windows",
 ]
 

@@ -45,6 +45,7 @@ struct ParsedFilter {
 #[derive(Debug, Clone, Default)]
 struct FilterOptions {
     third_party: Option<bool>,
+    has_type_restriction: bool,
     script: bool,
     image: bool,
     stylesheet: bool,
@@ -52,6 +53,9 @@ struct FilterOptions {
     subdocument: bool,
     document: bool,
     popup: bool,
+    xmlhttprequest: bool,
+    fetch: bool,
+    ping: bool,
     generichide: bool,
     generichide_exception: bool,
     important: bool,
@@ -71,6 +75,7 @@ struct EngineInner {
     exception_filters: Vec<ParsedFilter>,
     domain_filter_map: HashMap<String, Vec<usize>>,
     domain_patterns: Vec<String>,
+    generic_filter_indices: Vec<usize>,
     ac_automaton: Option<AhoCorasick>,
     exceptions: HashSet<String>,
     enabled: bool,
@@ -94,6 +99,7 @@ impl AdblockEngine {
                 exception_filters: Vec::new(),
                 domain_filter_map: HashMap::new(),
                 domain_patterns: Vec::new(),
+                generic_filter_indices: Vec::new(),
                 ac_automaton: None,
                 exceptions: HashSet::new(),
                 enabled: true,
@@ -112,6 +118,19 @@ impl AdblockEngine {
         engine
     }
 
+    fn extract_domain_from_pattern(pattern: &str) -> Option<String> {
+        let p = pattern.trim();
+        if p.starts_with("||") {
+            let rest = &p[2..];
+            let end = rest.find(['^', '/', '*', '?', ':']).unwrap_or(rest.len());
+            let domain = rest[..end].trim_end_matches('.');
+            if !domain.is_empty() {
+                return Some(domain.to_lowercase());
+            }
+        }
+        None
+    }
+
     fn compile_filters(&self) {
         let easylist = EASYLIST;
         let easyprivacy = EASYPRIVACY;
@@ -122,6 +141,7 @@ impl AdblockEngine {
         inner.cosmetic_filters.clear();
         inner.exception_filters.clear();
         inner.domain_filter_map.clear();
+        inner.generic_filter_indices.clear();
 
         let mut filter_id = 0;
 
@@ -149,18 +169,34 @@ impl AdblockEngine {
 
         inner.domain_filter_map.clear();
 
-        // Build domain -> filter index map (collect first to avoid borrow conflict)
+        // Build domain -> filter index map and track generic filters
         let mut domain_entries = Vec::new();
+        let mut generic_indices = Vec::new();
+
         for (idx, filter) in inner.network_filters.iter().enumerate() {
+            let mut indexed = false;
             if let Some(domains) = &filter.domains {
                 for domain in domains {
-                    domain_entries.push((domain.clone(), idx));
+                    let d = domain.trim_start_matches('~').trim();
+                    if !d.is_empty() {
+                        domain_entries.push((d.to_lowercase(), idx));
+                        indexed = true;
+                    }
                 }
             }
+            if let Some(domain) = Self::extract_domain_from_pattern(&filter.pattern) {
+                domain_entries.push((domain, idx));
+                indexed = true;
+            }
+            if !indexed {
+                generic_indices.push(idx);
+            }
         }
+
         for (domain, idx) in domain_entries {
             inner.domain_filter_map.entry(domain).or_default().push(idx);
         }
+        inner.generic_filter_indices = generic_indices;
 
         // Build Aho-Corasick automaton for fast hostname matching
         let domain_patterns: Vec<String> = inner.domain_filter_map.keys().cloned().collect();
@@ -187,7 +223,7 @@ impl AdblockEngine {
         }
 
         // Cosmetic filter: ## or #@#
-        if line.starts_with("##") || line.starts_with("#@#") {
+        if line.contains("##") || line.contains("#@#") {
             return Self::parse_cosmetic_filter(line, id);
         }
 
@@ -209,57 +245,78 @@ impl AdblockEngine {
         }
 
         let mut options = FilterOptions::default();
-        for opt in options_part.split(',') {
-            let opt = opt.trim();
-            match opt {
-                "third-party" => options.third_party = Some(true),
-                "~third-party" => options.third_party = Some(false),
-                "script" => options.script = true,
-                "image" => options.image = true,
-                "stylesheet" => options.stylesheet = true,
-                "object" => options.object = true,
-                "subdocument" => options.subdocument = true,
-                "document" => options.document = true,
-                "popup" => options.popup = true,
-                "generichide" => options.generichide = true,
-                "generichide-exception" => options.generichide_exception = true,
-                "important" => options.important = true,
-                "match-case" => options.match_case = true,
-                "collapse" => options.collapse = true,
-                opt if opt.starts_with("redirect=") => {
-                    options.redirect = Some(opt[9..].to_string());
+        let mut domains: Option<Vec<String>> = None;
+
+        if !options_part.is_empty() {
+            for opt in options_part.split(',') {
+                let opt = opt.trim();
+                match opt {
+                    "third-party" => options.third_party = Some(true),
+                    "~third-party" => options.third_party = Some(false),
+                    "script" => {
+                        options.script = true;
+                        options.has_type_restriction = true;
+                    }
+                    "image" => {
+                        options.image = true;
+                        options.has_type_restriction = true;
+                    }
+                    "stylesheet" => {
+                        options.stylesheet = true;
+                        options.has_type_restriction = true;
+                    }
+                    "object" => {
+                        options.object = true;
+                        options.has_type_restriction = true;
+                    }
+                    "subdocument" => {
+                        options.subdocument = true;
+                        options.has_type_restriction = true;
+                    }
+                    "document" => {
+                        options.document = true;
+                        options.has_type_restriction = true;
+                    }
+                    "popup" => {
+                        options.popup = true;
+                        options.has_type_restriction = true;
+                    }
+                    "xmlhttprequest" | "xhr" => {
+                        options.xmlhttprequest = true;
+                        options.has_type_restriction = true;
+                    }
+                    "fetch" => {
+                        options.fetch = true;
+                        options.has_type_restriction = true;
+                    }
+                    "ping" => {
+                        options.ping = true;
+                        options.has_type_restriction = true;
+                    }
+                    "generichide" => options.generichide = true,
+                    "generichide-exception" => options.generichide_exception = true,
+                    "important" => options.important = true,
+                    "match-case" => options.match_case = true,
+                    "collapse" => options.collapse = true,
+                    opt if opt.starts_with("domain=") => {
+                        let doms: Vec<String> = opt[7..]
+                            .split('|')
+                            .map(|d| d.trim().to_string())
+                            .filter(|d| !d.is_empty())
+                            .collect();
+                        if !doms.is_empty() {
+                            domains = Some(doms);
+                        }
+                    }
+                    opt if opt.starts_with("redirect=") => {
+                        options.redirect = Some(opt[9..].to_string());
+                    }
+                    opt if opt.starts_with("redirect-") => {
+                        options.redirect = Some(opt[9..].to_string());
+                    }
+                    _ => {}
                 }
-                opt if opt.starts_with("redirect-") => {
-                    options.redirect = Some(opt[9..].to_string());
-                }
-                _ => {}
             }
-        }
-
-        // Parse domain restrictions: example.com,~other.com
-        // Handle || prefix - don't treat the first | of || as a domain separator
-        let (domain_part, pattern_part) = if pattern_part.starts_with("||") {
-            // ||example.com^ -> no domain restrictions, pattern is ||example.com^
-            ("", pattern_part)
-        } else {
-            pattern_part.split_once('|').unwrap_or(("", pattern))
-        };
-        let domains = if domain_part.is_empty() {
-            None
-        } else {
-            Some(
-                domain_part
-                    .split(',')
-                    .map(|d| d.trim().to_string())
-                    .filter(|d| !d.is_empty())
-                    .collect(),
-            )
-        };
-
-        let pattern = pattern_part.trim();
-
-        if pattern.is_empty() {
-            return None;
         }
 
         // Convert Adblock pattern to regex
@@ -275,15 +332,14 @@ impl AdblockEngine {
     }
 
     fn parse_cosmetic_filter(line: &str, _id: usize) -> Option<ParsedFilter> {
-        let is_exception = line.starts_with("#@#");
-        let selector = if is_exception { &line[3..] } else { &line[2..] };
+        let (is_exception, separator) = if line.contains("#@#") {
+            (true, "#@#")
+        } else {
+            (false, "##")
+        };
 
-        if selector.is_empty() {
-            return None;
-        }
-
-        let (domain_part, selector_part) = selector.split_once(',').unwrap_or(("", selector));
-        let domains = if domain_part.is_empty() {
+        let (domain_part, selector_part) = line.split_once(separator).unwrap_or(("", line));
+        let domains = if domain_part.trim().is_empty() {
             None
         } else {
             Some(
@@ -295,15 +351,15 @@ impl AdblockEngine {
             )
         };
 
-        let pattern = selector_part.trim();
-
-        // Convert CSS selector to regex for matching
-        let regex = Self::selector_to_regex(pattern);
+        let selector = selector_part.trim();
+        if selector.is_empty() || selector.starts_with('^') {
+            return None;
+        }
 
         Some(ParsedFilter {
             filter_type: if is_exception { FilterType::Exception } else { FilterType::Cosmetic },
-            pattern: pattern.to_string(),
-            regex,
+            pattern: selector.to_string(),
+            regex: None,
             domains,
             options: FilterOptions::default(),
         })
@@ -363,14 +419,6 @@ impl AdblockEngine {
         Regex::new(&regex_str).ok()
     }
 
-    fn selector_to_regex(selector: &str) -> Option<Regex> {
-        // Simplified: convert CSS selector to a basic regex
-        // This is a minimal implementation; a full CSS selector parser would be better
-        let escaped = regex::escape(selector);
-        let regex_str = format!("^{}$", escaped.replace(r"\*", ".*"));
-        Regex::new(&regex_str).ok()
-    }
-
     /// Check if a request URL should be blocked
     pub fn should_block(&self, url: &str, source_url: Option<&str>, request_type: &str) -> bool {
         if !self.is_enabled() || !self.is_ready() {
@@ -419,11 +467,14 @@ impl AdblockEngine {
             // Fallback: check all filters
             candidate_indices = (0..inner.network_filters.len()).collect();
         }
+        candidate_indices.extend(&inner.generic_filter_indices);
+        candidate_indices.sort_unstable();
+        candidate_indices.dedup();
 
         let is_third_party = source_url
             .and_then(|s| url::Url::parse(s).ok())
-            .map(|s| s.host_str() != Some(target_host))
-            .unwrap_or(false);
+            .map(|s| s.host_str().unwrap_or("").trim_end_matches('.') != target_host)
+            .unwrap_or(true);
 
         for &idx in &candidate_indices {
             if let Some(filter) = inner.network_filters.get(idx) {
@@ -505,14 +556,22 @@ impl AdblockEngine {
         let Ok(parsed) = url::Url::parse(url) else {
             return Vec::new();
         };
-        let host = parsed.host_str().unwrap_or("");
+        let host = parsed.host_str().unwrap_or("").trim_end_matches('.');
 
         inner
             .cosmetic_filters
             .iter()
             .filter(|f| f.matches_host(host))
-            .filter_map(|f| f.regex.as_ref().map(|r| r.as_str().to_string()))
+            .map(|f| f.pattern.clone())
             .collect()
+    }
+
+    pub fn get_cosmetic_css(&self, url: &str) -> Option<String> {
+        let filters = self.get_cosmetic_filters(url);
+        if filters.is_empty() {
+            return None;
+        }
+        Some(format!("{} {{ display: none !important; }}", filters.join(", ")))
     }
 }
 
@@ -537,6 +596,9 @@ impl ParsedFilter {
     }
 
     fn matches_request_type(&self, request_type: &str) -> bool {
+        if !self.options.has_type_restriction {
+            return true;
+        }
         let opts = &self.options;
         match request_type {
             "script" => opts.script,
@@ -546,6 +608,9 @@ impl ParsedFilter {
             "subdocument" => opts.subdocument,
             "document" => opts.document,
             "popup" => opts.popup,
+            "xmlhttprequest" => opts.xmlhttprequest || opts.fetch,
+            "fetch" => opts.fetch || opts.xmlhttprequest,
+            "ping" => opts.ping,
             _ => true,
         }
     }
@@ -577,16 +642,13 @@ mod tests {
 
     #[test]
     fn test_engine_creation() {
-        let engine = AdblockEngine::new();
-        // Engine should compile filters
-        // Note: in test env, assets may not be available
+        let _engine = AdblockEngine::new();
     }
 
     #[test]
     fn test_pattern_to_regex() {
         let filter = AdblockEngine::parse_filter("||example.com^", 0).unwrap();
         let regex = filter.regex.unwrap();
-        eprintln!("Generated regex: {}", regex.as_str());
         assert!(regex.is_match("http://example.com/"));
         assert!(regex.is_match("https://sub.example.com/path"));
         assert!(!regex.is_match("https://example.org/"));
@@ -601,6 +663,20 @@ mod tests {
     #[test]
     fn test_cosmetic_filter() {
         let filter = AdblockEngine::parse_filter("##.ad-banner", 0).unwrap();
-        assert!(filter.regex.as_ref().unwrap().is_match(".ad-banner"));
+        assert_eq!(filter.pattern, ".ad-banner");
+        assert!(filter.matches_host("example.com"));
+
+        let site_filter = AdblockEngine::parse_filter("example.com##.sponsor", 1).unwrap();
+        assert_eq!(site_filter.pattern, ".sponsor");
+        assert!(site_filter.matches_host("example.com"));
+        assert!(!site_filter.matches_host("other.com"));
+    }
+
+    #[test]
+    fn test_should_block() {
+        let engine = AdblockEngine::new();
+        assert!(engine.should_block("https://google-analytics.com/analytics.js", None, "script"));
+        assert!(engine.should_block("https://doubleclick.net/ad.js", None, "script"));
+        assert!(!engine.should_block("https://example.com/main.js", None, "script"));
     }
 }

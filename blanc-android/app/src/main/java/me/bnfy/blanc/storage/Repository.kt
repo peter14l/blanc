@@ -556,6 +556,49 @@ class Repository private constructor(
         engines.forEach { settingsDao.insertSearchEngine(it) }
     }
 
+    // ===== Workspace Operations =====
+
+    /** Gets all workspaces for a profile as Flow. */
+    fun getWorkspaces(profileId: String = "personal"): Flow<List<WorkspaceEntity>> {
+        return profileDao.getWorkspacesByProfileFlow(profileId)
+    }
+
+    /** Gets a workspace by ID. */
+    suspend fun getWorkspaceById(id: String): WorkspaceEntity? {
+        return profileDao.getWorkspaceById(id)
+    }
+
+    /** Creates a new workspace. */
+    suspend fun createWorkspace(name: String, icon: String? = null, profileId: String = "personal"): WorkspaceEntity {
+        val workspace = WorkspaceEntity(
+            id = java.util.UUID.randomUUID().toString(),
+            profileId = profileId,
+            name = name,
+            icon = icon,
+            windowIds = "[]",
+            createdAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis()
+        )
+        profileDao.insertWorkspace(workspace)
+        return workspace
+    }
+
+    /** Updates a workspace's name. */
+    suspend fun updateWorkspaceName(id: String, name: String): Boolean {
+        return profileDao.updateWorkspaceName(id, name, System.currentTimeMillis()) > 0
+    }
+
+    /** Deletes a workspace by ID. */
+    suspend fun deleteWorkspace(id: String): Boolean {
+        return profileDao.deleteWorkspaceById(id) > 0
+    }
+
+    /** Updates workspace window associations. */
+    suspend fun updateWorkspaceWindows(id: String, windowIds: List<String>): Boolean {
+        val json = gson.toJson(windowIds)
+        return profileDao.updateWorkspaceWindows(id, json, System.currentTimeMillis()) > 0
+    }
+
     /** Exports all user data for backup. */
     suspend fun exportData(): String {
         val data = mapOf(

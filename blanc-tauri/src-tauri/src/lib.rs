@@ -53,7 +53,7 @@ pub fn log_msg(msg: &str) {
     }
 }
 
-fn emit_state_projection(app: &AppHandle, browser: &BrowserState) {
+pub(crate) fn emit_state_projection(app: &AppHandle, browser: &BrowserState) {
     let proj = browser.projection();
     let _ = app.emit("blanc:state-updated", proj);
 }
@@ -161,19 +161,31 @@ async fn create_tab(
 }
 
 #[tauri::command]
-fn close_tab(
+async fn close_tab(
     app: AppHandle,
     state: State<'_, AppState>,
     tab_id: String,
 ) -> Result<Option<TabRecord>, String> {
     let _ = webview::close_tab_webview(&app, &tab_id);
 
-    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
-    let next_active = browser.close_tab(&tab_id)?;
-    emit_state_projection(&app, &browser);
+    let next_active = {
+        let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+        let next = browser.close_tab(&tab_id)?;
+        emit_state_projection(&app, &browser);
+        next
+    };
 
-    // If there is a new active tab, show its webview
+    // If there is a new active tab, show its webview (recreating if it was asleep)
     if let Some(ref active_tab) = next_active {
+        #[cfg(desktop)]
+        if app.get_webview(&active_tab.id).is_none() && !active_tab.url.starts_with("blanc://") && active_tab.url != "about:blank" {
+            let app_handle = app.clone();
+            let id_clone = active_tab.id.clone();
+            let url_clone = active_tab.url.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                webview::create_tab_webview(&app_handle, &id_clone, &url_clone)
+            }).await;
+        }
         let _ = webview::switch_tab_webview(&app, &active_tab.id, None);
     }
 
@@ -206,7 +218,7 @@ async fn switch_tab(
     state: State<'_, AppState>,
     tab_id: String,
 ) -> Result<(), String> {
-    let prev_id = {
+    let (prev_id, target_url) = {
         let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
         let window_label = browser
             .tabs
@@ -219,13 +231,125 @@ async fn switch_tab(
             .get(&window_label)
             .and_then(|w| w.active_tab_id.clone());
 
+        let tab = browser
+            .tabs
+            .get(&tab_id)
+            .ok_or_else(|| format!("Tab '{}' not found", tab_id))?;
+        let url = tab.url.clone();
+
         browser.switch_tab(&tab_id)?;
         emit_state_projection(&app, &browser);
-        prev
+        (prev, url)
     };
+
+    #[cfg(desktop)]
+    {
+        // If webview was closed/discarded while asleep, recreate it on demand!
+        if app.get_webview(&tab_id).is_none() && !target_url.starts_with("blanc://") && target_url != "about:blank" {
+            log_msg(&format!("switch_tab: waking sleeping tab '{}' -> recreates child webview for '{}'", tab_id, target_url));
+            let app_handle = app.clone();
+            let id_clone = tab_id.clone();
+            let url_clone = target_url.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                webview::create_tab_webview(&app_handle, &id_clone, &url_clone)
+            }).await;
+        }
+    }
 
     let _ = webview::switch_tab_webview(&app, &tab_id, prev_id.as_deref());
     Ok(())
+}
+
+#[tauri::command]
+async fn discard_tab(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tab_id: String,
+) -> Result<bool, String> {
+    let can_sleep = {
+        let browser = state.browser.lock().map_err(|e| e.to_string())?;
+        if let Some(tab) = browser.tabs.get(&tab_id) {
+            let is_active = browser
+                .windows
+                .get(&tab.window_id)
+                .and_then(|w| w.active_tab_id.as_ref())
+                == Some(&tab_id);
+            !is_active && !tab.asleep && !tab.pinned && !tab.audible && !tab.capturing
+        } else {
+            false
+        }
+    };
+
+    if !can_sleep {
+        return Ok(false);
+    }
+
+    #[cfg(desktop)]
+    let _ = webview::close_tab_webview(&app, &tab_id);
+
+    {
+        let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+        browser.mark_tab_asleep(&tab_id)?;
+        emit_state_projection(&app, &browser);
+    }
+
+    log_msg(&format!("discard_tab: closed webview for tab '{}' to reclaim RAM", tab_id));
+    Ok(true)
+}
+
+#[tauri::command]
+async fn sleep_idle_tabs(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    threshold: Option<String>,
+    window: Option<String>,
+) -> Result<Vec<String>, String> {
+    let window_label = window.unwrap_or_else(|| "main".to_string());
+    let sleep_thresh = match threshold.as_deref() {
+        Some("30m") => sleep::SleepThreshold::Minutes30,
+        Some("6h") => sleep::SleepThreshold::Hours6,
+        Some("off") => sleep::SleepThreshold::Off,
+        Some("now") => sleep::SleepThreshold::Minutes30,
+        _ => sleep::SleepThreshold::Hour1,
+    };
+
+    let candidates = {
+        let browser = state.browser.lock().map_err(|e| e.to_string())?;
+        browser.get_sleep_candidates(&window_label)
+    };
+
+    let now = model::now_millis();
+    let effective_now = if threshold.as_deref() == Some("now") {
+        now + 3600 * 1000 * 2
+    } else {
+        now
+    };
+
+    let to_sleep = sleep::select_sleep_candidates(
+        &candidates,
+        effective_now,
+        sleep_thresh,
+        0,
+        sleep::MAX_SLEEP_SNAPSHOTS,
+    );
+
+    for id in &to_sleep {
+        #[cfg(desktop)]
+        let _ = webview::close_tab_webview(&app, id);
+
+        if let Ok(mut browser) = state.browser.lock() {
+            let _ = browser.mark_tab_asleep(id);
+        }
+        log_msg(&format!("sleep_idle_tabs: closed webview for idle tab '{}'", id));
+    }
+
+    if !to_sleep.is_empty() {
+        if let Ok(browser) = state.browser.lock() {
+            emit_state_projection(&app, &browser);
+        }
+    }
+
+    Ok(to_sleep)
 }
 
 #[tauri::command]
@@ -1139,6 +1263,47 @@ pub fn run() {
                     emit_state_projection(&app_handle, &browser);
                 }
             }
+
+            // Spawn background Quiet Tabs eviction timer (runs every 60 seconds to reclaim inactive RAM)
+            let timer_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                    if let Some(state) = timer_handle.try_state::<AppState>() {
+                        let candidates = {
+                            if let Ok(browser) = state.browser.lock() {
+                                browser.get_sleep_candidates("main")
+                            } else {
+                                Vec::new()
+                            }
+                        };
+                        if !candidates.is_empty() {
+                            let now = model::now_millis();
+                            let to_sleep = sleep::select_sleep_candidates(
+                                &candidates,
+                                now,
+                                sleep::SleepThreshold::Hour1,
+                                0,
+                                sleep::MAX_SLEEP_SNAPSHOTS,
+                            );
+                            if !to_sleep.is_empty() {
+                                for id in &to_sleep {
+                                    #[cfg(desktop)]
+                                    let _ = webview::close_tab_webview(&timer_handle, id);
+                                    if let Ok(mut browser) = state.browser.lock() {
+                                        let _ = browser.mark_tab_asleep(id);
+                                    }
+                                    log_msg(&format!("Background Quiet Tabs: evicted idle webview for tab '{}' to reclaim RAM", id));
+                                }
+                                if let Ok(browser) = state.browser.lock() {
+                                    emit_state_projection(&timer_handle, &browser);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1151,6 +1316,8 @@ pub fn run() {
             close_tab,
             close_all_tabs,
             switch_tab,
+            discard_tab,
+            sleep_idle_tabs,
             navigate,
             duplicate_tab,
             set_tab_pinned,

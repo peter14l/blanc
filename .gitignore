@@ -25,3 +25,9 @@ bench/tab-import/results/
 .astro/
 site/.parity/
 site/.parity-shots/
+
+# Ad-hoc screenshots
+/Screenshot_*
+
+# Local APK builds and test outputs
+/build-apks/

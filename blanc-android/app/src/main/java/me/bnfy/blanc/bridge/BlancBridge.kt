@@ -859,6 +859,83 @@ class BlancBridge(
         return gson.toJson(BridgeProtocol.Response(java.util.UUID.randomUUID().toString()))
     }
 
+    // ===== Quiet Tabs Management =====
+
+    /**
+     * Evicts background tab WebView to conserve RAM (Quiet Tabs).
+     */
+    @JavascriptInterface
+    fun discardTab(tabId: String): String {
+        return asyncResult {
+            tabManager.discardTab(tabId)
+        }
+    }
+
+    /**
+     * Wakes a hibernated tab.
+     */
+    @JavascriptInterface
+    fun wakeTab(tabId: String): String {
+        return asyncResult {
+            tabManager.restoreTab(tabId)
+        }
+    }
+
+    // ===== Named Workspaces Management =====
+
+    /**
+     * Lists all workspaces for the active profile.
+     */
+    @JavascriptInterface
+    fun listWorkspaces(): String {
+        return asyncResult {
+            val profileId = getActiveProfileId()
+            repository.profileDao.getWorkspacesByProfile(profileId)
+        }
+    }
+
+    /**
+     * Creates a new named workspace.
+     */
+    @JavascriptInterface
+    fun createWorkspace(name: String, icon: String?): String {
+        return asyncResult {
+            val profileId = getActiveProfileId()
+            repository.createWorkspace(name, icon, profileId)
+        }
+    }
+
+    /**
+     * Switches to a workspace and its associated tabs.
+     */
+    @JavascriptInterface
+    fun switchWorkspace(workspaceId: String): String {
+        asyncVoid {
+            tabManager.switchWorkspace(workspaceId)
+        }
+        return gson.toJson(BridgeProtocol.Response(java.util.UUID.randomUUID().toString()))
+    }
+
+    /**
+     * Renames an existing workspace.
+     */
+    @JavascriptInterface
+    fun renameWorkspace(workspaceId: String, name: String): String {
+        return asyncResult {
+            repository.updateWorkspaceName(workspaceId, name)
+        }
+    }
+
+    /**
+     * Deletes a workspace.
+     */
+    @JavascriptInterface
+    fun deleteWorkspace(workspaceId: String): String {
+        return asyncResult {
+            repository.deleteWorkspace(workspaceId)
+        }
+    }
+
     // ===== Callback Registration (for async responses) =====
 
     /**
