@@ -361,9 +361,29 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
                                 _ => "other",
                             };
 
+                            let mut referer_str = String::new();
+                            if let Ok(headers) = request.Headers() {
+                                let mut referer_pwstr = windows::core::PWSTR::null();
+                                if headers.GetHeader(w!("Referer"), &mut referer_pwstr).is_ok() && !referer_pwstr.is_null() {
+                                    referer_str = webview2_com::take_pwstr(referer_pwstr);
+                                }
+                            }
+
                             if let Some(state) = filter_app.try_state::<AppState>() {
+                                let tab_url = if let Ok(browser) = state.browser.lock() {
+                                    browser.tabs.get(&filter_tab_id).map(|t| t.url.clone())
+                                } else {
+                                    None
+                                };
+
+                                let source_url = if !referer_str.is_empty() {
+                                    Some(referer_str.as_str())
+                                } else {
+                                    tab_url.as_deref()
+                                };
+
                                 let should_block = if let Ok(adblock) = state.adblock.lock() {
-                                    if adblock.should_block(&url, None, resource_type) {
+                                    if adblock.should_block(&url, source_url, resource_type) {
                                         adblock.record_block();
                                         true
                                     } else {

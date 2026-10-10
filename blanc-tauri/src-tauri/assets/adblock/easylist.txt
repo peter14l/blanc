@@ -24,8 +24,6 @@
 ! Facebook/Meta
 ||facebook.net^$third-party
 ||connect.facebook.net^$third-party
-||fbcdn.net^$third-party
-||fbsbx.com^$third-party
 ||facebook.com/tr^$third-party
 ||facebook.com/ads^$third-party
 
@@ -148,7 +146,10 @@
 ||/pixel/^$third-party
 ||/collect/^$third-party
 
-! Exceptions for known false positives
+! Exceptions for known false positives & media CDNs
+@@||fbcdn.net^$image
+@@||cdninstagram.com^$image
+@@||instagram.com^$image
 @@||google.com/adsense^$document
 @@||google.com/pagead^$document
 @@||googleads.g.doubleclick.net^$document

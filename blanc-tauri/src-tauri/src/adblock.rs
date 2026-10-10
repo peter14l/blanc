@@ -419,6 +419,83 @@ impl AdblockEngine {
         Regex::new(&regex_str).ok()
     }
 
+pub fn get_etld_plus_one(host: &str) -> &str {
+    let host = host.trim_end_matches('.');
+    let parts: Vec<&str> = host.split('.').collect();
+    if parts.len() <= 2 {
+        return host;
+    }
+    let last = parts[parts.len() - 1];
+    let second_last = parts[parts.len() - 2];
+    let is_two_part_tld = (last.len() == 2 && matches!(second_last, "co" | "com" | "org" | "net" | "edu" | "gov"))
+        && !matches!(second_last, "fna" | "xx");
+
+    if is_two_part_tld && parts.len() >= 3 {
+        let start = host.len() - last.len() - 1 - second_last.len() - 1 - parts[parts.len() - 3].len();
+        &host[start..]
+    } else {
+        let start = host.len() - last.len() - 1 - second_last.len();
+        &host[start..]
+    }
+}
+
+pub fn is_same_entity(source_host: &str, target_host: &str) -> bool {
+    if source_host == target_host {
+        return true;
+    }
+    let s_etld = Self::get_etld_plus_one(source_host);
+    let t_etld = Self::get_etld_plus_one(target_host);
+    if s_etld == t_etld {
+        return true;
+    }
+    // Meta / Instagram / Facebook / Threads cluster
+    const META_DOMAINS: &[&str] = &[
+        "instagram.com",
+        "cdninstagram.com",
+        "facebook.com",
+        "fbcdn.net",
+        "fbsbx.com",
+        "threads.net",
+        "messenger.com",
+        "meta.com",
+    ];
+    if META_DOMAINS.contains(&s_etld) && META_DOMAINS.contains(&t_etld) {
+        return true;
+    }
+    // Google / YouTube cluster
+    const GOOGLE_DOMAINS: &[&str] = &[
+        "google.com",
+        "youtube.com",
+        "gstatic.com",
+        "googleusercontent.com",
+        "ggpht.com",
+        "ytimg.com",
+    ];
+    if GOOGLE_DOMAINS.contains(&s_etld) && GOOGLE_DOMAINS.contains(&t_etld) {
+        return true;
+    }
+    // Twitter / X cluster
+    const TWITTER_DOMAINS: &[&str] = &[
+        "twitter.com",
+        "x.com",
+        "twimg.com",
+    ];
+    if TWITTER_DOMAINS.contains(&s_etld) && TWITTER_DOMAINS.contains(&t_etld) {
+        return true;
+    }
+    // Reddit cluster
+    const REDDIT_DOMAINS: &[&str] = &[
+        "reddit.com",
+        "redd.it",
+        "redditstatic.com",
+        "redditmedia.com",
+    ];
+    if REDDIT_DOMAINS.contains(&s_etld) && REDDIT_DOMAINS.contains(&t_etld) {
+        return true;
+    }
+    false
+}
+
     /// Check if a request URL should be blocked
     pub fn should_block(&self, url: &str, source_url: Option<&str>, request_type: &str) -> bool {
         if !self.is_enabled() || !self.is_ready() {
@@ -429,8 +506,9 @@ impl AdblockEngine {
 
         // Check exceptions first
         if let Some(source) = source_url {
-            if let Ok(source_host) = url::Url::parse(source).map(|u| u.host_str().unwrap_or("").to_string()) {
-                if inner.exceptions.contains(&source_host) {
+            if let Ok(source_parsed) = url::Url::parse(source) {
+                let source_host = source_parsed.host_str().unwrap_or("").trim_end_matches('.');
+                if inner.exceptions.contains(source_host) {
                     return false;
                 }
             }
@@ -444,12 +522,51 @@ impl AdblockEngine {
         let target_host = target_url.host_str().unwrap_or("");
         let target_host = target_host.trim_end_matches('.');
 
+        // Check if target host is excepted
+        if inner.exceptions.contains(target_host) {
+            return false;
+        }
+
+        // Always protect known media CDNs from being blocked as general images/media
+        if request_type == "image" || request_type == "media" {
+            let t_etld = Self::get_etld_plus_one(target_host);
+            if matches!(
+                t_etld,
+                "fbcdn.net"
+                    | "cdninstagram.com"
+                    | "twimg.com"
+                    | "redditstatic.com"
+                    | "redditmedia.com"
+                    | "ytimg.com"
+                    | "googleusercontent.com"
+                    | "ggpht.com"
+            ) {
+                return false;
+            }
+        }
+
         // Check exception filters
         for filter in &inner.exception_filters {
             if filter.matches_host(target_host) && filter.matches_request(url, request_type) {
                 return false;
             }
         }
+
+        // Determine if request is third-party using entity-aware domain matching
+        let is_third_party = if let Some(source) = source_url {
+            if let Ok(source_parsed) = url::Url::parse(source) {
+                let source_host = source_parsed.host_str().unwrap_or("").trim_end_matches('.');
+                if source_host.is_empty() {
+                    true
+                } else {
+                    !Self::is_same_entity(source_host, target_host)
+                }
+            } else {
+                true
+            }
+        } else {
+            true
+        };
 
         // Check if host is in our domain map
         let mut candidate_indices: Vec<usize> = Vec::new();
@@ -470,11 +587,6 @@ impl AdblockEngine {
         candidate_indices.extend(&inner.generic_filter_indices);
         candidate_indices.sort_unstable();
         candidate_indices.dedup();
-
-        let is_third_party = source_url
-            .and_then(|s| url::Url::parse(s).ok())
-            .map(|s| s.host_str().unwrap_or("").trim_end_matches('.') != target_host)
-            .unwrap_or(true);
 
         for &idx in &candidate_indices {
             if let Some(filter) = inner.network_filters.get(idx) {
@@ -678,5 +790,27 @@ mod tests {
         assert!(engine.should_block("https://google-analytics.com/analytics.js", None, "script"));
         assert!(engine.should_block("https://doubleclick.net/ad.js", None, "script"));
         assert!(!engine.should_block("https://example.com/main.js", None, "script"));
+
+        // Instagram and Meta media CDN tests
+        assert!(!engine.should_block(
+            "https://instagram.fccu27-1.fna.fbcdn.net/v/t51.82787-19/628349641_profile_pic.jpg",
+            Some("https://www.instagram.com/"),
+            "image"
+        ));
+        assert!(!engine.should_block(
+            "https://scontent.fccu20-1.fna.fbcdn.net/v/t1.30497-1/post_image.jpg",
+            Some("https://www.instagram.com/"),
+            "image"
+        ));
+        assert!(!engine.should_block(
+            "https://static.cdninstagram.com/rsrc.php/v3/yP/r/bundle.js",
+            Some("https://www.instagram.com/"),
+            "script"
+        ));
+
+        // Entity matching tests
+        assert!(AdblockEngine::is_same_entity("www.instagram.com", "instagram.fccu27-1.fna.fbcdn.net"));
+        assert!(AdblockEngine::is_same_entity("instagram.com", "static.cdninstagram.com"));
+        assert!(!AdblockEngine::is_same_entity("example.com", "google-analytics.com"));
     }
 }

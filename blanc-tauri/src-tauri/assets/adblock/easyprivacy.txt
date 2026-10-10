@@ -38,13 +38,6 @@
 ||fbevents.js^$third-party
 ||connect.facebook.net/en_US/fbevents.js^$third-party
 ||connect.facebook.net/signals/config/^$third-party
-
-! Facebook pixel
-||fbcdn.net^$third-party
-||fbsbx.com^$third-party
-||staticxx.facebook.com^$third-party
-||static.xx.fbcdn.net^$third-party
-
 ! Twitter/X tracking
 ||analytics.twitter.com^$third-party
 ||platform.twitter.com^$third-party
@@ -394,3 +387,8 @@
 ||collector.$domain/^$third-party
 ||pixel.$domain^$third-party
 ||pixel.$domain/^$third-party
+
+! Exceptions for known media CDNs & user content
+@@||fbcdn.net^$image
+@@||cdninstagram.com^$image
+@@||instagram.com^$image

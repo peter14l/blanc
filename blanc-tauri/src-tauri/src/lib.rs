@@ -911,6 +911,9 @@ fn save_settings(
     state: State<'_, AppState>,
     settings: UserSettings,
 ) -> Result<UserSettings, String> {
+    if let Ok(adblock) = state.adblock.lock() {
+        adblock.set_enabled(settings.adblock_enabled);
+    }
     state.storage.save_settings(settings)
 }
 
@@ -1240,11 +1243,14 @@ fn credential_trigger_fill(
 pub fn run() {
     let storage = StorageManager::new();
     let initial_browser = BrowserState::with_default_window();
+    let initial_settings = storage.load().settings;
+    let adblock_engine = AdblockEngine::new();
+    adblock_engine.set_enabled(initial_settings.adblock_enabled);
 
     let initial_state = AppState {
         browser: Mutex::new(initial_browser),
         storage,
-        adblock: Mutex::new(AdblockEngine::new()),
+        adblock: Mutex::new(adblock_engine),
         permissions: Mutex::new(PermissionBroker::new()),
         downloads: Mutex::new(DownloadManager::new()),
         workspaces: Mutex::new(WorkspacesManager::new()),
