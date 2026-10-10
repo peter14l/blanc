@@ -238,13 +238,27 @@ export function useBrowserIPC(): BrowserIPCContextType {
     if (isTauriAvailable) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const remoteTabs = await invoke<Tab[]>('get_tabs');
-        if (remoteTabs && Array.isArray(remoteTabs) && remoteTabs.length > 0) {
-          setTabs(remoteTabs);
-          return remoteTabs;
+        const proj = await invoke<any>('get_state_projection');
+        if (proj && Array.isArray(proj.windows)) {
+          const mainWin = proj.windows.find((w: any) => w.label === 'main') || proj.windows[0];
+          if (mainWin && Array.isArray(mainWin.tabs) && mainWin.tabs.length > 0) {
+            const mappedTabs = mainWin.tabs.map((t: any) => ({
+              id: t.id,
+              url: t.url,
+              title: t.title,
+              is_active: t.id === mainWin.activeTabId,
+              is_loading: t.loading ?? false,
+              blocked_trackers: t.blocked ?? 0,
+              can_go_back: t.can_go_back ?? false,
+              can_go_forward: t.can_go_forward ?? false,
+              favicon: t.favicon,
+            }));
+            setTabs(mappedTabs);
+            return mappedTabs;
+          }
         }
       } catch (err) {
-        console.warn('[useBrowserIPC] Tauri get_tabs failed, using local state:', err);
+        console.warn('[useBrowserIPC] Tauri get_state_projection failed, using local state:', err);
       }
     }
     return tabs;
@@ -545,7 +559,9 @@ export function useBrowserIPC(): BrowserIPCContextType {
             // Use configured search engine
             const engine = settings.searchEngine;
             if (engine === 'Google') {
-              cleanUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanUrl)}&igu=1`;
+              cleanUrl = isTauriAvailable
+                ? `https://www.google.com/search?q=${encodeURIComponent(cleanUrl)}`
+                : `https://www.google.com/search?q=${encodeURIComponent(cleanUrl)}&igu=1`;
             } else if (engine === 'Bing') {
               cleanUrl = `https://www.bing.com/search?q=${encodeURIComponent(cleanUrl)}`;
             } else if (engine === 'Ecosia') {

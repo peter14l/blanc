@@ -18,7 +18,7 @@ pub mod workspaces;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use state::BrowserState;
-use model::{GroupRecord, StateProjection, TabRecord, WindowProjection, PERSONAL_PROFILE};
+use model::{GroupRecord, SessionPartition, StateProjection, TabRecord, WindowProjection, PERSONAL_PROFILE};
 use storage::{Bookmark, Favorite, HistoryEntry, HistoryPage, StorageManager, UserSettings};
 use adblock::{AdblockEngine, BlockingStatus};
 use permissions::{PermissionBroker, PermissionDecision, PermissionDecisionRecord, PermissionResource};
@@ -40,6 +40,17 @@ pub struct AppState {
     pub credentials: Mutex<CredentialBroker>,
     /// Last page-card rectangle reported by the shell (logical px); None until first report.
     pub viewport: Mutex<Option<webview::Viewport>>,
+}
+
+pub fn log_msg(msg: &str) {
+    let mut dir = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    dir.push("blanc-tauri");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("blanc_debug.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        use std::io::Write;
+        let _ = writeln!(f, "[{}] {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), msg);
+    }
 }
 
 fn emit_state_projection(app: &AppHandle, browser: &BrowserState) {
@@ -98,7 +109,7 @@ fn get_active_tab(
 // -----------------------------------------------------------------------------
 
 #[tauri::command]
-fn create_tab(
+async fn create_tab(
     app: AppHandle,
     state: State<'_, AppState>,
     window: Option<String>,
@@ -133,9 +144,12 @@ fn create_tab(
 
     // Spawn child webview if not an internal blanc:// page
     if !target_url.starts_with("blanc://") && target_url != "about:blank" {
-        if let Err(err) = webview::create_tab_webview(&app, &tab_id, &target_url) {
-            eprintln!("[blanc] create_tab_webview failed: {}", err);
-        }
+        let app_handle = app.clone();
+        let id_clone = tab_id.clone();
+        let url_clone = target_url.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            webview::create_tab_webview(&app_handle, &id_clone, &url_clone)
+        }).await;
     }
 
     // Automatically record history (non-private only)
@@ -187,38 +201,42 @@ fn close_all_tabs(
 }
 
 #[tauri::command]
-fn switch_tab(
+async fn switch_tab(
     app: AppHandle,
     state: State<'_, AppState>,
     tab_id: String,
 ) -> Result<(), String> {
-    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
-    let window_label = browser
-        .tabs
-        .get(&tab_id)
-        .map(|t| t.window_id.clone())
-        .ok_or_else(|| format!("Tab '{}' not found", tab_id))?;
+    let prev_id = {
+        let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+        let window_label = browser
+            .tabs
+            .get(&tab_id)
+            .map(|t| t.window_id.clone())
+            .ok_or_else(|| format!("Tab '{}' not found", tab_id))?;
 
-    let prev_id = browser
-        .windows
-        .get(&window_label)
-        .and_then(|w| w.active_tab_id.clone());
+        let prev = browser
+            .windows
+            .get(&window_label)
+            .and_then(|w| w.active_tab_id.clone());
 
-    browser.switch_tab(&tab_id)?;
-    emit_state_projection(&app, &browser);
+        browser.switch_tab(&tab_id)?;
+        emit_state_projection(&app, &browser);
+        prev
+    };
 
     let _ = webview::switch_tab_webview(&app, &tab_id, prev_id.as_deref());
     Ok(())
 }
 
 #[tauri::command]
-fn navigate(
+async fn navigate(
     app: AppHandle,
     state: State<'_, AppState>,
     tab_id: String,
     url: String,
     _private: Option<bool>,
 ) -> Result<(), String> {
+    log_msg(&format!("navigate called: tab_id={}, url={}", tab_id, url));
     let search_engine = state.storage.load().settings.search_engine;
     let target_url = navigation::normalize_navigation_target(&url, &search_engine)?;
 
@@ -226,32 +244,72 @@ fn navigate(
 
     match decision {
         navigation::NavigationDecision::Allow { url: allowed_url } => {
-            let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
-            browser.update_tab_navigation(&tab_id, Some(allowed_url.clone()), None)?;
-
-            // Check if URL is an ad/tracker
-            {
-                let adblock = state.adblock.lock().map_err(|e| e.to_string())?;
-                if adblock.should_block(&allowed_url, None, "document") {
-                    let _ = browser.increment_tab_blocked(&tab_id, 1);
+            log_msg(&format!("Navigation allowed: target={}", allowed_url));
+            let is_private = {
+                let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+                if browser.tabs.get(&tab_id).is_none() {
+                    log_msg(&format!("Tab '{}' not found in browser state; creating/adopting it", tab_id));
+                    let window_label = "main";
+                    let _ = browser.ensure_window(window_label, Some(PERSONAL_PROFILE.to_string()), false);
+                    let partition = SessionPartition::Profile(PERSONAL_PROFILE.to_string());
+                    let mut new_tab = TabRecord::new(window_label.to_string(), allowed_url.clone(), partition);
+                    new_tab.id = tab_id.clone();
+                    browser.tabs.insert(tab_id.clone(), new_tab);
+                    if let Some(w) = browser.windows.get_mut(window_label) {
+                        if !w.tab_order.contains(&tab_id) {
+                            w.tab_order.push(tab_id.clone());
+                        }
+                        w.active_tab_id = Some(tab_id.clone());
+                    }
+                } else {
+                    browser.update_tab_navigation(&tab_id, Some(allowed_url.clone()), None)?;
+                    if let Some(tab) = browser.tabs.get(&tab_id) {
+                        let win_id = tab.window_id.clone();
+                        if let Some(w) = browser.windows.get_mut(&win_id) {
+                            w.active_tab_id = Some(tab_id.clone());
+                        }
+                    }
                 }
-            }
-            emit_state_projection(&app, &browser);
 
-            // Get tab to check if private (for history)
-            let is_private = browser
-                .tabs
-                .get(&tab_id)
-                .map(|t| t.is_private())
-                .unwrap_or(false);
+                // Check if URL is an ad/tracker
+                {
+                    if let Ok(adblock) = state.adblock.lock() {
+                        if adblock.should_block(&allowed_url, None, "document") {
+                            let _ = browser.increment_tab_blocked(&tab_id, 1);
+                        }
+                    }
+                }
+                emit_state_projection(&app, &browser);
+
+                browser
+                    .tabs
+                    .get(&tab_id)
+                    .map(|t| t.is_private())
+                    .unwrap_or(false)
+            };
 
             if !allowed_url.starts_with("blanc://") && allowed_url != "about:blank" {
                 if app.get_webview(&tab_id).is_none() {
-                    if let Err(err) = webview::create_tab_webview(&app, &tab_id, &allowed_url) {
+                    log_msg(&format!("Creating child webview for '{}' -> '{}'", tab_id, allowed_url));
+                    let app_handle = app.clone();
+                    let id_clone = tab_id.clone();
+                    let url_clone = allowed_url.clone();
+                    let res = tauri::async_runtime::spawn_blocking(move || {
+                        webview::create_tab_webview(&app_handle, &id_clone, &url_clone)
+                    }).await.map_err(|e| e.to_string())?;
+
+                    if let Err(err) = res {
+                        log_msg(&format!("create_tab_webview failed: {}", err));
                         eprintln!("[blanc] create_tab_webview failed: {}", err);
+                        return Err(err);
+                    } else {
+                        log_msg(&format!("create_tab_webview succeeded for '{}'", tab_id));
                     }
                 } else {
+                    log_msg(&format!("Navigating existing webview '{}' -> '{}'", tab_id, allowed_url));
                     webview::navigate_webview(&app, &tab_id, &allowed_url)?;
+                    let v = webview::current_viewport(&app);
+                    let _ = webview::apply_viewport(&app, Some(&tab_id), v, false);
                 }
                 // Only record history for non-private tabs
                 if !is_private {
@@ -265,9 +323,27 @@ fn navigate(
             }
         }
         navigation::NavigationDecision::ShowInternal { url: internal_url, .. } => {
-            let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
-            browser.update_tab_navigation(&tab_id, Some(internal_url), None)?;
-            emit_state_projection(&app, &browser);
+            log_msg(&format!("Navigation internal: {}", internal_url));
+            {
+                let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+                if browser.tabs.get(&tab_id).is_none() {
+                    let window_label = "main";
+                    let _ = browser.ensure_window(window_label, Some(PERSONAL_PROFILE.to_string()), false);
+                    let partition = SessionPartition::Profile(PERSONAL_PROFILE.to_string());
+                    let mut new_tab = TabRecord::new(window_label.to_string(), internal_url.clone(), partition);
+                    new_tab.id = tab_id.clone();
+                    browser.tabs.insert(tab_id.clone(), new_tab);
+                    if let Some(w) = browser.windows.get_mut(window_label) {
+                        if !w.tab_order.contains(&tab_id) {
+                            w.tab_order.push(tab_id.clone());
+                        }
+                        w.active_tab_id = Some(tab_id.clone());
+                    }
+                } else {
+                    browser.update_tab_navigation(&tab_id, Some(internal_url), None)?;
+                }
+                emit_state_projection(&app, &browser);
+            }
 
             #[cfg(desktop)]
             if let Some(wv) = app.get_webview(&tab_id) {
@@ -294,17 +370,25 @@ fn navigate(
 }
 
 #[tauri::command]
-fn duplicate_tab(
+async fn duplicate_tab(
     app: AppHandle,
     state: State<'_, AppState>,
     tab_id: String,
 ) -> Result<TabRecord, String> {
-    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
-    let dup = browser.duplicate_tab(&tab_id)?;
-    emit_state_projection(&app, &browser);
+    let dup = {
+        let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+        let dup = browser.duplicate_tab(&tab_id)?;
+        emit_state_projection(&app, &browser);
+        dup
+    };
 
     if !dup.url.starts_with("blanc://") && dup.url != "about:blank" {
-        let _ = webview::create_tab_webview(&app, &dup.id, &dup.url);
+        let app_handle = app.clone();
+        let id_clone = dup.id.clone();
+        let url_clone = dup.url.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            webview::create_tab_webview(&app_handle, &id_clone, &url_clone)
+        }).await;
     }
     Ok(dup)
 }
@@ -478,25 +562,33 @@ fn close_group(
 // -----------------------------------------------------------------------------
 
 #[tauri::command]
-fn reopen_closed_tab(
+async fn reopen_closed_tab(
     app: AppHandle,
     state: State<'_, AppState>,
     entry_id: Option<String>,
     window: Option<String>,
 ) -> Result<Option<TabRecord>, String> {
     let window_label = window.unwrap_or_else(|| "main".to_string());
-    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
-    let tab = match entry_id {
-        Some(ref id) if !id.is_empty() && id != "last" => {
-            browser.reopen_closed_tab(id, &window_label)?
-        }
-        _ => browser.reopen_last_closed_tab(&window_label)?,
+    let tab = {
+        let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+        let tab = match entry_id {
+            Some(ref id) if !id.is_empty() && id != "last" => {
+                browser.reopen_closed_tab(id, &window_label)?
+            }
+            _ => browser.reopen_last_closed_tab(&window_label)?,
+        };
+        emit_state_projection(&app, &browser);
+        tab
     };
-    emit_state_projection(&app, &browser);
 
     if let Some(ref t) = tab {
         if !t.url.starts_with("blanc://") && t.url != "about:blank" {
-            let _ = webview::create_tab_webview(&app, &t.id, &t.url);
+            let app_handle = app.clone();
+            let id_clone = t.id.clone();
+            let url_clone = t.url.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                webview::create_tab_webview(&app_handle, &id_clone, &url_clone)
+            }).await;
         }
     }
     Ok(tab)
@@ -532,7 +624,7 @@ fn clear_closed_tabs(
 // -----------------------------------------------------------------------------
 
 #[tauri::command]
-fn set_viewport(
+async fn set_viewport(
     app: AppHandle,
     state: State<'_, AppState>,
     x: f64,
@@ -549,12 +641,14 @@ fn set_viewport(
     };
     *state.viewport.lock().map_err(|e| e.to_string())? = Some(viewport);
 
-    let active_id = state
-        .browser
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get_window("main")
-        .and_then(|w| w.active_tab_id.clone());
+    let active_id = {
+        state
+            .browser
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get_window("main")
+            .and_then(|w| w.active_tab_id.clone())
+    };
     webview::apply_viewport(&app, active_id.as_deref(), viewport, hidden)
 }
 
@@ -1037,6 +1131,16 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(initial_state)
+        .setup(|app| {
+            log_msg("Tauri app initialized in setup hook");
+            let app_handle = app.handle().clone();
+            if let Some(state) = app_handle.try_state::<AppState>() {
+                if let Ok(browser) = state.browser.lock() {
+                    emit_state_projection(&app_handle, &browser);
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_state_projection,
             get_window_projection,

@@ -282,7 +282,11 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="relative w-screen h-screen bg-[#0e0e0e] text-white overflow-hidden font-ui select-none">
+    <div
+      className={`relative w-screen h-screen ${
+        !isInternalPage && isTauriAvailable ? 'bg-transparent' : 'bg-[#0e0e0e]'
+      } text-white overflow-hidden font-ui select-none`}
+    >
       {/* TOP FLOATING ISLAND CONTAINER (Blanc Faux Header Strip) */}
       <header className="fixed top-0 left-0 right-0 h-[78px] bg-[#0e0e0e] flex items-center justify-center pointer-events-none z-30 pt-2 transition-colors duration-150">
         <div className="pointer-events-auto w-full flex justify-center px-4">
@@ -330,7 +334,11 @@ export const App: React.FC = () => {
       <main
         ref={mainRef}
         style={{ zoom: zoomLevel }}
-        className="absolute inset-x-3 sm:inset-x-4 top-[80px] bottom-3 sm:bottom-4 rounded-2xl border border-white/10 bg-[#0e0e0e] shadow-2xl overflow-hidden flex flex-col z-10 pointer-events-auto"
+        className={`absolute inset-x-3 sm:inset-x-4 top-[80px] bottom-3 sm:bottom-4 rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col z-10 ${
+          !isInternalPage && isTauriAvailable
+            ? 'bg-transparent pointer-events-none'
+            : 'bg-[#0e0e0e] pointer-events-auto'
+        }`}
       >
         {/* INTERNAL PAGE: New Tab Page */}
         {isNewTab && (
@@ -418,9 +426,9 @@ export const App: React.FC = () => {
         {!isInternalPage && (
           isTauriAvailable ? (
             /* In native Tauri, the child webview is natively embedded in this viewport. */
-            <div className="flex-1 w-full h-full relative bg-[#0e0e0e] flex flex-col overflow-hidden">
+            <div className="flex-1 w-full h-full relative bg-transparent flex flex-col overflow-hidden pointer-events-none">
               {activeTab?.is_loading && (
-                <div className="absolute top-0 left-0 right-0 h-1 bg-[#d4ad66]/30 z-20 overflow-hidden">
+                <div className="absolute top-0 left-0 right-0 h-1 bg-[#d4ad66]/30 z-20 overflow-hidden pointer-events-auto">
                   <div className="w-full h-full bg-[#d4ad66] animate-pulse origin-left" />
                 </div>
               )}

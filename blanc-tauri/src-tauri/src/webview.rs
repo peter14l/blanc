@@ -62,6 +62,7 @@ pub fn current_viewport(app: &AppHandle) -> Viewport {
 /// resizes and minimizes with Blanc and is positioned relative to the window.
 #[cfg(desktop)]
 pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Result<(), String> {
+    crate::log_msg(&format!("create_tab_webview: tab_id={}, target_url={}", tab_id, target_url));
     let parsed_url: url::Url = target_url
         .parse()
         .map_err(|e| format!("Invalid URL: {}", e))?;
@@ -69,6 +70,7 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
         .get_window("main")
         .ok_or_else(|| "Main window not found".to_string())?;
     let v = current_viewport(app);
+    crate::log_msg(&format!("create_tab_webview: viewport=({}, {}, {}, {})", v.x, v.y, v.width, v.height));
 
     let nav_app = app.clone();
     let nav_id = tab_id.to_string();
@@ -98,13 +100,22 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
             );
         });
 
-    window
+    crate::log_msg("create_tab_webview: calling window.add_child...");
+    let wv = window
         .add_child(
             builder,
             LogicalPosition::new(v.x, v.y),
             LogicalSize::new(v.width, v.height),
         )
-        .map_err(|e| format!("Failed to create child webview: {}", e))?;
+        .map_err(|e| {
+            crate::log_msg(&format!("add_child failed: {}", e));
+            format!("Failed to create child webview: {}", e)
+        })?;
+
+    crate::log_msg("create_tab_webview: add_child succeeded, showing and focusing");
+    let _ = wv.show();
+    let _ = wv.set_focus();
+    crate::log_msg(&format!("create_tab_webview: child webview created and shown for '{}'", tab_id));
 
     Ok(())
 }
@@ -126,17 +137,16 @@ pub fn apply_viewport(
     viewport: Viewport,
     hidden: bool,
 ) -> Result<(), String> {
+    crate::log_msg(&format!("apply_viewport: active_tab_id={:?}, hidden={}, vp=({}, {}, {}, {})", active_tab_id, hidden, viewport.x, viewport.y, viewport.width, viewport.height));
     for (label, wv) in app.webviews() {
         if label == "main" {
             continue;
         }
         if Some(label.as_str()) == active_tab_id && !hidden {
-            wv.set_position(LogicalPosition::new(viewport.x, viewport.y))
-                .map_err(|e| format!("Failed to set webview position: {}", e))?;
-            wv.set_size(LogicalSize::new(viewport.width, viewport.height))
-                .map_err(|e| format!("Failed to set webview size: {}", e))?;
-            wv.show()
-                .map_err(|e| format!("Failed to show webview: {}", e))?;
+            let _ = wv.set_position(LogicalPosition::new(viewport.x, viewport.y));
+            let _ = wv.set_size(LogicalSize::new(viewport.width, viewport.height));
+            let _ = wv.show();
+            let _ = wv.set_focus();
         } else {
             let _ = wv.hide();
         }
