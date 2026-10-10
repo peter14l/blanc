@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useBrowserIPC } from './hooks/useBrowserIPC';
 import { FloatingIsland } from './components/FloatingIsland';
 import { TabSwitcher } from './components/TabSwitcher';
+import { TabSwitcherHUD } from './components/TabSwitcherHUD';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { MobileBrowser } from './components/mobile/MobileBrowser';
 import { NewTabPage } from './components/pages/NewTabPage';
@@ -67,6 +68,15 @@ export const App: React.FC = () => {
   const [isFindOpen, setIsFindOpen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [isOmniboxSuggestionsOpen, setIsOmniboxSuggestionsOpen] = useState(false);
+  const [isTabHUDOpen, setIsTabHUDOpen] = useState(false);
+  const [tabHUDIndex, setTabHUDIndex] = useState(0);
+  const isTabHUDOpenRef = useRef(false);
+  const tabHUDIndexRef = useRef(0);
+
+  useEffect(() => {
+    isTabHUDOpenRef.current = isTabHUDOpen;
+    tabHUDIndexRef.current = tabHUDIndex;
+  }, [isTabHUDOpen, tabHUDIndex]);
 
   // Mouse Gestures & Rocker Navigation
   const { hudState } = useMouseGestures({
@@ -187,16 +197,51 @@ export const App: React.FC = () => {
         e.preventDefault();
         if (activeTab) goForward(activeTab.id);
       }
-      // Tab Switching: Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+PageUp, Ctrl+PageDown
+      // Tab Switching HUD: Alt+Tab, Ctrl+Tab, Ctrl+Shift+Tab, Alt+Shift+Tab
+      else if ((e.altKey || isMeta) && e.key === 'Tab') {
+        e.preventDefault();
+        if (tabs.length > 1) {
+          if (!isTabHUDOpenRef.current) {
+            const currentIdx = Math.max(0, tabs.findIndex((t) => t.id === activeTab?.id));
+            const nextIdx = e.shiftKey
+              ? (currentIdx - 1 + tabs.length) % tabs.length
+              : (currentIdx + 1) % tabs.length;
+            setTabHUDIndex(nextIdx);
+            setIsTabHUDOpen(true);
+          } else {
+            const nextIdx = e.shiftKey
+              ? (tabHUDIndexRef.current - 1 + tabs.length) % tabs.length
+              : (tabHUDIndexRef.current + 1) % tabs.length;
+            setTabHUDIndex(nextIdx);
+          }
+        }
+      }
+      // Tab Switching HUD keyboard navigation (Arrow keys, Escape, Enter)
       else if (
-        (isMeta && e.key === 'Tab') ||
-        (isMeta && (e.key === 'PageDown' || e.key === 'PageUp'))
+        isTabHUDOpenRef.current &&
+        (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'Escape' || e.key === 'Enter')
       ) {
+        e.preventDefault();
+        if (e.key === 'ArrowRight') {
+          setTabHUDIndex((prev) => (prev + 1) % tabs.length);
+        } else if (e.key === 'ArrowLeft') {
+          setTabHUDIndex((prev) => (prev - 1 + tabs.length) % tabs.length);
+        } else if (e.key === 'Escape') {
+          setIsTabHUDOpen(false);
+        } else if (e.key === 'Enter') {
+          const target = tabs[tabHUDIndexRef.current];
+          if (target) {
+            switchTab(target.id);
+          }
+          setIsTabHUDOpen(false);
+        }
+      }
+      // Tab Switching without HUD: Ctrl+PageUp / Ctrl+PageDown
+      else if (isMeta && (e.key === 'PageDown' || e.key === 'PageUp')) {
         e.preventDefault();
         if (tabs.length > 1) {
           const currentIdx = tabs.findIndex((t) => t.id === activeTab?.id);
-          const isReverse = e.shiftKey || e.key === 'PageUp';
-          const nextIdx = isReverse
+          const nextIdx = e.key === 'PageUp'
             ? (currentIdx - 1 + tabs.length) % tabs.length
             : (currentIdx + 1) % tabs.length;
           switchTab(tabs[nextIdx].id);
@@ -264,8 +309,24 @@ export const App: React.FC = () => {
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (isTabHUDOpenRef.current) {
+        if (e.key === 'Alt' || e.key === 'Control' || e.key === 'Meta') {
+          const target = tabs[tabHUDIndexRef.current];
+          if (target) {
+            switchTab(target.id);
+          }
+          setIsTabHUDOpen(false);
+        }
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [
     activeTab,
     tabs,
@@ -325,7 +386,7 @@ export const App: React.FC = () => {
     const updateNativeViewport = () => {
       if (!mainRef.current) return;
       const rect = mainRef.current.getBoundingClientRect();
-      const hidden = isInternalPage || isQuickSwitcherOpen || isTabSwitcherOpen || isOmniboxSuggestionsOpen;
+      const hidden = isInternalPage || isQuickSwitcherOpen || isTabSwitcherOpen || isOmniboxSuggestionsOpen || isTabHUDOpen;
       setViewport(rect.left, rect.top, rect.width, rect.height, hidden);
     };
 
@@ -353,6 +414,7 @@ export const App: React.FC = () => {
     isQuickSwitcherOpen,
     isTabSwitcherOpen,
     isOmniboxSuggestionsOpen,
+    isTabHUDOpen,
     setViewport,
   ]);
 
@@ -685,6 +747,19 @@ export const App: React.FC = () => {
           )
         )}
       </main>
+
+      {/* IN-APP VISUAL TAB SWITCHER HUD (ALT+TAB / CTRL+TAB CYCLING) */}
+      <TabSwitcherHUD
+        isOpen={isTabHUDOpen}
+        tabs={tabs}
+        selectedIndex={tabHUDIndex}
+        onSelectIndex={setTabHUDIndex}
+        onConfirm={(tabId) => {
+          switchTab(tabId);
+          setIsTabHUDOpen(false);
+        }}
+        onClose={() => setIsTabHUDOpen(false)}
+      />
 
       {/* TAB SWITCHER MODAL */}
       <TabSwitcher

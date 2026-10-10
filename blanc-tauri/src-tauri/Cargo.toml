@@ -1,6 +1,6 @@
 [package]
 name = "blanc-tauri"
-version = "0.3.2"
+version = "0.3.3"
 description = "A lightweight cross-platform browser pairing Blanc's Island UI with Tauri v2"
 authors = ["Bananify Creative"]
 edition = "2021"
