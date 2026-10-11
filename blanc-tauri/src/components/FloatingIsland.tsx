@@ -325,6 +325,7 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
             {isMac && (
               <>
                 <WindowControls
+                  variant="macos"
                   onMinimize={onMinimize}
                   onMaximize={onMaximize}
                   onClose={onClose}

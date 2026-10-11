@@ -507,7 +507,14 @@ export const App: React.FC = () => {
     return isMobileUA || (isTouch && isSmallScreen) || isSmallScreen;
   };
 
+  const checkMac = () => {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    return /Macintosh|Mac OS X|macOS/i.test(ua) && !/Windows|Linux|Android/i.test(ua);
+  };
+
   const [isMobile, setIsMobile] = useState<boolean>(checkMobile);
+  const isMac = checkMac();
   const isVerticalTabs = Boolean(settings.verticalTabs) && !isMobile;
   const isVerticalTabsCollapsed = Boolean(settings.verticalTabsCollapsed);
 
@@ -641,15 +648,26 @@ export const App: React.FC = () => {
       {/* AMBIENT WALLPAPER GLOW IN SHELL */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[320px] rounded-full blur-[140px] pointer-events-none opacity-40 bg-[var(--wallpaper-glow,rgba(212,173,102,0.1))] transition-colors duration-500 z-0" />
 
-      {/* TOP-RIGHT WINDOW CONTROLS (MINIMIZE, MAXIMIZE, CLOSE) */}
-      <div className="fixed top-3.5 right-4 z-50 pointer-events-auto flex items-center">
-        <WindowControls
-          variant="buttons"
-          onMinimize={minimizeWindow}
-          onMaximize={maximizeWindow}
-          onClose={closeWindow}
-        />
-      </div>
+      {/* WINDOW CONTROLS (PLATFORM-NATIVE ADAPTIVE CONTROLS) */}
+      {isMac ? (
+        <div className="fixed top-3.5 left-4 z-[60] pointer-events-auto flex items-center">
+          <WindowControls
+            variant="macos"
+            onMinimize={minimizeWindow}
+            onMaximize={maximizeWindow}
+            onClose={closeWindow}
+          />
+        </div>
+      ) : (
+        <div className="fixed top-0 right-0 z-[60] pointer-events-auto flex items-center">
+          <WindowControls
+            variant="auto"
+            onMinimize={minimizeWindow}
+            onMaximize={maximizeWindow}
+            onClose={closeWindow}
+          />
+        </div>
+      )}
 
       {/* WEB NOTIFICATION TOAST */}
       <NotificationToast
