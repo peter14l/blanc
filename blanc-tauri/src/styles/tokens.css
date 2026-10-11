@@ -81,7 +81,7 @@
   }
 }
 
-:root.dark {
+:root[data-theme="dark"], :root.dark {
   --bg: #0e0e0e;
   --surface: #171717;
   --surface-raised: #1f1f1f;

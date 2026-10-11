@@ -300,15 +300,21 @@ export function useBrowserIPC(): BrowserIPCContextType {
 
     // Remove legacy theme classes
     root.classList.remove('dark', 'light', 'sunrise', 'patron', 'theme-sunrise', 'theme-patron');
+    document.body.classList.remove('dark', 'light', 'sunrise', 'patron', 'theme-sunrise', 'theme-patron');
     root.removeAttribute('data-theme');
+    document.body.removeAttribute('data-theme');
 
     root.setAttribute('data-theme', settings.theme);
     root.classList.add(settings.theme);
+    document.body.setAttribute('data-theme', settings.theme);
+    document.body.classList.add(settings.theme);
 
     if (settings.theme === 'sunrise') {
       root.classList.add('theme-sunrise');
+      document.body.classList.add('theme-sunrise');
     } else if (settings.theme === 'patron') {
       root.classList.add('theme-patron');
+      document.body.classList.add('theme-patron');
     }
 
     if (settings.fontFamily) {
@@ -459,9 +465,35 @@ export function useBrowserIPC(): BrowserIPCContextType {
   }, []);
 
   // Settings update
-  const updateSettings = useCallback((updates: Partial<BrowserSettings>) => {
-    setSettings((prev) => ({ ...prev, ...updates }));
-  }, []);
+  const updateSettings = useCallback(
+    (updates: Partial<BrowserSettings>) => {
+      setSettings((prev) => {
+        const next = { ...prev, ...updates };
+        setStored(STORAGE_KEYS.SETTINGS, next);
+        if (isTauriAvailable) {
+          import('@tauri-apps/api/core')
+            .then(({ invoke }) => {
+              invoke('save_settings', {
+                settings: {
+                  search_engine: next.searchEngine.toLowerCase(),
+                  theme: next.theme,
+                  adblock_enabled: next.blockTrackersAndAds,
+                  block_third_party_cookies: next.blockThirdPartyCookies,
+                  auto_https: next.strictHttps,
+                  startup_behavior: next.startupBehavior,
+                  vertical_tabs: next.verticalTabs,
+                  vertical_tabs_collapsed: next.verticalTabsCollapsed,
+                  font_family: next.fontFamily,
+                },
+              }).catch(() => {});
+            })
+            .catch(() => {});
+        }
+        return next;
+      });
+    },
+    [isTauriAvailable]
+  );
 
   // Helper to determine readable tab title from URL
   const getTabTitleFromUrl = (url: string): string => {
@@ -470,6 +502,18 @@ export function useBrowserIPC(): BrowserIPCContextType {
     if (url === 'blanc://settings') return 'Settings';
     if (url === 'blanc://bookmarks') return 'Bookmarks';
     return url.replace(/^https?:\/\//, '').split('/')[0] || url;
+  };
+
+  // Helper to determine favicon URL from a page URL
+  const getFaviconForUrl = (url?: string): string | undefined => {
+    if (!url || typeof url !== 'string' || url.startsWith('blanc://') || url.startsWith('about:')) return undefined;
+    try {
+      const u = new URL(url);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=64`;
+      }
+    } catch {}
+    return undefined;
   };
 
   // Check if input looks like a URL/hostname (matches Rust is_likely_url logic)
@@ -505,17 +549,22 @@ export function useBrowserIPC(): BrowserIPCContextType {
       const defaultUrl = url || 'blanc://newtab';
       const newTabId = `tab-${Date.now()}`;
       const title = getTabTitleFromUrl(defaultUrl);
+      const initialFavicon = getFaviconForUrl(defaultUrl);
 
       if (isTauriAvailable) {
         try {
           const { invoke } = await import('@tauri-apps/api/core');
           const created = await invoke<Tab>('create_tab', { url: defaultUrl });
           if (created) {
+            const enriched: Tab = {
+              ...created,
+              favicon: created.favicon || initialFavicon,
+            };
             setTabs((prev) => [
               ...prev.map((t) => ({ ...t, is_active: false })),
-              created,
+              enriched,
             ]);
-            return created;
+            return enriched;
           }
         } catch (err) {
           console.warn('[useBrowserIPC] Tauri create_tab failed, using fallback:', err);
@@ -533,6 +582,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
         can_go_forward: false,
         history: [defaultUrl],
         historyIndex: 0,
+        favicon: initialFavicon,
       };
 
       setTabs((prev) => [
@@ -1214,18 +1264,24 @@ export function useBrowserIPC(): BrowserIPCContextType {
         console.warn('[useBrowserIPC] Failed to listen to blanc:state-updated:', e);
       });
 
-      listen<{ tab_id: string; url?: string; title?: string }>('tab-navigated', (event) => {
-        const { tab_id, url, title } = event.payload;
+      listen<{ tab_id: string; url?: string; title?: string; favicon?: string }>('tab-navigated', (event) => {
+        const { tab_id, url, title, favicon } = event.payload;
         if (url && isDownloadUrl(url)) {
           return;
         }
+
+        const targetFav = favicon || (url ? getFaviconForUrl(url) : undefined);
 
         if (url && typeof url === 'string' && !url.startsWith('blanc://') && !url.startsWith('about:')) {
           setTabs((currentTabs) => {
             const target = currentTabs.find((t) => t.id === tab_id);
             if (target && !target.is_private) {
               setTimeout(() => {
-                addHistoryEntry({ url, title: title || getTabTitleFromUrl(url) });
+                addHistoryEntry({
+                  url,
+                  title: title || getTabTitleFromUrl(url),
+                  favicon: targetFav || target.favicon,
+                });
               }, 0);
             }
             return currentTabs;
@@ -1237,6 +1293,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
             if (t.id === tab_id) {
               const updatedUrl = url || t.url || 'blanc://newtab';
               const updatedTitle = title || (url ? getTabTitleFromUrl(url) : (t.title || 'New Tab'));
+              const updatedFavicon = targetFav || t.favicon;
 
               const hist: string[] = (t as any).history || [t.url];
               const idx: number = (t as any).historyIndex ?? (hist.length - 1);
@@ -1262,6 +1319,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
                 ...t,
                 url: updatedUrl,
                 title: updatedTitle,
+                favicon: updatedFavicon,
                 is_loading: false,
                 history: newHist,
                 historyIndex: newIdx,

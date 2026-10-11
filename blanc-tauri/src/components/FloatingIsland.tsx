@@ -8,14 +8,16 @@ import {
   Globe,
   PanelLeft,
 } from 'lucide-react';
-import { Tab, HistoryEntry, Bookmark as BookmarkType } from '../types/browser';
+import { Tab, HistoryEntry, Bookmark as BookmarkType, AdblockStats } from '../types/browser';
 import { useSearchSuggestions, SuggestionItem } from '../hooks/useSearchSuggestions';
 import { SuggestionPicker } from './SuggestionPicker';
+import { ShieldFlyout } from './ShieldFlyout';
 
 interface FloatingIslandProps {
   activeTab: Tab | null;
   tabsCount?: number;
   searchEngine?: string;
+  adblockStats?: AdblockStats;
   onNavigate: (url: string) => void;
   onReload: () => void;
   onGoBack: () => void;
@@ -29,9 +31,11 @@ interface FloatingIslandProps {
   onOpenBookmarks?: () => void;
   onOpenHistory?: () => void;
   onOpenDownloads?: () => void;
+  onOpenDiagnostics?: () => void;
   history?: HistoryEntry[];
   bookmarks?: BookmarkType[];
   onSuggestionsOpenChange?: (open: boolean) => void;
+  onShieldOpenChange?: (open: boolean) => void;
   isVerticalTabs?: boolean;
   onToggleVerticalTabs?: () => void;
   className?: string;
@@ -40,14 +44,17 @@ interface FloatingIslandProps {
 export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   activeTab,
   searchEngine = 'DuckDuckGo',
+  adblockStats,
   onNavigate,
   onReload,
   onGoBack,
   onGoForward,
   onOpenSettings,
+  onOpenDiagnostics,
   history = [],
   bookmarks = [],
   onSuggestionsOpenChange,
+  onShieldOpenChange,
   isVerticalTabs = false,
   onToggleVerticalTabs,
   className = '',
@@ -57,6 +64,7 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   const [isUserEditing, setIsUserEditing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isPickerVisible, setIsPickerVisible] = useState(false);
+  const [isShieldOpen, setIsShieldOpen] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const activeTabIdRef = useRef<string | null>(null);
@@ -204,13 +212,13 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   return (
     <div
       data-tauri-drag-region
-      className={`relative flex items-center justify-between h-[46px] w-[580px] max-w-[calc(100vw-180px)] px-2.5 rounded-[18px] bg-[#181818]/95 backdrop-blur-xl border ${
+      className={`relative flex items-center justify-between h-[46px] w-[580px] max-w-[calc(100vw-180px)] px-2.5 rounded-[18px] bg-[var(--island-resting-surface,#181818)] text-[var(--text,#f5f5f5)] backdrop-blur-xl border ${
         activeTab?.is_private
-          ? 'border-dashed border-[#444444]'
+          ? 'border-dashed border-[var(--border,#444)]'
           : isFocused
-          ? 'border-[#444444] ring-1 ring-white/10'
-          : 'border-[#2a2a2a] hover:border-[#383838]'
-      } shadow-[0_4px_20px_-4px_rgba(0,0,0,0.5)] transition-all duration-200 select-none z-50 ${className}`}
+          ? 'border-[#d4ad66]/60 ring-1 ring-[#d4ad66]/30'
+          : 'border-[var(--border,#2a2a2a)] hover:border-[#d4ad66]/30'
+      } shadow-[0_4px_20px_-4px_rgba(0,0,0,0.3)] transition-all duration-200 select-none z-50 ${className}`}
     >
       {/* 1. LEFT NAVIGATION CONTROLS */}
       <div className="flex items-center space-x-0.5 shrink-0 no-drag" data-tauri-drag-region>
@@ -324,7 +332,7 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
               }}
               onKeyDown={handleKeyDown}
               placeholder={`Search ${searchEngine} or enter URL...`}
-              className="w-full bg-transparent text-[14px] text-white/95 placeholder-white/35 
+              className="w-full bg-transparent text-[14px] text-[var(--text,#f5f5f5)] placeholder-[var(--text-dim,#888)] 
                 outline-none border-none tracking-tight font-medium"
             />
 
@@ -356,16 +364,16 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
                   }}
                 />
               ) : (
-                <Globe className="w-3.5 h-3.5 text-white/40 shrink-0" />
+                <Globe className="w-3.5 h-3.5 text-[var(--text-dim,#888)] shrink-0" />
               )}
               <span className={`text-[14px] truncate tracking-tight ${
-                isNewTab ? 'text-white/50' : 'text-white/90 font-medium'
+                isNewTab ? 'text-[var(--text-dim,#888)]' : 'text-[var(--text,#f5f5f5)] font-medium'
               }`}>
                 {isNewTab ? 'new tab' : displayTitle}
               </span>
             </div>
             <span
-              className="ml-2 text-[11.5px] font-mono text-white/30 px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.06] shrink-0"
+              className="ml-2 text-[11.5px] font-mono text-[var(--text-dim,#888)] px-1.5 py-0.5 rounded bg-[var(--surface)] border border-[var(--border)] shrink-0"
               title="Commands (/ or Ctrl+L)"
             >
               /
@@ -375,10 +383,10 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
       </div>
 
       {/* SUBTLE VERTICAL DIVIDER */}
-      <div className="w-px h-3.5 bg-white/10 mx-1.5 shrink-0" />
+      <div className="w-px h-3.5 bg-[var(--border)] mx-1.5 shrink-0" />
 
       {/* 3. RIGHT SECTION: SHIELD BADGE & STATUS */}
-      <div className="flex items-center space-x-1.5 shrink-0 no-drag" data-tauri-drag-region>
+      <div className="relative flex items-center space-x-1.5 shrink-0 no-drag" data-tauri-drag-region>
         {activeTab?.is_private && (
           <span className="px-1.5 py-0.5 rounded text-[11px] uppercase font-mono tracking-wider bg-white/10 text-white/70 shrink-0">
             private
@@ -388,15 +396,38 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
         {/* Shield Tracker Counter Badge */}
         <button
           type="button"
-          onClick={onOpenSettings}
+          onClick={() => {
+            const next = !isShieldOpen;
+            setIsShieldOpen(next);
+            onShieldOpenChange?.(next);
+          }}
           title={`${activeTab?.blocked_trackers || 0} ads & trackers blocked`}
-          className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-white/[0.09] border border-white/10 text-white/80 hover:text-white text-[12px] font-medium transition-colors cursor-pointer shrink-0"
+          className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full border text-[12px] font-medium transition-colors cursor-pointer shrink-0 ${
+            isShieldOpen
+              ? 'bg-[#d4ad66]/20 border-[#d4ad66]/40 text-[#d4ad66]'
+              : 'bg-white/[0.05] hover:bg-white/[0.09] border-white/10 text-white/80 hover:text-white'
+          }`}
         >
           <ShieldCheck className="w-3.5 h-3.5 text-[#d4ad66]" />
           <span className="tabular-nums font-mono">
             {activeTab?.blocked_trackers || 0}
           </span>
         </button>
+
+        {/* Shield Flyout Modal */}
+        {isShieldOpen && (
+          <ShieldFlyout
+            isOpen={true}
+            activeTab={activeTab}
+            adblockStats={adblockStats}
+            onClose={() => {
+              setIsShieldOpen(false);
+              onShieldOpenChange?.(false);
+            }}
+            onOpenSettings={onOpenSettings}
+            onOpenDiagnostics={onOpenDiagnostics}
+          />
+        )}
       </div>
     </div>
   );

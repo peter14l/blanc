@@ -55,6 +55,8 @@ pub struct UserSettings {
     pub vertical_tabs: bool,
     #[serde(default)]
     pub vertical_tabs_collapsed: bool,
+    #[serde(default)]
+    pub font_family: String,
 }
 
 impl Default for UserSettings {
@@ -68,6 +70,7 @@ impl Default for UserSettings {
             startup_behavior: "newtab".to_string(),
             vertical_tabs: false,
             vertical_tabs_collapsed: false,
+            font_family: "Inter".to_string(),
         }
     }
 }

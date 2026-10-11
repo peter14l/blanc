@@ -63,7 +63,7 @@ export default {
         'strip': '68px',
       },
       fontFamily: {
-        ui: ['"Inter"', '-apple-system', '"Segoe UI Variable"', '"Segoe UI"', 'system-ui', 'sans-serif'],
+        ui: ['var(--font-ui)', '"Inter"', '-apple-system', '"Segoe UI Variable"', '"Segoe UI"', 'system-ui', 'sans-serif'],
       },
     },
   },

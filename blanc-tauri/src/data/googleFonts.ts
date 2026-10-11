@@ -54,6 +54,13 @@ const loadedFonts = new Set<string>();
 export function applyFontToDocument(fontName: string): void {
   if (!fontName || fontName === 'System UI') {
     document.documentElement.style.removeProperty('--font-ui');
+    document.body.style.removeProperty('--font-ui');
+    document.body.style.removeProperty('font-family');
+    if (typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)) {
+      import('@tauri-apps/api/core').then(({ invoke }) => {
+        invoke('apply_font_to_webviews', { fontName: '' }).catch(() => {});
+      }).catch(() => {});
+    }
     return;
   }
 
@@ -84,5 +91,14 @@ export function applyFontToDocument(fontName: string): void {
     ? 'monospace'
     : 'sans-serif';
 
-  document.documentElement.style.setProperty('--font-ui', `"${option.name}", ${fallback}`);
+  const fontVal = `"${option.name}", ${fallback}`;
+  document.documentElement.style.setProperty('--font-ui', fontVal);
+  document.body.style.setProperty('--font-ui', fontVal);
+  document.body.style.fontFamily = fontVal;
+
+  if (typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)) {
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('apply_font_to_webviews', { fontName: option.name }).catch(() => {});
+    }).catch(() => {});
+  }
 }

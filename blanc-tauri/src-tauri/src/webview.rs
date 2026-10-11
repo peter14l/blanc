@@ -24,6 +24,7 @@ pub struct TabNavigated {
     pub tab_id: String,
     pub url: Option<String>,
     pub title: Option<String>,
+    pub favicon: Option<String>,
 }
 
 /// Matches the shell layout (16px side gutters, 74px top strip, 16px bottom gutter)
@@ -296,6 +297,26 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
           };
         }
       })();
+
+      // Favicon change detector
+      function reportFavicon() {
+        try {
+          var link = document.querySelector('link[rel~="icon"]') || document.querySelector('link[rel*="icon"]');
+          var href = link ? link.href : (window.location.origin + '/favicon.ico');
+          if (href && window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+            window.chrome.webview.postMessage(JSON.stringify({
+              type: 'BLANC_FAVICON_CHANGED',
+              favicon: href
+            }));
+          }
+        } catch(e) {}
+      }
+      if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        reportFavicon();
+      } else {
+        window.addEventListener('DOMContentLoaded', reportFavicon);
+        window.addEventListener('load', reportFavicon);
+      }
     })();
     "#;
 
@@ -354,19 +375,58 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
                     || url_str.ends_with(".apk");
 
                 if !is_download {
+                    let domain_favicon = url.host_str().map(|h| {
+                        format!("https://www.google.com/s2/favicons?domain={}&sz=64", h)
+                    });
                     let _ = nav_app.emit(
                         "tab-navigated",
                         TabNavigated {
                             tab_id: nav_id.clone(),
                             url: Some(url.to_string()),
                             title: None,
+                            favicon: domain_favicon,
                         },
                     );
                 }
 
-                // Inject cosmetic rules for newly navigated URL if active webview is navigated
+                // Inject user font and cosmetic adblock rules for newly navigated URL
                 if let Some(wv) = nav_app.get_webview(&nav_id) {
                     if let Some(state) = nav_app.try_state::<AppState>() {
+                        // 1. Inject font style if configured
+                        let font_name = state.storage.load().settings.font_family;
+                        if !font_name.is_empty() && font_name != "System UI" {
+                            let google_url = format!(
+                                "https://fonts.googleapis.com/css2?family={}:wght@300;400;500;600;700&display=swap",
+                                font_name.replace(' ', "+")
+                            );
+                            let font_js = format!(
+                                r#"
+                                (function() {{
+                                    let link = document.getElementById('__blanc_user_font_link');
+                                    if (!link) {{
+                                        link = document.createElement('link');
+                                        link.id = '__blanc_user_font_link';
+                                        link.rel = 'stylesheet';
+                                        (document.head || document.documentElement).appendChild(link);
+                                    }}
+                                    link.href = '{}';
+
+                                    let style = document.getElementById('__blanc_user_font_style');
+                                    if (!style) {{
+                                        style = document.createElement('style');
+                                        style.id = '__blanc_user_font_style';
+                                        (document.head || document.documentElement).appendChild(style);
+                                    }}
+                                    style.textContent = `html, body, p, span, h1, h2, h3, h4, h5, h6, a, div, li, input, textarea, select, button {{ font-family: "{}", system-ui, -apple-system, sans-serif !important; }}`;
+                                }})();
+                                "#,
+                                google_url,
+                                font_name
+                            );
+                            let _ = wv.eval(&font_js);
+                        }
+
+                        // 2. Inject cosmetic rules
                         if let Ok(adblock) = state.adblock.lock() {
                             if let Some(css) = adblock.get_cosmetic_css(url.as_str()) {
                                 let inject_js = format!(
@@ -401,6 +461,7 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
                         tab_id: title_id.clone(),
                         url: None,
                         title: Some(title),
+                        favicon: None,
                     },
                 );
             }
@@ -478,10 +539,63 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
             )
         });
 
+        let font_family = if let Some(state) = app.try_state::<AppState>() {
+            let s = state.storage.load().settings;
+            if s.font_family != "Inter" && s.font_family != "System UI" && !s.font_family.is_empty() {
+                Some(s.font_family)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let font_script = font_family.map(|font| {
+            let google_url = format!("https://fonts.googleapis.com/css2?family={}:wght@300;400;500;600;700&display=swap", font.replace(' ', "+"));
+            format!(
+                r#"
+                (function() {{
+                    function __blanc_inject_font() {{
+                        if (document.getElementById('__blanc_user_font_link')) return;
+                        const link = document.createElement('link');
+                        link.id = '__blanc_user_font_link';
+                        link.rel = 'stylesheet';
+                        link.href = '{}';
+                        (document.head || document.documentElement).appendChild(link);
+
+                        const style = document.createElement('style');
+                        style.id = '__blanc_user_font_style';
+                        style.textContent = `html, body, p, span, h1, h2, h3, h4, h5, h6, a, div, li, input, textarea, select, button {{ font-family: "{}", system-ui, -apple-system, sans-serif !important; }}`;
+                        (document.head || document.documentElement).appendChild(style);
+                    }}
+                    if (document.documentElement) __blanc_inject_font();
+                    document.addEventListener('DOMContentLoaded', __blanc_inject_font);
+                }})();
+                "#,
+                google_url,
+                font
+            )
+        });
+
         let _ = wv.with_webview(move |platform_webview| {
             unsafe {
                 let controller = platform_webview.controller();
                 if let Ok(core) = controller.CoreWebView2() {
+                    // Enable full browser context menus and dev tools
+                    if let Ok(settings) = core.Settings() {
+                        let _ = settings.SetAreDefaultContextMenusEnabled(true);
+                        let _ = settings.SetAreDevToolsEnabled(true);
+                    }
+
+                    // Inject user font override if configured
+                    if let Some(ref script) = font_script {
+                        let script_hstring = windows::core::HSTRING::from(script.as_str());
+                        let script_handler = AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(
+                            Box::new(|_res, _id| Ok(())),
+                        );
+                        let _ = core.AddScriptToExecuteOnDocumentCreated(&script_hstring, &script_handler);
+                    }
+
                     // 1. Attach wildcard filter for all web resource requests
                     let _ = core.AddWebResourceRequestedFilter(
                         w!("*"),
@@ -625,6 +739,18 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
                                                 "tabId": notif_tab_id.clone(),
                                             }),
                                         );
+                                    } else if msg_type == "BLANC_FAVICON_CHANGED" {
+                                        if let Some(fav) = val.get("favicon").and_then(|f| f.as_str()) {
+                                            let _ = notif_app.emit(
+                                                "tab-navigated",
+                                                TabNavigated {
+                                                    tab_id: notif_tab_id.clone(),
+                                                    url: None,
+                                                    title: None,
+                                                    favicon: Some(fav.to_string()),
+                                                },
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -1048,6 +1174,65 @@ pub fn capture_tab_thumbnail(app: &AppHandle, tab_id: &str) {
 
 #[cfg(not(desktop))]
 pub fn capture_tab_thumbnail(_app: &AppHandle, _tab_id: &str) {}
+
+/// Dynamically injects the user's chosen font style into all active webviews
+#[cfg(desktop)]
+pub fn apply_font_to_webviews(app: &AppHandle, font_name: &str) {
+    if font_name.is_empty() || font_name == "System UI" {
+        let reset_js = r#"
+            (function() {
+                let el = document.getElementById('__blanc_user_font_style');
+                if (el) el.remove();
+                let lk = document.getElementById('__blanc_user_font_link');
+                if (lk) lk.remove();
+            })();
+        "#;
+        for (label, wv) in app.webviews() {
+            if label != "main" {
+                let _ = wv.eval(reset_js);
+            }
+        }
+        return;
+    }
+
+    let google_url = format!(
+        "https://fonts.googleapis.com/css2?family={}:wght@300;400;500;600;700&display=swap",
+        font_name.replace(' ', "+")
+    );
+    let inject_js = format!(
+        r#"
+        (function() {{
+            let link = document.getElementById('__blanc_user_font_link');
+            if (!link) {{
+                link = document.createElement('link');
+                link.id = '__blanc_user_font_link';
+                link.rel = 'stylesheet';
+                (document.head || document.documentElement).appendChild(link);
+            }}
+            link.href = '{}';
+
+            let style = document.getElementById('__blanc_user_font_style');
+            if (!style) {{
+                style = document.createElement('style');
+                style.id = '__blanc_user_font_style';
+                (document.head || document.documentElement).appendChild(style);
+            }}
+            style.textContent = `html, body, p, span, h1, h2, h3, h4, h5, h6, a, div, li, input, textarea, select, button {{ font-family: "{}", system-ui, -apple-system, sans-serif !important; }}`;
+        }})();
+        "#,
+        google_url,
+        font_name
+    );
+
+    for (label, wv) in app.webviews() {
+        if label != "main" {
+            let _ = wv.eval(&inject_js);
+        }
+    }
+}
+
+#[cfg(not(desktop))]
+pub fn apply_font_to_webviews(_app: &AppHandle, _font_name: &str) {}
 
 /// Applies the reported viewport to the active tab's webview and hides every other
 /// page view. `hidden` is true while an overlay (switcher, quick search) is open or

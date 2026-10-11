@@ -268,6 +268,11 @@ fn capture_tab_thumbnail(app: AppHandle, tab_id: String) {
 }
 
 #[tauri::command]
+fn apply_font_to_webviews(app: AppHandle, font_name: String) {
+    webview::apply_font_to_webviews(&app, &font_name);
+}
+
+#[tauri::command]
 async fn discard_tab(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1352,6 +1357,7 @@ pub fn run() {
             close_all_tabs,
             switch_tab,
             capture_tab_thumbnail,
+            apply_font_to_webviews,
             discard_tab,
             sleep_idle_tabs,
             navigate,

@@ -20,6 +20,7 @@ import { GestureHUD } from './components/GestureHUD';
 import { WindowControls } from './components/WindowControls';
 import { PermissionPrompt } from './components/PermissionPrompt';
 import { NotificationToast } from './components/NotificationToast';
+import { ContextMenu } from './components/ContextMenu';
 import { ExternalLink, Loader2 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -70,8 +71,45 @@ export const App: React.FC = () => {
   const [isFindOpen, setIsFindOpen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [isOmniboxSuggestionsOpen, setIsOmniboxSuggestionsOpen] = useState(false);
+  const [isShieldOpen, setIsShieldOpen] = useState(false);
   const [isTabHUDOpen, setIsTabHUDOpen] = useState(false);
   const [tabHUDIndex, setTabHUDIndex] = useState(0);
+  const [contextMenu, setContextMenu] = useState<{
+    isOpen: boolean;
+    x: number;
+    y: number;
+    selectedText?: string;
+    linkUrl?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      const selection = window.getSelection()?.toString() || '';
+
+      let linkUrl: string | undefined;
+      let target = e.target as HTMLElement | null;
+      while (target && target !== document.body) {
+        if (target.tagName?.toLowerCase() === 'a' && (target as HTMLAnchorElement).href) {
+          linkUrl = (target as HTMLAnchorElement).href;
+          break;
+        }
+        target = target.parentElement;
+      }
+
+      setContextMenu({
+        isOpen: true,
+        x: e.clientX,
+        y: e.clientY,
+        selectedText: selection,
+        linkUrl,
+      });
+    };
+
+    window.addEventListener('contextmenu', handleContextMenu);
+    return () => window.removeEventListener('contextmenu', handleContextMenu);
+  }, []);
+
   const isTabHUDOpenRef = useRef(false);
   const tabHUDIndexRef = useRef(0);
   const handleKeyDownRef = useRef<(e: any) => void>(() => {});
@@ -550,7 +588,14 @@ export const App: React.FC = () => {
     const updateNativeViewport = () => {
       if (!mainRef.current) return;
       const rect = mainRef.current.getBoundingClientRect();
-      const hidden = isInternalPage || isQuickSwitcherOpen || isTabSwitcherOpen || isOmniboxSuggestionsOpen || isTabHUDOpen;
+      const hidden =
+        isInternalPage ||
+        isQuickSwitcherOpen ||
+        isTabSwitcherOpen ||
+        isOmniboxSuggestionsOpen ||
+        isTabHUDOpen ||
+        isShieldOpen ||
+        Boolean(contextMenu?.isOpen);
       setViewport(rect.left, rect.top, rect.width, rect.height, hidden, activeTab?.id);
     };
 
@@ -579,6 +624,8 @@ export const App: React.FC = () => {
     isTabSwitcherOpen,
     isOmniboxSuggestionsOpen,
     isTabHUDOpen,
+    isShieldOpen,
+    contextMenu?.isOpen,
     setViewport,
     settings.verticalTabs,
     settings.verticalTabsCollapsed,
@@ -665,8 +712,8 @@ export const App: React.FC = () => {
   return (
     <div
       className={`relative w-screen h-screen ${
-        !isInternalPage && isTauriAvailable ? 'bg-transparent' : 'bg-[#0e0e0e]'
-      } text-white overflow-hidden font-ui select-none`}
+        !isInternalPage && isTauriAvailable ? 'bg-transparent' : 'bg-[var(--bg)]'
+      } text-[var(--text)] overflow-hidden font-ui select-none`}
     >
       {/* WINDOW CONTROLS (PLATFORM-NATIVE ADAPTIVE CONTROLS) */}
       {isMac ? (
@@ -717,12 +764,17 @@ export const App: React.FC = () => {
             ? 'left-[82px] sm:left-[86px]'
             : 'left-[262px] sm:left-[270px]'
           : 'left-0'
-      } right-0 h-[68px] bg-[#0e0e0e] flex items-center justify-center pointer-events-none z-50 transition-colors duration-150`}>
+      } right-0 h-[68px] bg-[var(--bg)] border-b border-[var(--border)]/30 flex items-center justify-center pointer-events-none z-50 transition-colors duration-150`}>
         <div className="pointer-events-auto w-full flex justify-center px-4">
           <FloatingIsland
             activeTab={activeTab}
             tabsCount={tabs.length}
             searchEngine={settings.searchEngine}
+            adblockStats={adblockStats}
+            onOpenDiagnostics={() => {
+              if (activeTab) navigate(activeTab.id, 'blanc://diagnostics');
+              else createTab('blanc://diagnostics');
+            }}
             onNavigate={(url) => {
               if (activeTab) navigate(activeTab.id, url);
               else createTab(url);
@@ -760,6 +812,7 @@ export const App: React.FC = () => {
             history={history}
             bookmarks={bookmarks}
             onSuggestionsOpenChange={setIsOmniboxSuggestionsOpen}
+            onShieldOpenChange={setIsShieldOpen}
             isVerticalTabs={isVerticalTabs}
             onToggleVerticalTabs={() => updateSettings({ verticalTabs: !settings.verticalTabs })}
           />
@@ -792,10 +845,10 @@ export const App: React.FC = () => {
               ? 'left-[82px] sm:left-[86px]'
               : 'left-[262px] sm:left-[270px]'
             : 'left-2.5 sm:left-3'
-        } rounded-2xl border border-[#222222] shadow-2xl overflow-hidden flex flex-col z-10 ${
+        } rounded-2xl border border-[var(--border)] shadow-2xl overflow-hidden flex flex-col z-10 ${
           !isInternalPage && isTauriAvailable
             ? 'bg-transparent pointer-events-none'
-            : 'bg-[#0e0e0e] pointer-events-auto'
+            : 'bg-[var(--bg)] text-[var(--text)] pointer-events-auto'
         }`}
       >
         {/* INTERNAL PAGE: New Tab Page */}
@@ -886,6 +939,13 @@ export const App: React.FC = () => {
           isTauriAvailable ? (
             /* In native Tauri, the child webview is natively embedded in this viewport. */
             <div className="flex-1 w-full h-full relative bg-transparent flex flex-col overflow-hidden pointer-events-none">
+              {activeTab?.thumbnail && (
+                <img
+                  src={activeTab.thumbnail}
+                  alt=""
+                  className="w-full h-full object-cover filter brightness-[0.98]"
+                />
+              )}
               {activeTab?.is_loading && (
                 <div className="absolute top-0 left-0 right-0 h-1 bg-[#d4ad66]/30 z-20 overflow-hidden pointer-events-auto">
                   <div className="w-full h-full bg-[#d4ad66] animate-pulse origin-left" />
@@ -1034,6 +1094,65 @@ export const App: React.FC = () => {
 
       {/* MOUSE GESTURES HUD OVERLAY */}
       <GestureHUD state={hudState} />
+
+      {/* RICH BROWSER CONTEXT MENU */}
+      {contextMenu && contextMenu.isOpen && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          selectedText={contextMenu.selectedText}
+          linkUrl={contextMenu.linkUrl}
+          activeUrl={activeTab?.url}
+          canGoBack={activeTab?.can_go_back}
+          canGoForward={activeTab?.can_go_forward}
+          onBack={() => {
+            if (activeTab) goBack(activeTab.id);
+          }}
+          onForward={() => {
+            if (activeTab) goForward(activeTab.id);
+          }}
+          onReload={() => {
+            if (activeTab) reloadTab(activeTab.id);
+          }}
+          onNewTab={(url) => {
+            createTab(url || 'blanc://newtab');
+          }}
+          onDuplicateTab={() => {
+            if (activeTab) createTab(activeTab.url);
+          }}
+          onCloseTab={() => {
+            if (activeTab) closeTab(activeTab.id);
+          }}
+          onCopyUrl={(url) => {
+            navigator.clipboard.writeText(url);
+          }}
+          onSearchSelected={(query) => {
+            const searchUrl =
+              settings.searchEngine === 'Google'
+                ? `https://www.google.com/search?q=${encodeURIComponent(query)}`
+                : settings.searchEngine === 'Bing'
+                ? `https://www.bing.com/search?q=${encodeURIComponent(query)}`
+                : `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+            createTab(searchUrl);
+          }}
+          onViewSource={() => {
+            if (activeTab && activeTab.url.startsWith('http')) {
+              createTab(`view-source:${activeTab.url}`);
+            }
+          }}
+          onInspect={() => {
+            // WebView2 has devtools enabled via SetAreDevToolsEnabled(true)
+          }}
+          onPrint={() => {
+            window.print();
+          }}
+          onOpenSettings={() => {
+            if (activeTab) navigate(activeTab.id, 'blanc://settings');
+            else createTab('blanc://settings');
+          }}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 };
