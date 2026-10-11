@@ -16,6 +16,8 @@ pub mod webview;
 pub mod workspaces;
 #[cfg(target_os = "windows")]
 pub mod keyboard_hook;
+pub mod import;
+pub mod vault;
 
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -30,6 +32,8 @@ use patron::{PatronState, PatronStatus};
 use credentials::{CredentialBroker, FillStatus};
 use sync::{SyncEligibility, SyncableData, validate_sync_payload};
 use proxy::proxy_fetch;
+use import::{BrowserProfileSource, ImportOptions, ImportResult};
+use vault::{CredentialSummary, CredentialVault};
 
 pub struct AppState {
     pub browser: Mutex<BrowserState>,
@@ -1269,6 +1273,166 @@ fn credential_trigger_fill(
 // -----------------------------------------------------------------------------
 // RUNNER ENTRY POINT
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// BROWSER IMPORT COMMANDS
+// -----------------------------------------------------------------------------
+
+/// Discover all installed browser profiles that can be imported from.
+/// Runs only on explicit user request (F30 invariant).
+#[tauri::command]
+fn discover_browser_sources() -> Vec<BrowserProfileSource> {
+    import::discovery::discover_all()
+}
+
+/// Execute a full import run based on user-selected options.
+#[tauri::command]
+async fn import_browser_data(
+    state: State<'_, AppState>,
+    options: ImportOptions,
+) -> Result<ImportResult, String> {
+    // Find the requested profile source.
+    let sources = import::discovery::discover_all();
+    let source = sources
+        .into_iter()
+        .find(|s| s.id == options.source_id)
+        .ok_or_else(|| format!("Browser source '{}' not found", options.source_id))?;
+
+    let mut result = ImportResult::default();
+    let profile_path = std::path::Path::new(&source.profile_path);
+
+    // --- Bookmarks ---
+    if options.import_bookmarks && source.has_bookmarks {
+        let bookmarks_path = profile_path.join("Bookmarks");
+        match source.browser_id.as_str() {
+            "firefox" => {
+                // Firefox: read from places.sqlite via direct bookmark query
+                // (rusqlite-based; similar temp-copy approach)
+                result.warnings.push(
+                    "Firefox bookmarks import via SQLite is not yet implemented; \
+                     use File → Export Bookmarks as HTML from Firefox instead."
+                        .to_string(),
+                );
+            }
+            _ => {
+                // Chromium family: JSON Bookmarks file.
+                match import::bookmarks::parse_chromium_bookmarks(&bookmarks_path) {
+                    Ok(bms) => {
+                        let (imported, skipped) = state.storage.import_bookmarks_batch(bms);
+                        result.bookmarks_imported = imported;
+                        result.bookmarks_skipped = skipped;
+                    }
+                    Err(e) => {
+                        result.warnings.push(format!("Bookmarks import failed: {}", e));
+                    }
+                }
+            }
+        }
+    }
+
+    // --- History ---
+    if options.import_history && source.has_history {
+        let history_result = match source.browser_id.as_str() {
+            "firefox" => {
+                let places = profile_path.join("places.sqlite");
+                import::history::read_firefox_history(&places)
+            }
+            _ => {
+                let hist = profile_path.join("History");
+                import::history::read_chromium_history(&hist)
+            }
+        };
+        match history_result {
+            Ok(entries) => {
+                result.history_imported = state.storage.import_history_batch(entries);
+            }
+            Err(e) => {
+                result.warnings.push(format!("History import failed: {}", e));
+            }
+        }
+    }
+
+// --- Passwords ---
+    if options.import_passwords && source.has_passwords {
+        let creds = import::passwords::read_chromium_passwords(
+            &source.profile_path,
+            &mut result.warnings,
+        );
+        if !creds.is_empty() {
+            let vault = CredentialVault::new();
+            match vault.import_batch(creds) {
+                Ok(n) => result.passwords_imported = n,
+                Err(e) => result.warnings.push(format!("Vault write failed: {}", e)),
+            }
+        }
+    }
+
+    // --- Open tabs (Chromium SNSS sessions) ---
+    if options.import_open_tabs && source.has_sessions {
+        match import::sessions::read_open_tabs(&profile_path) {
+            Ok(urls) => result.tabs_imported = urls.len(),
+            Err(e) => result.warnings.push(format!("Open tabs import failed: {}", e)),
+        }
+    }
+
+    Ok(result)
+}
+
+/// Import bookmarks from a Netscape HTML file (string content).
+#[tauri::command]
+fn import_bookmarks_html(
+    state: State<'_, AppState>,
+    file_content: String,
+) -> ImportResult {
+    let bms = import::html::parse_html_bookmarks(&file_content);
+    let total = bms.len();
+    let (imported, skipped) = state.storage.import_bookmarks_batch(bms);
+    ImportResult {
+        bookmarks_imported: imported,
+        bookmarks_skipped: skipped,
+        history_imported: 0,
+        passwords_imported: 0,
+        tabs_imported: 0,
+        warnings: if total == 0 {
+            vec!["No valid bookmarks found in the HTML file.".to_string()]
+        } else {
+            Vec::new()
+        },
+    }
+}
+
+/// Import passwords from a browser-exported CSV file (string content).
+#[tauri::command]
+fn import_passwords_csv(file_content: String) -> Result<ImportResult, String> {
+    let entries = import::passwords::parse_csv(&file_content)?;
+    let count = entries.len();
+    let vault = CredentialVault::new();
+    let imported = vault.import_batch(entries).map_err(|e| e.to_string())?;
+    Ok(ImportResult {
+        bookmarks_imported: 0,
+        bookmarks_skipped: 0,
+        history_imported: 0,
+        passwords_imported: imported,
+        tabs_imported: 0,
+        warnings: if count == 0 {
+            vec!["No valid password entries found in the CSV file.".to_string()]
+        } else {
+            Vec::new()
+        },
+    })
+}
+
+/// List all stored credential summaries (passwords masked).
+#[tauri::command]
+fn list_stored_passwords() -> Vec<CredentialSummary> {
+    CredentialVault::new().list_summaries()
+}
+
+/// Delete a stored credential by ID.
+#[tauri::command]
+fn delete_stored_password(id: String) -> Result<(), String> {
+    CredentialVault::new().delete(&id)
+}
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -1431,6 +1595,12 @@ pub fn run() {
             credential_check,
             credential_trigger_fill,
             proxy_fetch,
+            discover_browser_sources,
+            import_browser_data,
+            import_bookmarks_html,
+            import_passwords_csv,
+            list_stored_passwords,
+            delete_stored_password,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

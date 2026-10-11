@@ -299,6 +299,68 @@ impl StorageManager {
     }
 
     // -------------------------------------------------------------------------
+    // BATCH IMPORT (browser data migration)
+    // -------------------------------------------------------------------------
+
+    /// Import a batch of bookmarks, deduplicating by URL.
+    /// Returns (imported_count, skipped_count).
+    pub fn import_bookmarks_batch(&self, incoming: Vec<Bookmark>) -> (usize, usize) {
+        let mut data = self.load();
+        let existing_urls: std::collections::HashSet<String> =
+            data.bookmarks.iter().map(|b| b.url.clone()).collect();
+
+        let mut imported = 0usize;
+        let mut skipped = 0usize;
+
+        for mut bm in incoming {
+            if existing_urls.contains(&bm.url) {
+                skipped += 1;
+                continue;
+            }
+            // Generate a unique id if the import id collides.
+            if data.bookmarks.iter().any(|b| b.id == bm.id) {
+                bm.id = format!("import-{}", crate::model::now_millis());
+            }
+            data.bookmarks.push(bm);
+            imported += 1;
+        }
+
+        let _ = self.save(&data);
+        (imported, skipped)
+    }
+
+    /// Import a batch of history entries, deduplicating by URL.
+    /// Merges visit counts for existing entries; adds new ones at the front.
+    /// Returns total new entries added.
+    pub fn import_history_batch(&self, incoming: Vec<HistoryEntry>) -> usize {
+        let mut data = self.load();
+        let mut added = 0usize;
+
+        for entry in incoming {
+            if let Some(existing) = data.history.iter_mut().find(|h| h.url == entry.url) {
+                if entry.visited_at > existing.visited_at {
+                    existing.visited_at = entry.visited_at;
+                }
+                existing.visit_count += entry.visit_count;
+                if existing.title.is_empty() && !entry.title.is_empty() {
+                    existing.title = entry.title;
+                }
+            } else {
+                data.history.insert(0, entry);
+                added += 1;
+            }
+        }
+
+        // Cap to 5000 (generous for imported data; regular cap is 2000).
+        if data.history.len() > 5000 {
+            data.history.truncate(5000);
+        }
+
+        let _ = self.save(&data);
+        added
+    }
+
+    // -------------------------------------------------------------------------
     // SETTINGS
     // -------------------------------------------------------------------------
 

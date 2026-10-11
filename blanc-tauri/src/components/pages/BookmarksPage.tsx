@@ -12,8 +12,10 @@ import {
   ExternalLink,
   Globe,
   X,
+  Upload,
 } from 'lucide-react';
 import { Bookmark } from '../../types/browser';
+import ImportBrowserDataModal from '../ImportBrowserDataModal';
 
 interface BookmarksPageProps {
   bookmarks: Bookmark[];
@@ -36,6 +38,7 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
   const [selectedFolder, setSelectedFolder] = useState<string>('All');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Add / Edit Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -180,6 +183,16 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Bookmark</span>
+            </button>
+
+            {/* Import Bookmarks Button */}
+            <button
+              onClick={() => setIsImportModalOpen(true)}
+              title="Import bookmarks from another browser"
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-[12px] font-medium transition-colors"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Import</span>
             </button>
           </div>
         </div>
@@ -551,6 +564,11 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* IMPORT BROWSER DATA MODAL */}
+      {isImportModalOpen && (
+        <ImportBrowserDataModal onClose={() => setIsImportModalOpen(false)} />
       )}
     </div>
   );

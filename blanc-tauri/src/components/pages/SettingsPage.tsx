@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Settings,
   Search,
@@ -19,6 +19,9 @@ import {
   Bell,
   MapPin,
   Sidebar,
+  Upload,
+  KeyRound,
+  Trash2,
 } from 'lucide-react';
 import {
   BrowserSettings,
@@ -26,7 +29,17 @@ import {
   ThemeMode,
 } from '../../types/browser';
 import { FontSwitcher } from '../FontSwitcher';
+import ImportBrowserDataModal from '../ImportBrowserDataModal';
 import { NATURE_WALLPAPERS, applyWallpaperTheme } from '../../data/natureWallpapers';
+
+interface StoredCredentialSummary {
+  id: string;
+  url: string;
+  title: string;
+  username: string;
+  createdAt: number;
+  lastUsed: number;
+}
 
 interface SettingsPageProps {
   settings: BrowserSettings;
@@ -39,6 +52,42 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   onUpdateSettings,
   onNavigate,
 }) => {
+  const isTauri = () =>
+    typeof window !== 'undefined' &&
+    ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [savedPasswords, setSavedPasswords] = useState<StoredCredentialSummary[]>([]);
+  const [passwordsLoading, setPasswordsLoading] = useState(false);
+
+  const loadSavedPasswords = useCallback(async () => {
+    if (!isTauri()) return;
+    try {
+      setPasswordsLoading(true);
+      const { invoke } = await import('@tauri-apps/api/core');
+      setSavedPasswords(await invoke<StoredCredentialSummary[]>('list_stored_passwords'));
+    } catch (e) {
+      console.warn('[Settings] list_stored_passwords failed:', e);
+    } finally {
+      setPasswordsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSavedPasswords();
+  }, [loadSavedPasswords]);
+
+  const handleDeletePassword = async (id: string) => {
+    if (!isTauri()) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('delete_stored_password', { id });
+      setSavedPasswords((prev) => prev.filter((p) => p.id !== id));
+    } catch (e) {
+      console.warn('[Settings] delete_stored_password failed:', e);
+    }
+  };
+
   const searchEngines: { id: SearchEngine; name: string; desc: string; domain: string }[] = [
     {
       id: 'DuckDuckGo',
@@ -684,6 +733,85 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </section>
 
+        {/* 9. IMPORT & DATA MIGRATION */}
+        <section className="space-y-3 pt-4 border-t border-white/10">
+          <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">
+            <Upload className="w-4 h-4 text-[#d4ad66]" />
+            <span>Import & Data Migration</span>
+          </div>
+          <p className="text-[12px] text-white/50">
+            Bring your bookmarks, browsing history, and saved passwords from another browser installed on this machine.
+          </p>
+
+          <div className="rounded-2xl border border-white/5 bg-white/[0.02] divide-y divide-white/5">
+            <div className="flex items-center justify-between p-4">
+              <div className="pr-4">
+                <span className="text-[13px] font-medium text-white/90">
+                  Import from other browsers
+                </span>
+                <p className="text-[12px] text-white/40 mt-0.5">
+                  Detects installed Chrome, Edge, Brave, Firefox, and other Chromium profiles, or import a bookmarks HTML or passwords CSV file.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsImportModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-[#d4ad66] hover:bg-[#e5be73] text-[#12100b] text-[12px] font-semibold transition-colors shrink-0"
+              >
+                Import Browser Data…
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-white/[0.02] overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+              <div className="flex items-center space-x-2 text-[13px] font-medium text-white/90">
+                <KeyRound className="w-4 h-4 text-[#d4ad66]" />
+                <span>Saved Passwords</span>
+              </div>
+              <button
+                onClick={loadSavedPasswords}
+                className="text-[11px] text-white/40 hover:text-white transition-colors"
+              >
+                Refresh
+              </button>
+            </div>
+
+            {!isTauri() ? (
+              <p className="px-4 py-4 text-[12px] text-white/40">
+                Saved passwords are encrypted on-device and managed in the desktop app.
+              </p>
+            ) : passwordsLoading ? (
+              <p className="px-4 py-4 text-[12px] text-white/40">Loading…</p>
+            ) : savedPasswords.length === 0 ? (
+              <p className="px-4 py-4 text-[12px] text-white/40">
+                No saved passwords yet. Enable Saved Passwords during browser import, or import a passwords CSV.
+              </p>
+            ) : (
+              <div className="divide-y divide-white/5">
+                {savedPasswords.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between px-4 py-3">
+                    <div className="min-w-0 pr-3">
+                      <p className="text-[13px] font-medium text-white/90 truncate">
+                        {p.title || p.url}
+                      </p>
+                      <p className="text-[11px] text-white/40 truncate">
+                        {p.username || 'No username'} · <span className="font-mono">{p.url}</span>
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleDeletePassword(p.id)}
+                      title="Delete password"
+                      className="p-1.5 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
         {/* 5. ABOUT BLANC */}
         <section className="space-y-4 pt-4 border-t border-white/10">
           <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">
@@ -747,6 +875,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </section>
       </div>
+
+      {/* IMPORT BROWSER DATA MODAL */}
+      {isImportModalOpen && (
+        <ImportBrowserDataModal
+          onClose={() => setIsImportModalOpen(false)}
+          onBookmarksUpdated={loadSavedPasswords}
+        />
+      )}
     </div>
   );
 };
