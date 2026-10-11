@@ -67,7 +67,7 @@ const DEFAULT_SETTINGS: BrowserSettings = {
   strictHttps: true,
   startupBehavior: 'newtab',
   fontFamily: 'Inter',
-  natureWallpaper: true,
+  natureWallpaper: false,
   wallpaperId: 'emerald-lake',
   mouseGesturesEnabled: true,
   cameraPermission: 'ask',
@@ -706,6 +706,21 @@ export function useBrowserIPC(): BrowserIPCContextType {
     [isTauriAvailable]
   );
 
+  // Capture real rendered website screenshot thumbnail
+  const captureTabThumbnail = useCallback(
+    async (tabId: string): Promise<void> => {
+      if (isTauriAvailable) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('capture_tab_thumbnail', { tabId });
+        } catch (err) {
+          console.warn('[useBrowserIPC] Tauri capture_tab_thumbnail error:', err);
+        }
+      }
+    },
+    [isTauriAvailable]
+  );
+
   // Helper to test if a URL is an internal Blanc surface
   const isInternalUrl = (url: string): boolean => {
     return (
@@ -1305,6 +1320,24 @@ export function useBrowserIPC(): BrowserIPCContextType {
       }).catch((e) => {
         console.warn('[useBrowserIPC] Failed to listen to blanc:web-notification:', e);
       });
+
+      listen<{ tabId: string; thumbnail: string }>('blanc:tab-thumbnail-updated', (event) => {
+        if (event.payload?.tabId && event.payload?.thumbnail) {
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.id === event.payload.tabId ? { ...t, thumbnail: event.payload.thumbnail } : t
+            )
+          );
+        }
+      }).then((fn) => {
+        if (!unlisten) unlisten = fn;
+        else {
+          const prev = unlisten;
+          unlisten = () => { prev(); fn(); };
+        }
+      }).catch((e) => {
+        console.warn('[useBrowserIPC] Failed to listen to blanc:tab-thumbnail-updated:', e);
+      });
     }).catch(() => {});
 
     return () => {
@@ -1343,6 +1376,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
     goForward,
     discardTab,
     sleepIdleTabs,
+    captureTabThumbnail,
     mobileNavigate,
     mobileReload,
     mobileGoBack,

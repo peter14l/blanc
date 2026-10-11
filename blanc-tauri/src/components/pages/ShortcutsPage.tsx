@@ -24,6 +24,7 @@ const SHORTCUTS: ShortcutItem[] = [
   { id: 'reopen-tab', category: 'tabs', description: 'Reopen recently closed tab', keys: ['Ctrl', 'Shift', 'T'] },
   { id: 'switch-tab-cycle', category: 'tabs', description: 'Cycle to next tab', keys: ['Ctrl', 'Tab'] },
   { id: 'switch-tab-cycle-prev', category: 'tabs', description: 'Cycle to previous tab', keys: ['Ctrl', 'Shift', 'Tab'] },
+  { id: 'vertical-tabs', category: 'tabs', description: 'Toggle vertical tabs sidebar', keys: ['Ctrl', 'Shift', 'V'] },
   { id: 'jump-tab', category: 'tabs', description: 'Jump to tab 1-8 / last tab', keys: ['Ctrl', '1-9'] },
   { id: 'tab-switcher', category: 'tabs', description: 'Toggle tab switcher cards', keys: ['Ctrl', 'Shift', 'A'] },
 
@@ -85,7 +86,7 @@ export const ShortcutsPage: React.FC = () => {
           </div>
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-white/95">Keyboard Shortcuts</h1>
-            <p className="text-[13px] text-white/40">
+            <p className="text-[14px] text-white/40">
               Complete command cheat-sheet for rapid browser navigation
             </p>
           </div>
@@ -112,7 +113,7 @@ export const ShortcutsPage: React.FC = () => {
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id as any)}
-                  className={`px-3 py-1.5 rounded-xl text-[12px] font-medium border transition-all flex items-center space-x-1.5 ${
+                  className={`px-3 py-1.5 rounded-xl text-[13px] font-medium border transition-all flex items-center space-x-1.5 ${
                     isActive
                       ? 'bg-[#d4ad66]/15 border-[#d4ad66]/40 text-[#d4ad66]'
                       : 'bg-white/[0.02] border-white/5 text-white/50 hover:bg-white/[0.06] hover:text-white/80'
@@ -141,12 +142,12 @@ export const ShortcutsPage: React.FC = () => {
                 key={item.id}
                 className="flex items-center justify-between px-5 py-3 hover:bg-white/[0.03] transition-colors"
               >
-                <span className="text-[13px] text-white/85 font-medium">{item.description}</span>
+                <span className="text-[14px] text-white/85 font-medium">{item.description}</span>
                 <div className="flex items-center space-x-1.5">
                   {item.keys.map((k, idx) => (
                     <kbd
                       key={idx}
-                      className="min-w-[26px] h-7 px-2 flex items-center justify-center rounded-lg bg-white/5 border border-white/15 text-white/90 font-mono text-[12px] font-medium shadow-sm"
+                      className="min-w-[26px] h-7 px-2 flex items-center justify-center rounded-lg bg-white/5 border border-white/15 text-white/90 font-mono text-[12.5px] font-medium shadow-sm"
                     >
                       {k}
                     </kbd>
@@ -158,9 +159,9 @@ export const ShortcutsPage: React.FC = () => {
         )}
 
         {/* Note on modifier keys */}
-        <div className="p-4 rounded-2xl bg-white/[0.015] border border-white/5 text-[12px] text-white/40 flex items-center justify-between">
+        <div className="p-4 rounded-2xl bg-white/[0.015] border border-white/5 text-[13px] text-white/40 flex items-center justify-between">
           <span>Note: On Windows and Linux, use <strong className="text-white/70">Ctrl</strong> in place of <strong className="text-white/70">⌘</strong> and <strong className="text-white/70">Alt</strong> in place of <strong className="text-white/70">⌥</strong>.</span>
-          <span className="text-[#d4ad66] font-mono text-[11px]">Blanc v1.27.0 Parity</span>
+          <span className="text-[#d4ad66] font-mono text-[11.5px]">Blanc v1.27.0 Parity</span>
         </div>
       </div>
     </div>

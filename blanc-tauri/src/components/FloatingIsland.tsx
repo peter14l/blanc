@@ -6,32 +6,25 @@ import {
   ShieldCheck,
   Search,
   Globe,
-  Layers,
-  Command,
-  Bookmark,
-  History,
-  Download,
-  Settings,
-  Sidebar,
+  PanelLeft,
 } from 'lucide-react';
 import { Tab, HistoryEntry, Bookmark as BookmarkType } from '../types/browser';
-import { WindowControls } from './WindowControls';
 import { useSearchSuggestions, SuggestionItem } from '../hooks/useSearchSuggestions';
 import { SuggestionPicker } from './SuggestionPicker';
 
 interface FloatingIslandProps {
   activeTab: Tab | null;
-  tabsCount: number;
+  tabsCount?: number;
   searchEngine?: string;
   onNavigate: (url: string) => void;
   onReload: () => void;
   onGoBack: () => void;
   onGoForward: () => void;
-  onToggleQuickSwitcher: () => void;
-  onToggleTabSwitcher: () => void;
-  onMinimize: () => void;
-  onMaximize: () => void;
-  onClose: () => void;
+  onToggleQuickSwitcher?: () => void;
+  onToggleTabSwitcher?: () => void;
+  onMinimize?: () => void;
+  onMaximize?: () => void;
+  onClose?: () => void;
   onOpenSettings?: () => void;
   onOpenBookmarks?: () => void;
   onOpenHistory?: () => void;
@@ -46,21 +39,12 @@ interface FloatingIslandProps {
 
 export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   activeTab,
-  tabsCount,
   searchEngine = 'DuckDuckGo',
   onNavigate,
   onReload,
   onGoBack,
   onGoForward,
-  onToggleQuickSwitcher,
-  onToggleTabSwitcher,
-  onMinimize,
-  onMaximize,
-  onClose,
   onOpenSettings,
-  onOpenBookmarks,
-  onOpenHistory,
-  onOpenDownloads,
   history = [],
   bookmarks = [],
   onSuggestionsOpenChange,
@@ -73,11 +57,9 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   const [isUserEditing, setIsUserEditing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isPickerVisible, setIsPickerVisible] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const activeTabIdRef = useRef<string | null>(null);
-  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { suggestions } = useSearchSuggestions({
     query: inputUrl,
@@ -100,8 +82,8 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   // Global listener to focus address bar (triggered by Ctrl+L / Alt+D)
   useEffect(() => {
     const handleFocusCommand = () => {
-      setIsHovered(true);
       setIsFocused(true);
+      setIsUserEditing(true);
       setTimeout(() => {
         inputRef.current?.focus();
         inputRef.current?.select();
@@ -129,31 +111,6 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
       setInputUrl(tabUrl);
     }
   }, [activeTab?.id, activeTab?.url, isFocused, isUserEditing]);
-
-  const handleMouseEnter = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    setIsHovered(true);
-  };
-
-  const handleMouseLeave = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-    }
-    hoverTimeoutRef.current = setTimeout(() => {
-      setIsHovered(false);
-    }, 280);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const handleSelectSuggestion = (item: SuggestionItem) => {
     setIsPickerVisible(false);
@@ -225,21 +182,11 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
     }
   };
 
-  const isMac =
-    typeof navigator !== 'undefined' &&
-    !/Windows|Win32|Win64|Linux|Android/i.test(navigator.userAgent || '') &&
-    (/Macintosh|Mac OS X|macOS/i.test(navigator.userAgent || '') ||
-      (navigator as any).userAgentData?.platform === 'macOS' ||
-      /MacIntel|MacPPC|Mac68K/i.test((navigator as any).platform || ''));
-
-  // Collapsed vs Expanded Island logic
   const isNewTab =
     !activeTab ||
     !activeTab.url ||
     activeTab.url === 'blanc://newtab' ||
     activeTab.url.startsWith('about:');
-
-  const isExpanded = isNewTab || isHovered || isFocused || isPickerVisible || isUserEditing;
 
   // Extracted clean hostname or title for collapsed Dynamic Island
   let displayTitle = 'Blanc';
@@ -257,119 +204,82 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   return (
     <div
       data-tauri-drag-region
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      className={`relative flex items-center justify-between transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none z-50 ${
-        isExpanded
-          ? 'h-[52px] w-[94%] max-w-[890px] px-4 rounded-2xl bg-slate-900/80 dark:bg-[#161616]/95 backdrop-blur-xl border border-[var(--island-border-adaptive,rgba(255,255,255,0.1))] shadow-island-resting dark:shadow-[0_12px_40px_rgba(0,0,0,0.65)]'
-          : 'h-[40px] w-[270px] px-3.5 rounded-full bg-[#111111]/95 backdrop-blur-2xl border border-[var(--island-border-adaptive,rgba(255,255,255,0.15))] shadow-[0_8px_30px_rgba(0,0,0,0.65)] cursor-pointer hover:border-[#d4ad66]/40 hover:scale-[1.02]'
-      } ${className}`}
+      className={`relative flex items-center justify-between h-[46px] w-[580px] max-w-[calc(100vw-180px)] px-2.5 rounded-[18px] bg-[#181818]/95 backdrop-blur-xl border ${
+        activeTab?.is_private
+          ? 'border-dashed border-[#444444]'
+          : isFocused
+          ? 'border-[#444444] ring-1 ring-white/10'
+          : 'border-[#2a2a2a] hover:border-[#383838]'
+      } shadow-[0_4px_20px_-4px_rgba(0,0,0,0.5)] transition-all duration-200 select-none z-50 ${className}`}
     >
-      {/* 1. COLLAPSED DYNAMIC ISLAND VIEW */}
-      {!isExpanded && (
-        <div
-          onClick={() => {
-            setIsHovered(true);
+      {/* 1. LEFT NAVIGATION CONTROLS */}
+      <div className="flex items-center space-x-0.5 shrink-0 no-drag" data-tauri-drag-region>
+        {/* Toggle Vertical Tabs */}
+        {onToggleVerticalTabs && (
+          <button
+            onClick={onToggleVerticalTabs}
+            title={isVerticalTabs ? 'Hide vertical tabs (Ctrl+Shift+V)' : 'Show vertical tabs (Ctrl+Shift+V)'}
+            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+              isVerticalTabs
+                ? 'text-[#d4ad66] bg-white/10'
+                : 'text-white/70 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <PanelLeft className="w-4 h-4" />
+          </button>
+        )}
+
+        <button
+          onClick={onGoBack}
+          disabled={!activeTab?.can_go_back}
+          title="Back (Alt+Left)"
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 
+            disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-white/60 transition-colors"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={onGoForward}
+          disabled={!activeTab?.can_go_forward}
+          title="Forward (Alt+Right)"
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 
+            disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-white/60 transition-colors"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={onReload}
+          title="Reload (Ctrl+R)"
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          <RotateCw
+            className={`w-3.5 h-3.5 ${
+              activeTab?.is_loading ? 'animate-spin text-[#d4ad66]' : ''
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* SUBTLE VERTICAL DIVIDER */}
+      <div className="w-px h-3.5 bg-white/10 mx-1.5 shrink-0" />
+
+      {/* 2. CENTER ADDRESS / DOMAIN / SEARCH BAR */}
+      <div
+        className="flex-1 min-w-0 h-full flex items-center px-1.5 relative no-drag cursor-text"
+        onClick={() => {
+          if (!isFocused) {
             setIsFocused(true);
+            setIsUserEditing(true);
             setTimeout(() => {
               inputRef.current?.focus();
               inputRef.current?.select();
-            }, 60);
-          }}
-          className="flex items-center justify-between w-full h-full cursor-pointer animate-fadeIn"
-          data-tauri-drag-region
-        >
-          {/* Left: Favicon or Loading Spinner */}
-          <div className="flex items-center space-x-2 shrink-0">
-            {activeTab?.is_loading ? (
-              <RotateCw className="w-3.5 h-3.5 animate-spin text-[#d4ad66]" />
-            ) : activeTab?.favicon ? (
-              <img
-                src={activeTab.favicon}
-                alt=""
-                className="w-3.5 h-3.5 rounded-sm object-contain"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            ) : (
-              <Globe className="w-3.5 h-3.5 text-white/50" />
-            )}
-          </div>
-
-          {/* Center: Truncated Title / Hostname */}
-          <div className="flex-1 min-w-0 text-center px-2">
-            <span className="text-[12.5px] font-medium text-white/90 truncate block tracking-tight">
-              {displayTitle}
-            </span>
-          </div>
-
-          {/* Right: Shield Tracker Count Badge */}
-          <div className="flex items-center space-x-1.5 shrink-0">
-            <div
-              title={`${activeTab?.blocked_trackers || 0} trackers & ads blocked`}
-              className="flex items-center space-x-1 px-1.5 py-0.5 rounded-full bg-[#d4ad66]/15 text-[#d4ad66] text-[11px] font-medium"
-            >
-              <ShieldCheck className="w-3 h-3" />
-              <span className="tabular-nums">{activeTab?.blocked_trackers || 0}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. EXPANDED FULL ISLAND CONTROLS */}
-      {isExpanded && (
-        <div className="flex items-center justify-between w-full h-full animate-fadeIn">
-          {/* LEFT SECTION: Window Controls & Nav */}
-          <div className="flex items-center space-x-3.5 z-10" data-tauri-drag-region>
-            {isMac && (
-              <>
-                <WindowControls
-                  variant="macos"
-                  onMinimize={onMinimize}
-                  onMaximize={onMaximize}
-                  onClose={onClose}
-                />
-                <div className="h-4 w-[1px] bg-white/10 mx-1" />
-              </>
-            )}
-
-            <div className="flex items-center space-x-1 no-drag">
-              <button
-                onClick={onGoBack}
-                disabled={!activeTab?.can_go_back}
-                title="Go Back (Cmd+[)"
-                className="p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/10 
-                  disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-white/60 transition-colors"
-              >
-                <ChevronLeft className="w-4.5 h-4.5" />
-              </button>
-
-              <button
-                onClick={onGoForward}
-                disabled={!activeTab?.can_go_forward}
-                title="Go Forward (Cmd+])"
-                className="p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/10 
-                  disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-white/60 transition-colors"
-              >
-                <ChevronRight className="w-4.5 h-4.5" />
-              </button>
-
-              <button
-                onClick={onReload}
-                title="Reload Tab (Cmd+R)"
-                className="p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-              >
-                <RotateCw
-                  className={`w-4 h-4 ${
-                    activeTab?.is_loading ? 'animate-spin text-[#d4ad66]' : ''
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-
-          {/* CENTER SECTION: URL / Search Input */}
+            }, 30);
+          }
+        }}
+      >
+        {isFocused ? (
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -381,23 +291,9 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
                 inputRef.current?.blur();
               }
             }}
-            className="flex-1 max-w-[480px] lg:max-w-[520px] mx-3 relative flex items-center h-10 px-3.5 
-              bg-white/5 hover:bg-white/8 focus-within:bg-black/50 focus-within:ring-1 focus-within:ring-[#d4ad66]/60 
-              rounded-xl border border-[var(--island-border-adaptive,rgba(255,255,255,0.1))] transition-all no-drag group cursor-text"
-            onClick={() => {
-              if (document.activeElement !== inputRef.current) {
-                inputRef.current?.focus();
-              }
-            }}
+            className="w-full flex items-center h-full relative"
           >
-            <div className="mr-2.5 text-white/45 group-focus-within:text-[#d4ad66] transition-colors flex items-center shrink-0">
-              {isFocused ? (
-                <Search className="w-4 h-4" />
-              ) : (
-                <Globe className="w-4 h-4" />
-              )}
-            </div>
-
+            <Search className="w-3.5 h-3.5 text-white/40 shrink-0 mr-2" />
             <input
               ref={inputRef}
               type="text"
@@ -424,7 +320,7 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
                       setInputUrl(activeTab.url === 'blanc://newtab' ? '' : activeTab.url);
                     }
                   }
-                }, 250);
+                }, 200);
               }}
               onKeyDown={handleKeyDown}
               placeholder={`Search ${searchEngine} or enter URL...`}
@@ -432,17 +328,7 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
                 outline-none border-none tracking-tight font-medium"
             />
 
-            {inputUrl.trim() && isFocused && (
-              <button
-                type="submit"
-                title="Navigate (Enter)"
-                className="ml-1.5 px-2.5 py-1 rounded-lg bg-[#d4ad66]/20 text-[#d4ad66] hover:bg-[#d4ad66]/30 text-[12px] font-semibold transition-colors shrink-0"
-              >
-                Go
-              </button>
-            )}
-
-            {/* SMART AUTOCOMPLETE / SUGGESTION PICKER */}
+            {/* AUTOCOMPLETE / SUGGESTION PICKER */}
             <SuggestionPicker
               suggestions={suggestions}
               selectedIndex={selectedIndex}
@@ -452,103 +338,66 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
               visible={isPickerVisible && isFocused}
             />
           </form>
-
-          {/* RIGHT SECTION: Shield, Bookmarks, History, Downloads, Switchers, Settings */}
-          <div className="flex items-center space-x-1.5 sm:space-x-2 z-10 no-drag" data-tauri-drag-region>
-            {/* Shield / Tracker counter badge */}
-            <div
-              onClick={onOpenSettings}
-              title={`${activeTab?.blocked_trackers || 0} trackers & ads blocked (Click to open Settings)`}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full 
-                bg-[#d4ad66]/10 border border-[#d4ad66]/20 text-[#d4ad66] text-[12px] font-medium 
-                hover:bg-[#d4ad66]/15 transition-colors cursor-pointer"
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span className="tabular-nums">
-                {activeTab?.blocked_trackers || 0}
+        ) : (
+          <div
+            className="w-full h-full flex items-center justify-between cursor-pointer"
+            title="Search, tabs & commands (Ctrl+L)"
+          >
+            <div className="flex items-center space-x-2 min-w-0 flex-1">
+              {activeTab?.is_loading ? (
+                <RotateCw className="w-3.5 h-3.5 animate-spin text-[#d4ad66] shrink-0" />
+              ) : activeTab?.favicon ? (
+                <img
+                  src={activeTab.favicon}
+                  alt=""
+                  className="w-3.5 h-3.5 rounded-sm object-contain shrink-0"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <Globe className="w-3.5 h-3.5 text-white/40 shrink-0" />
+              )}
+              <span className={`text-[14px] truncate tracking-tight ${
+                isNewTab ? 'text-white/50' : 'text-white/90 font-medium'
+              }`}>
+                {isNewTab ? 'new tab' : displayTitle}
               </span>
-              <span className="hidden md:inline opacity-80">blocked</span>
             </div>
-
-            {/* Bookmarks Button */}
-            <button
-              onClick={onOpenBookmarks}
-              title="Bookmarks (Cmd+Shift+B)"
-              className="p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+            <span
+              className="ml-2 text-[11.5px] font-mono text-white/30 px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.06] shrink-0"
+              title="Commands (/ or Ctrl+L)"
             >
-              <Bookmark className="w-4 h-4" />
-            </button>
-
-            {/* History Button */}
-            <button
-              onClick={onOpenHistory}
-              title="History (Cmd+Y)"
-              className="p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <History className="w-4 h-4" />
-            </button>
-
-            {/* Downloads Button */}
-            <button
-              onClick={onOpenDownloads}
-              title="Downloads (Ctrl+J)"
-              className="p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-
-            {/* Quick Switcher Button */}
-            <button
-              onClick={onToggleQuickSwitcher}
-              title="Quick Switcher (Cmd+K)"
-              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <Command className="w-4 h-4" />
-              <span className="text-[12px] font-medium tracking-tight">K</span>
-            </button>
-
-            {/* Tab Switcher Button */}
-            <button
-              onClick={onToggleTabSwitcher}
-              title="Open Tab Switcher"
-              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-white/75 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <Layers className="w-4 h-4" />
-              <span className="text-[12px] font-semibold bg-white/10 px-2 py-0.5 rounded-full">
-                {tabsCount}
-              </span>
-            </button>
-
-            {/* Vertical Tabs Toggle Button */}
-            {onToggleVerticalTabs && (
-              <button
-                onClick={onToggleVerticalTabs}
-                title={
-                  isVerticalTabs
-                    ? 'Disable Vertical Tabs (Switch to Default Layout)'
-                    : 'Switch to Vertical Tabs Layout'
-                }
-                className={`p-2 rounded-xl transition-colors ${
-                  isVerticalTabs
-                    ? 'text-[#d4ad66] bg-[#d4ad66]/15 hover:bg-[#d4ad66]/25 border border-[#d4ad66]/30'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                <Sidebar className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* Settings Button */}
-            <button
-              onClick={onOpenSettings}
-              title="Settings (Cmd+,)"
-              className="p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
+              /
+            </span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* SUBTLE VERTICAL DIVIDER */}
+      <div className="w-px h-3.5 bg-white/10 mx-1.5 shrink-0" />
+
+      {/* 3. RIGHT SECTION: SHIELD BADGE & STATUS */}
+      <div className="flex items-center space-x-1.5 shrink-0 no-drag" data-tauri-drag-region>
+        {activeTab?.is_private && (
+          <span className="px-1.5 py-0.5 rounded text-[11px] uppercase font-mono tracking-wider bg-white/10 text-white/70 shrink-0">
+            private
+          </span>
+        )}
+
+        {/* Shield Tracker Counter Badge */}
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          title={`${activeTab?.blocked_trackers || 0} ads & trackers blocked`}
+          className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-white/[0.09] border border-white/10 text-white/80 hover:text-white text-[12px] font-medium transition-colors cursor-pointer shrink-0"
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-[#d4ad66]" />
+          <span className="tabular-nums font-mono">
+            {activeTab?.blocked_trackers || 0}
+          </span>
+        </button>
+      </div>
     </div>
   );
 };

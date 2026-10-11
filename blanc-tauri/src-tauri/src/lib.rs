@@ -263,6 +263,11 @@ async fn switch_tab(
 }
 
 #[tauri::command]
+fn capture_tab_thumbnail(app: AppHandle, tab_id: String) {
+    webview::capture_tab_thumbnail(&app, &tab_id);
+}
+
+#[tauri::command]
 async fn discard_tab(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1346,6 +1351,7 @@ pub fn run() {
             close_tab,
             close_all_tabs,
             switch_tab,
+            capture_tab_thumbnail,
             discard_tab,
             sleep_idle_tabs,
             navigate,

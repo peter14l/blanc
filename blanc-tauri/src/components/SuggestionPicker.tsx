@@ -87,16 +87,16 @@ export const SuggestionPicker: React.FC<SuggestionPickerProps> = ({
 
                 <div className="min-w-0 flex-1 leading-tight">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="truncate text-[13px] font-medium">
+                    <span className="truncate text-[14px] font-medium">
                       {item.title}
                     </span>
                     {!isQuery && item.badge && item.badge !== 'Suggested Website' && (
-                      <span className="shrink-0 text-[10px] text-[var(--text-dim)]">
+                      <span className="shrink-0 text-[11.5px] text-[var(--text-dim)]">
                         {item.badge}
                       </span>
                     )}
                   </div>
-                  <div className="mt-0.5 truncate text-[11px] text-[var(--text-dim)]">
+                  <div className="mt-0.5 truncate text-[12.5px] text-[var(--text-dim)]">
                     {item.subtitle || (isQuery ? `Search with ${searchEngine}` : '')}
                   </div>
                 </div>
@@ -110,7 +110,7 @@ export const SuggestionPicker: React.FC<SuggestionPickerProps> = ({
         })}
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] px-3 py-2 text-[10px] text-[var(--text-dim)]">
+      <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] px-3 py-2 text-[11.5px] text-[var(--text-dim)]">
         <div className="flex items-center gap-3">
           <span><kbd>↑↓</kbd> Navigate</span>
           <span><kbd>↵</kbd> Open</span>

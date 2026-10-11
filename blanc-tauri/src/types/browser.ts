@@ -8,6 +8,7 @@ export interface Tab {
   can_go_back: boolean;
   can_go_forward: boolean;
   favicon?: string;
+  thumbnail?: string;
   is_private?: boolean;
   is_asleep?: boolean;
   history?: string[];
@@ -110,6 +111,7 @@ export interface BrowserIPCContextType {
   discardTab: (tabId: string) => Promise<boolean>;
   sleepIdleTabs: (threshold?: string) => Promise<string[]>;
   getTabs: () => Promise<Tab[]>;
+  captureTabThumbnail?: (tabId: string) => Promise<void>;
 
   // Mobile Navigation (single main WebView on Android/iOS)
   mobileNavigate: (url: string) => Promise<void>;

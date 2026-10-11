@@ -64,6 +64,7 @@ export const App: React.FC = () => {
     dismissPermissionPrompt,
     pendingWebNotification,
     setPendingWebNotification,
+    captureTabThumbnail,
   } = useBrowserIPC();
 
   const [isFindOpen, setIsFindOpen] = useState(false);
@@ -91,6 +92,9 @@ export const App: React.FC = () => {
   const navigateRef = useRef(navigate);
   const toggleQuickSwitcherRef = useRef(toggleQuickSwitcher);
   const maximizeWindowRef = useRef(maximizeWindow);
+  const settingsRef = useRef(settings);
+  const updateSettingsRef = useRef(updateSettings);
+  const captureTabThumbnailRef = useRef(captureTabThumbnail);
 
   useEffect(() => {
     isTabHUDOpenRef.current = isTabHUDOpen;
@@ -110,6 +114,9 @@ export const App: React.FC = () => {
     navigateRef.current = navigate;
     toggleQuickSwitcherRef.current = toggleQuickSwitcher;
     maximizeWindowRef.current = maximizeWindow;
+    settingsRef.current = settings;
+    updateSettingsRef.current = updateSettings;
+    captureTabThumbnailRef.current = captureTabThumbnail;
   }, [
     isTabHUDOpen,
     tabHUDIndex,
@@ -128,6 +135,9 @@ export const App: React.FC = () => {
     navigate,
     toggleQuickSwitcher,
     maximizeWindow,
+    settings,
+    updateSettings,
+    captureTabThumbnail,
   ]);
 
   // Mouse Gestures & Rocker Navigation
@@ -257,6 +267,9 @@ export const App: React.FC = () => {
       e.preventDefault?.();
       if (currentTabs.length > 1) {
         if (!isTabHUDOpenRef.current) {
+          if (currentActiveTab) {
+            captureTabThumbnailRef.current?.(currentActiveTab.id);
+          }
           const currentIdx = Math.max(0, currentTabs.findIndex((t) => t.id === currentActiveTab?.id));
           const nextIdx = e.shiftKey
             ? (currentIdx - 1 + currentTabs.length) % currentTabs.length
@@ -351,6 +364,13 @@ export const App: React.FC = () => {
       if (currentActiveTab) navigateRef.current(currentActiveTab.id, 'blanc://shortcuts');
       else createTabRef.current('blanc://shortcuts');
     }
+    // Toggle Vertical Tabs: Ctrl+Shift+V / Cmd+Shift+V
+    else if (isMeta && e.shiftKey && key === 'v') {
+      e.preventDefault?.();
+      updateSettingsRef.current({
+        verticalTabs: !settingsRef.current.verticalTabs,
+      });
+    }
     // Fullscreen / Maximize toggle: F11
     else if (e.key === 'F11') {
       e.preventDefault?.();
@@ -433,6 +453,9 @@ export const App: React.FC = () => {
           if (currentTabs.length > 1) {
             const isShift = Boolean(event.payload?.shift);
             if (!isTabHUDOpenRef.current) {
+              if (activeTabRef.current) {
+                captureTabThumbnailRef.current?.(activeTabRef.current.id);
+              }
               const currentIdx = Math.max(0, currentTabs.findIndex((t) => t.id === activeTabRef.current?.id));
               const nextIdx = isShift
                 ? (currentIdx - 1 + currentTabs.length) % currentTabs.length
@@ -645,9 +668,6 @@ export const App: React.FC = () => {
         !isInternalPage && isTauriAvailable ? 'bg-transparent' : 'bg-[#0e0e0e]'
       } text-white overflow-hidden font-ui select-none`}
     >
-      {/* AMBIENT WALLPAPER GLOW IN SHELL */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[320px] rounded-full blur-[140px] pointer-events-none opacity-40 bg-[var(--wallpaper-glow,rgba(212,173,102,0.1))] transition-colors duration-500 z-0" />
-
       {/* WINDOW CONTROLS (PLATFORM-NATIVE ADAPTIVE CONTROLS) */}
       {isMac ? (
         <div className="fixed top-3.5 left-4 z-[60] pointer-events-auto flex items-center">
@@ -697,7 +717,7 @@ export const App: React.FC = () => {
             ? 'left-[82px] sm:left-[86px]'
             : 'left-[262px] sm:left-[270px]'
           : 'left-0'
-      } right-0 h-[78px] bg-[#0e0e0e] flex items-center justify-center pointer-events-none z-50 pt-2 transition-colors duration-150`}>
+      } right-0 h-[68px] bg-[#0e0e0e] flex items-center justify-center pointer-events-none z-50 transition-colors duration-150`}>
         <div className="pointer-events-auto w-full flex justify-center px-4">
           <FloatingIsland
             activeTab={activeTab}
@@ -766,13 +786,13 @@ export const App: React.FC = () => {
       <main
         ref={mainRef}
         style={{ zoom: zoomLevel }}
-        className={`absolute top-[80px] bottom-3 sm:bottom-4 right-3 sm:right-4 ${
+        className={`absolute top-[68px] bottom-2.5 sm:bottom-3 right-2.5 sm:right-3 ${
           isVerticalTabs
             ? isVerticalTabsCollapsed
               ? 'left-[82px] sm:left-[86px]'
               : 'left-[262px] sm:left-[270px]'
-            : 'left-3 sm:left-4'
-        } rounded-2xl border border-[var(--island-border-adaptive,rgba(255,255,255,0.1))] shadow-2xl overflow-hidden flex flex-col z-10 ${
+            : 'left-2.5 sm:left-3'
+        } rounded-2xl border border-[#222222] shadow-2xl overflow-hidden flex flex-col z-10 ${
           !isInternalPage && isTauriAvailable
             ? 'bg-transparent pointer-events-none'
             : 'bg-[#0e0e0e] pointer-events-auto'
@@ -950,6 +970,12 @@ export const App: React.FC = () => {
           setIsTabHUDOpen(false);
         }}
         onClose={() => setIsTabHUDOpen(false)}
+        onCloseTab={(tabId) => {
+          closeTab(tabId);
+          if (tabs.length <= 1) {
+            setIsTabHUDOpen(false);
+          }
+        }}
       />
 
       {/* TAB SWITCHER MODAL */}
@@ -979,6 +1005,9 @@ export const App: React.FC = () => {
         bookmarks={bookmarks}
         history={history}
         settings={settings}
+        onToggleVerticalTabs={() =>
+          updateSettings({ verticalTabs: !settings.verticalTabs })
+        }
         onSelectTab={(tabId) => {
           switchTab(tabId);
         }}

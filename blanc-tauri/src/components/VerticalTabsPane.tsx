@@ -45,8 +45,8 @@ export const VerticalTabsPane: React.FC<VerticalTabsPaneProps> = ({
         {!collapsed ? (
           <>
             <div className="flex items-center space-x-2 min-w-0">
-              <span className="text-[13px] font-semibold text-white/90 tracking-tight">Tabs</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-white/10 text-[#d4ad66] font-medium">
+              <span className="text-[14px] font-semibold text-white/90 tracking-tight">Tabs</span>
+              <span className="text-[11.5px] font-mono px-1.5 py-0.5 rounded-full bg-white/10 text-[#d4ad66] font-medium">
                 {tabs.length}
               </span>
             </div>
@@ -80,7 +80,7 @@ export const VerticalTabsPane: React.FC<VerticalTabsPaneProps> = ({
             >
               <PanelLeftOpen className="w-4 h-4" />
             </button>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-white/10 text-[#d4ad66] font-medium">
+            <span className="text-[11.5px] font-mono px-1.5 py-0.2 rounded-full bg-white/10 text-[#d4ad66] font-medium">
               {tabs.length}
             </span>
           </div>
@@ -183,10 +183,10 @@ export const VerticalTabsPane: React.FC<VerticalTabsPaneProps> = ({
 
               {/* Title & Hostname */}
               <div className="min-w-0 flex-1">
-                <p className="text-[12.5px] font-medium leading-tight truncate">
+                <p className="text-[13.5px] font-medium leading-tight truncate">
                   {tab.title || hostname}
                 </p>
-                <p className="text-[10px] text-white/40 leading-none truncate mt-0.5">
+                <p className="text-[11.5px] text-white/40 leading-none truncate mt-0.5">
                   {hostname}
                 </p>
               </div>
@@ -225,7 +225,7 @@ export const VerticalTabsPane: React.FC<VerticalTabsPaneProps> = ({
           className={`flex items-center justify-center gap-2 rounded-xl transition-all ${
             collapsed
               ? 'w-full aspect-square p-2 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white'
-              : 'w-full py-2 px-3 bg-white/5 hover:bg-[#d4ad66]/15 hover:border-[#d4ad66]/30 text-white/85 hover:text-[#d4ad66] border border-white/10 text-[12px] font-medium'
+              : 'w-full py-2 px-3 bg-white/5 hover:bg-[#d4ad66]/15 hover:border-[#d4ad66]/30 text-white/85 hover:text-[#d4ad66] border border-white/10 text-[13.5px] font-medium'
           }`}
         >
           <Plus className="w-4 h-4 shrink-0" />
@@ -237,7 +237,7 @@ export const VerticalTabsPane: React.FC<VerticalTabsPaneProps> = ({
           <button
             onClick={onDisableVerticalTabs}
             title="Switch to default horizontal layout"
-            className="w-full flex items-center justify-center gap-1.5 py-1 text-[11px] text-white/40 hover:text-white/80 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 py-1 text-[12px] text-white/40 hover:text-white/80 transition-colors"
           >
             <LayoutGrid className="w-3 h-3" />
             <span>Default Layout</span>

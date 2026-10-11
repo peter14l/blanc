@@ -319,10 +319,10 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[13px] font-medium text-white/90 truncate group-hover:text-[#d4ad66] transition-colors">
+                          <p className="text-[14px] font-medium text-white/90 truncate group-hover:text-[#d4ad66] transition-colors">
                             {b.title}
                           </p>
-                          <p className="text-[11px] text-white/40 truncate">{domain}</p>
+                          <p className="text-[12px] text-white/40 truncate">{domain}</p>
                         </div>
                       </div>
 
@@ -405,10 +405,10 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
                       )}
                     </div>
                     <div className="min-w-0 flex-1 pr-4">
-                      <p className="text-[13px] font-medium text-white/90 truncate group-hover:text-[#d4ad66] transition-colors">
+                      <p className="text-[14px] font-medium text-white/90 truncate group-hover:text-[#d4ad66] transition-colors">
                         {b.title}
                       </p>
-                      <div className="flex items-center space-x-2 text-[11px] text-white/40">
+                      <div className="flex items-center space-x-2 text-[12px] text-white/40">
                         <span className="truncate max-w-[240px]">{domain}</span>
                         <span>•</span>
                         <span className="text-[#d4ad66]">{b.folder || 'Favorites'}</span>

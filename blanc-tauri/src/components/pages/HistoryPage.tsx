@@ -255,10 +255,10 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
 
           {/* Title & URL */}
           <div className="min-w-0 flex-1 pr-3">
-            <p className="text-[13px] font-medium text-white/90 truncate group-hover:text-[#d4ad66] transition-colors">
+            <p className="text-[14px] font-medium text-white/90 truncate group-hover:text-[#d4ad66] transition-colors">
               {item.title || item.url}
             </p>
-            <div className="flex items-center space-x-2 text-[11px] text-white/40">
+            <div className="flex items-center space-x-2 text-[12px] text-white/40">
               <span className="truncate max-w-[220px] sm:max-w-md">{item.url}</span>
               <span>•</span>
               <span className="shrink-0">{cleanDomain}</span>
@@ -268,7 +268,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
 
         {/* Timestamp & Actions */}
         <div className="flex items-center space-x-1 shrink-0">
-          <span className="text-[11px] text-white/40 font-mono mr-2">
+          <span className="text-[12px] text-white/40 font-mono mr-2">
             {showDate ? `${formatDateLabel(item.timestamp)} ` : ''}
             {formatTimestamp(item.timestamp)}
           </span>

@@ -250,14 +250,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[13px] font-medium text-white/90">Default Layout</span>
+                <span className="text-[14px] font-medium text-white/90">Default Layout</span>
                 {!settings.verticalTabs && (
                   <div className="p-1 rounded-full bg-[#d4ad66] text-black">
                     <Check className="w-3 h-3 stroke-[3]" />
                   </div>
                 )}
               </div>
-              <p className="text-[11px] text-white/40 leading-snug">
+              <p className="text-[12.5px] text-white/40 leading-snug">
                 Minimalist Island Chrome floating at the top with on-demand tab switching. Full viewport dedicated to web content.
               </p>
             </div>
@@ -272,14 +272,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[13px] font-medium text-white/90">Vertical Tabs Pane</span>
+                <span className="text-[14px] font-medium text-white/90">Vertical Tabs Pane</span>
                 {settings.verticalTabs && (
                   <div className="p-1 rounded-full bg-[#d4ad66] text-black">
                     <Check className="w-3 h-3 stroke-[3]" />
                   </div>
                 )}
               </div>
-              <p className="text-[11px] text-white/40 leading-snug">
+              <p className="text-[12.5px] text-white/40 leading-snug">
                 Left floating pane displaying all active tabs with favicons and titles, while preserving the top pill for commands.
               </p>
             </div>
@@ -289,7 +289,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         {/* 4. TYPOGRAPHY & INBUILT FONT SWITCHER */}
         <section className="space-y-3 pt-4 border-t border-white/10">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">
+            <div className="flex items-center space-x-2 text-[15px] font-semibold text-white/90">
               <Type className="w-4 h-4 text-[#d4ad66]" />
               <span>Typography & Google Fonts</span>
             </div>
@@ -298,16 +298,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               onSelectFont={(font) => onUpdateSettings({ fontFamily: font })}
             />
           </div>
-          <p className="text-[12px] text-white/50">
+          <p className="text-[13px] text-white/50">
             Customize the browser's UI font family across the Floating Island, New Tab dashboard, and surfaces.
           </p>
 
           <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2">
-            <div className="flex items-center justify-between text-[11px] text-white/40">
+            <div className="flex items-center justify-between text-[12px] text-white/40">
               <span>Active Font: <strong className="text-white/80">{settings.fontFamily || 'Inter'}</strong></span>
-              <span className="font-mono text-[10px]">Google Fonts Catalog</span>
+              <span className="font-mono text-[11px]">Google Fonts Catalog</span>
             </div>
-            <p className="text-[14px] text-white/80 leading-relaxed font-ui">
+            <p className="text-[14.5px] text-white/80 leading-relaxed font-ui">
               "Minimalism is not a lack of something. It's simply the perfect amount of everything."
             </p>
           </div>
@@ -316,7 +316,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         {/* 4. NATURE WALLPAPERS (START PAGE) */}
         <section className="space-y-3 pt-4 border-t border-white/10">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">
+            <div className="flex items-center space-x-2 text-[15px] font-semibold text-white/90">
               <ImageIcon className="w-4 h-4 text-[#d4ad66]" />
               <span>Nature Wallpapers from the Web</span>
             </div>
@@ -330,7 +330,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d4ad66]"></div>
             </label>
           </div>
-          <p className="text-[12px] text-white/50">
+          <p className="text-[13px] text-white/50">
             Set breathtaking high-resolution nature photography as the background on new tabs. The browser frame and Island pill automatically adapt their accent colors and glow to the active image.
           </p>
 
@@ -357,7 +357,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-2 flex flex-col justify-end">
-                      <span className="text-[11px] font-medium text-white truncate">{wp.title}</span>
+                      <span className="text-[12px] font-medium text-white truncate">{wp.title}</span>
                       <span className="text-[9px] text-white/60 truncate">{wp.location}</span>
                     </div>
                     {isSelected && (

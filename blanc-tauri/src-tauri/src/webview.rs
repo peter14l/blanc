@@ -430,11 +430,14 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
             DownloadStartingEventHandler,
             StateChangedEventHandler,
             AddScriptToExecuteOnDocumentCreatedCompletedHandler,
+            NavigationCompletedEventHandler,
             Microsoft::Web::WebView2::Win32::*,
             WebMessageReceivedEventHandler,
             WebResourceRequestedEventHandler,
         };
         use windows::core::{w, Interface};
+
+
 
         let filter_app = app.clone();
         let filter_tab_id = tab_id.to_string();
@@ -443,6 +446,8 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
         let accel_app = app.clone();
         let dl_app = app.clone();
         let dl_tab_id = tab_id.to_string();
+        let nav_comp_app = app.clone();
+        let nav_comp_tab_id = tab_id.to_string();
 
         let cosmetic_css = if let Some(state) = app.try_state::<AppState>() {
             if let Ok(adblock) = state.adblock.lock() {
@@ -910,6 +915,26 @@ if let Ok(core4) = core.cast::<ICoreWebView2_4>() {
                         let _ = core4.add_DownloadStarting(&dl_handler, &mut dl_token);
                     }
 
+                    // Hook NavigationCompleted to automatically capture fresh tab thumbnail
+                    let mut nav_comp_token = 0i64;
+                    let nav_comp_handler = NavigationCompletedEventHandler::create(Box::new(
+                        move |_sender, args| {
+                            if let Some(args) = args {
+                                let mut is_success = windows::core::BOOL(0);
+                                if args.IsSuccess(&mut is_success).is_ok() && is_success.as_bool() {
+                                    let capture_app = nav_comp_app.clone();
+                                    let capture_tab = nav_comp_tab_id.clone();
+                                    std::thread::spawn(move || {
+                                        std::thread::sleep(std::time::Duration::from_millis(500));
+                                        capture_tab_thumbnail(&capture_app, &capture_tab);
+                                    });
+                                }
+                            }
+                            Ok(())
+                        },
+                    ));
+                    let _ = core.add_NavigationCompleted(&nav_comp_handler, &mut nav_comp_token);
+
                 }
             }
         });
@@ -926,6 +951,103 @@ if let Ok(core4) = core.cast::<ICoreWebView2_4>() {
 pub fn create_tab_webview(_app: &AppHandle, _tab_id: &str, _target_url: &str) -> Result<(), String> {
     Ok(())
 }
+
+#[cfg(target_os = "windows")]
+#[link(name = "shlwapi")]
+extern "system" {
+    fn SHCreateStreamOnFileW(
+        pszFile: windows::core::PCWSTR,
+        grfMode: u32,
+        ppstm: *mut Option<windows::Win32::System::Com::IStream>,
+    ) -> windows::core::HRESULT;
+}
+
+/// Captures a rendered PNG screenshot thumbnail for a tab's native webview (desktop only).
+/// Emits `blanc:tab-thumbnail-updated` with base64 Data URL payload on completion.
+#[cfg(desktop)]
+pub fn capture_tab_thumbnail(app: &AppHandle, tab_id: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use base64::Engine;
+        use webview2_com::{CapturePreviewCompletedHandler, Microsoft::Web::WebView2::Win32::*};
+
+        if let Some(wv) = app.get_webview(tab_id) {
+            let app_clone = app.clone();
+            let tab_id_clone = tab_id.to_string();
+
+            let _ = wv.with_webview(move |platform_webview| {
+                unsafe {
+                    let controller = platform_webview.controller();
+                    if let Ok(core) = controller.CoreWebView2() {
+                        let temp_dir = std::env::temp_dir();
+                        let file_path = temp_dir.join(format!(
+                            "blanc_thumb_{}_{}.png",
+                            tab_id_clone,
+                            chrono::Utc::now().timestamp_millis()
+                        ));
+                        let wide_path: Vec<u16> = file_path
+                            .as_os_str()
+                            .encode_wide()
+                            .chain(std::iter::once(0))
+                            .collect();
+
+                        let mut stream: Option<windows::Win32::System::Com::IStream> = None;
+                        // STGM_CREATE (0x00001000) | STGM_READWRITE (0x00000002) | STGM_SHARE_DENY_NONE (0x00000040) = 0x00001042
+                        let hr = SHCreateStreamOnFileW(
+                            windows::core::PCWSTR(wide_path.as_ptr()),
+                            0x00001042,
+                            &mut stream,
+                        );
+
+                        if hr.is_ok() {
+                            if let Some(stg) = stream {
+                                let mut stg_opt = Some(stg.clone());
+                                let file_path_clone = file_path.clone();
+                                let tab_id_inner = tab_id_clone.clone();
+                                let app_inner = app_clone.clone();
+
+                                let handler = CapturePreviewCompletedHandler::create(Box::new(move |res| {
+                                    stg_opt.take();
+                                    if res.is_ok() {
+                                        if let Ok(bytes) = std::fs::read(&file_path_clone) {
+                                            if !bytes.is_empty() {
+                                                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                                                let data_url = format!("data:image/png;base64,{}", b64);
+                                                let _ = app_inner.emit(
+                                                    "blanc:tab-thumbnail-updated",
+                                                    serde_json::json!({
+                                                        "tabId": tab_id_inner,
+                                                        "thumbnail": data_url,
+                                                    }),
+                                                );
+                                            }
+                                        }
+                                        let _ = std::fs::remove_file(&file_path_clone);
+                                    }
+                                    Ok(())
+                                }));
+
+                                let _ = core.CapturePreview(
+                                    COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
+                                    &stg,
+                                    &handler,
+                                );
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, tab_id);
+    }
+}
+
+#[cfg(not(desktop))]
+pub fn capture_tab_thumbnail(_app: &AppHandle, _tab_id: &str) {}
 
 /// Applies the reported viewport to the active tab's webview and hides every other
 /// page view. `hidden` is true while an overlay (switcher, quick search) is open or
@@ -985,6 +1107,7 @@ pub fn switch_tab_webview(
     previous_tab_id: Option<&str>,
 ) -> Result<(), String> {
     if let Some(prev_id) = previous_tab_id {
+        capture_tab_thumbnail(app, prev_id);
         if let Some(prev_wv) = app.get_webview(prev_id) {
             let _ = prev_wv.hide();
         }

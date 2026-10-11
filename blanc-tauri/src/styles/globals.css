@@ -19,7 +19,7 @@
     background: var(--bg, #0e0e0e);
     color: var(--text, #f5f5f5);
     font-family: var(--font-ui);
-    font-size: 13px;
+    font-size: 14.5px;
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;

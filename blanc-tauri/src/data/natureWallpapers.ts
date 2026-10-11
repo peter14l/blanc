@@ -104,12 +104,14 @@ export const NATURE_WALLPAPERS: NatureWallpaper[] = [
 /**
  * Applies dynamic color adaptations to the browser frame based on the active wallpaper.
  */
-export function applyWallpaperTheme(wallpaper: NatureWallpaper): void {
+export function applyWallpaperTheme(wallpaper: NatureWallpaper | null): void {
   const root = document.documentElement;
+  if (!wallpaper) {
+    root.style.removeProperty('--wallpaper-accent');
+    root.style.removeProperty('--wallpaper-tint');
+    root.style.removeProperty('--wallpaper-glow');
+    return;
+  }
   root.style.setProperty('--wallpaper-accent', wallpaper.accentColor);
   root.style.setProperty('--wallpaper-tint', wallpaper.tintColor);
-  root.style.setProperty('--wallpaper-glow', wallpaper.glowColor);
-  root.style.setProperty('--accent', wallpaper.accentColor);
-  root.style.setProperty('--island-border-adaptive', `${wallpaper.accentColor}40`);
-  root.style.setProperty('--island-glow-adaptive', wallpaper.glowColor);
 }

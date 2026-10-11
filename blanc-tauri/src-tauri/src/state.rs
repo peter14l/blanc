@@ -738,7 +738,7 @@ mod tests {
         state.ensure_window("main", None, false);
 
         let t1 = state.create_tab("main", Some("https://site-a.com".into()), false, None).unwrap();
-        let t2 = state.create_tab("main", Some("https://site-b.com".into()), false, None).unwrap();
+        let _t2 = state.create_tab("main", Some("https://site-b.com".into()), false, None).unwrap();
 
         // t2 is active, t1 is inactive
         let candidates = state.get_sleep_candidates("main");

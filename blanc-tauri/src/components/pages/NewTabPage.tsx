@@ -6,13 +6,7 @@ import {
   MoreVertical,
   Trash2,
   Edit2,
-  Sparkles,
-  ArrowRight,
   X,
-  Clock,
-  Bookmark,
-  History,
-  Settings,
   RefreshCw,
   MapPin,
 } from 'lucide-react';
@@ -64,14 +58,11 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
   onUpdateFavorite,
   settings,
   adblockStats,
-  currentTabBlockedTrackers = 0,
   onUpdateSettings,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeEngine, setActiveEngine] = useState<string>(settings.searchEngine || 'Google');
-  const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
-  const [greeting, setGreeting] = useState('Welcome');
 
   // Nature wallpaper state (default active)
   const [wallpaperIndex, setWallpaperIndex] = useState(() => {
@@ -169,26 +160,17 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
   const [favoriteUrl, setFavoriteUrl] = useState('');
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
-  // Update clock, date & greeting
+  // Update date
   useEffect(() => {
-    const updateTime = () => {
+    const updateDate = () => {
       const now = new Date();
-      setTimeStr(
-        now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-      );
       setDateStr(
         now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
       );
-
-      const hour = now.getHours();
-      if (hour >= 5 && hour < 12) setGreeting('Good morning');
-      else if (hour >= 12 && hour < 17) setGreeting('Good afternoon');
-      else if (hour >= 17 && hour < 22) setGreeting('Good evening');
-      else setGreeting('Good night');
     };
 
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
+    updateDate();
+    const interval = setInterval(updateDate, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -257,110 +239,46 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
     .slice(0, 4);
 
   return (
-    <div className="w-full h-full overflow-y-auto bg-[#0a0a0a] text-white flex flex-col items-center select-none font-ui relative z-0">
-      {/* NATURE WALLPAPER BACKGROUND FROM THE WEB */}
-      {settings.natureWallpaper !== false && activeWallpaper && (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 bg-[#0e1215]">
+    <div className="w-full h-full overflow-y-auto bg-[#0e0e0e] text-[#f5f5f5] flex flex-col items-center select-none font-ui relative z-0">
+      {/* OPTIONAL SUBTLE WALLPAPER (ONLY WHEN ACTIVELY ENABLED IN SETTINGS) */}
+      {settings.natureWallpaper && activeWallpaper && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
           <img
             src={activeWallpaper.url}
             alt={activeWallpaper.title}
             loading="eager"
-            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700 filter brightness-[0.75] contrast-[1.08]"
+            className="absolute inset-0 w-full h-full object-cover filter brightness-[0.25] contrast-[1.05]"
           />
-          {/* Subtle gradient overlay to ensure UI legibility */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/50" />
-          {/* Ambient accent glow adapted from wallpaper */}
-          <div
-            style={{
-              backgroundColor: activeWallpaper?.glowColor || 'rgba(212, 173, 102, 0.15)',
-            }}
-            className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] rounded-full blur-3xl transition-colors duration-500 opacity-80"
-          />
+          <div className="absolute inset-0 bg-[#0e0e0e]/80" />
         </div>
       )}
 
-      {/* AMBIENT BACKGROUND GLOW FOR FALLBACK */}
-      {settings.natureWallpaper === false && (
-        <div
-          style={{
-            backgroundColor: activeWallpaper?.glowColor || 'rgba(212, 173, 102, 0.12)',
-          }}
-          className="absolute top-0 left-1/2 -translate-x-1/2 w-[950px] h-[450px] rounded-full blur-3xl pointer-events-none z-0 transition-colors duration-500"
-        />
-      )}
-
-      <div className="w-full max-w-5xl lg:max-w-6xl px-6 sm:px-12 md:px-16 py-12 sm:py-20 flex flex-col items-center z-10 my-auto space-y-10 sm:space-y-14 relative">
-        {/* TOP BRAND EMBLEM & TIME */}
-        <div className="flex flex-col items-center text-center space-y-4">
+      <div className="w-full max-w-4xl px-6 py-12 sm:py-16 flex flex-col items-center z-10 space-y-8 sm:space-y-10 relative">
+        {/* 1. CANONICAL BRAND MARK & DATE HEADER */}
+        <header className="flex flex-col items-center text-center space-y-3 pt-4">
           <div
             onClick={() => onNavigate('https://blancbrowser.com')}
-            className="group relative cursor-pointer flex flex-col items-center"
-            title="Blanc Browser"
+            className="cursor-pointer group flex flex-col items-center"
+            title="Blanc"
           >
-            <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-gradient-to-b from-[#d4ad66]/25 to-[#805d28]/10 border border-[#d4ad66]/40 flex items-center justify-center shadow-[0_10px_40px_rgba(212,173,102,0.25)] group-hover:shadow-[0_16px_55px_rgba(212,173,102,0.4)] group-hover:scale-105 transition-all duration-300">
-              <img
-                src="/sunrise-hero-mark.png"
-                alt="Blanc"
-                className="w-13 h-13 sm:w-16 sm:h-16 object-contain filter drop-shadow-[0_4px_14px_rgba(212,173,102,0.5)]"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                }}
-              />
-              <div className="hidden text-[#d4ad66]">
-                <Sparkles className="w-9 h-9" />
-              </div>
-            </div>
+            <img
+              src="/sunrise-hero-mark.png"
+              alt="Blanc"
+              className="w-13 h-13 sm:w-14 sm:h-14 object-contain filter drop-shadow-[0_4px_16px_rgba(212,173,102,0.18)] group-hover:scale-105 transition-transform duration-200"
+            />
           </div>
+          <span className="text-[12px] font-medium tracking-[0.08em] text-[#8e8e8e] lowercase">
+            {dateStr}
+          </span>
+        </header>
 
-          {/* CLOCK & GREETING */}
-          <div className="space-y-2">
-            <div className="text-6xl sm:text-7xl md:text-8xl font-extralight tracking-tight font-mono text-white/95 flex items-center justify-center space-x-2">
-              <span>{timeStr || '12:00'}</span>
-            </div>
-            <div className="flex items-center justify-center space-x-2.5 text-[14px] sm:text-[15px] text-white/60 font-medium">
-              <span>{greeting}, <span className="text-[#d4ad66] font-semibold">Explorer</span></span>
-              <span>•</span>
-              <span className="font-serif italic text-white/40">{dateStr}</span>
-            </div>
-          </div>
-
-          {/* QUICK HUB NAVIGATION PILLS */}
-          <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
-            <button
-              onClick={() => onNavigate('blanc://bookmarks')}
-              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 hover:border-[#d4ad66]/40 text-white/75 hover:text-white text-[12px] transition-all cursor-pointer active:scale-95"
-            >
-              <Bookmark className="w-3.5 h-3.5 text-[#d4ad66]" />
-              <span className="font-medium">Bookmarks</span>
-            </button>
-            <button
-              onClick={() => onNavigate('blanc://history')}
-              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 hover:border-sky-400/40 text-white/75 hover:text-white text-[12px] transition-all cursor-pointer active:scale-95"
-            >
-              <History className="w-3.5 h-3.5 text-sky-400" />
-              <span className="font-medium">History</span>
-            </button>
-            <button
-              onClick={() => onNavigate('blanc://settings')}
-              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 hover:border-purple-400/40 text-white/75 hover:text-white text-[12px] transition-all cursor-pointer active:scale-95"
-            >
-              <Settings className="w-3.5 h-3.5 text-purple-400" />
-              <span className="font-medium">Settings</span>
-            </button>
-          </div>
-        </div>
-
-        {/* UNIFIED SEARCH & COMMAND CAPSULE */}
-        <div className="w-full max-w-3xl lg:max-w-4xl">
+        {/* 2. CENTERED SEARCH BAR */}
+        <div className="w-full max-w-[560px]">
           <form
             onSubmit={handleSearch}
-            className="relative flex items-center h-15 sm:h-16 px-5 sm:px-6 rounded-2xl sm:rounded-3xl bg-[#141414]/90 hover:bg-[#181818] focus-within:bg-[#111111] border border-white/10 focus-within:border-[#d4ad66]/60 shadow-[0_16px_45px_rgba(0,0,0,0.55)] transition-all duration-200 group"
+            className="relative flex items-center h-[46px] px-4 rounded-[17px] bg-[#161616] hover:bg-[#1a1a1a] focus-within:bg-[#151515] border border-[#2a2a2a] hover:border-[#383838] focus-within:border-[#444444] shadow-[0_2px_14px_rgba(0,0,0,0.4)] transition-all group"
           >
-            <div className="text-white/40 group-focus-within:text-[#d4ad66] mr-4 transition-colors shrink-0">
-              <Search className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-
+            <Search className="w-4 h-4 text-white/35 group-focus-within:text-white/70 mr-2.5 transition-colors shrink-0" />
             <input
               type="text"
               value={searchQuery}
@@ -373,31 +291,21 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
                 }, 200);
               }}
               onKeyDown={handleKeyDown}
-              placeholder={`Search ${activeEngine} or enter a web address...`}
-              className="flex-1 bg-transparent text-[15px] sm:text-[17px] text-white placeholder-white/30 outline-none border-none font-normal"
+              placeholder={`Search ${activeEngine} or enter URL...`}
+              className="flex-1 bg-transparent text-[14.5px] text-white/95 placeholder-white/30 outline-none border-none font-medium"
             />
 
-            {/* Clear or Submit */}
-            <div className="flex items-center space-x-2 ml-3 shrink-0">
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
+            {searchQuery && (
               <button
-                type="submit"
-                className="px-3.5 py-2.5 rounded-xl bg-[#d4ad66] text-black hover:bg-[#e2bd78] active:scale-95 transition-all shadow-md font-bold"
-                title="Search"
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="p-1 rounded-md text-white/40 hover:text-white hover:bg-white/10 shrink-0"
               >
-                <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                <X className="w-3.5 h-3.5" />
               </button>
-            </div>
+            )}
 
-            {/* SMART AUTOCOMPLETE / SUGGESTION PICKER */}
+            {/* AUTOCOMPLETE / SUGGESTION PICKER */}
             <SuggestionPicker
               suggestions={suggestions}
               selectedIndex={selectedIndex}
@@ -408,18 +316,17 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
             />
           </form>
 
-          {/* ENGINE SWITCHER PILLS */}
-          <div className="flex items-center justify-center space-x-2 mt-3.5 overflow-x-auto py-1 text-[12px]">
-            <span className="text-white/30 mr-1.5 text-[11px] uppercase font-semibold tracking-wider">Engine:</span>
+          {/* ENGINE SWITCHER */}
+          <div className="flex items-center justify-center space-x-1.5 mt-2.5 overflow-x-auto py-1 text-[12px]">
             {SEARCH_ENGINES.map((eng) => (
               <button
                 key={eng.id}
                 type="button"
                 onClick={() => setActiveEngine(eng.id)}
-                className={`px-3 py-1 rounded-full border transition-all ${
+                className={`px-2.5 py-0.5 rounded-full transition-all ${
                   activeEngine.toLowerCase() === eng.id.toLowerCase()
-                    ? 'bg-[#d4ad66]/20 border-[#d4ad66]/50 text-[#d4ad66] font-medium'
-                    : 'bg-white/[0.03] border-white/5 text-white/40 hover:text-white/80 hover:bg-white/[0.06]'
+                    ? 'bg-white/10 text-white font-medium'
+                    : 'text-white/40 hover:text-white/75 hover:bg-white/5'
                 }`}
               >
                 {eng.label}
@@ -428,25 +335,22 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
           </div>
         </div>
 
-        {/* PINNED FAVORITES GRID */}
-        <div className="w-full max-w-3xl lg:max-w-4xl">
-          <div className="flex items-center justify-between mb-4 px-1">
-            <div className="flex items-center space-x-2.5">
-              <span className="text-[14px] sm:text-[15px] font-semibold text-white/85">Pinned Sites</span>
-              <span className="text-[11px] sm:text-[12px] text-white/40 px-2.5 py-0.5 rounded-full bg-white/5">
-                {favorites.length}
-              </span>
-            </div>
+        {/* 3. FAVORITES (LEDGER TILES) */}
+        <div className="w-full max-w-[620px]">
+          <div className="flex items-center justify-between mb-2.5 px-0.5">
+            <span className="text-[11.5px] font-semibold tracking-[0.11em] uppercase text-[#777777]">
+              Favorites
+            </span>
             <button
               onClick={openAddFavorite}
-              className="flex items-center space-x-1.5 text-[13px] text-[#d4ad66] hover:text-[#e5be73] transition-colors"
+              className="flex items-center space-x-1 text-[12.5px] text-[#8e8e8e] hover:text-[#f5f5f5] transition-colors cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
-              <span>Add Shortcut</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add</span>
             </button>
           </div>
 
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3.5 sm:gap-4.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
             {favorites.map((fav) => {
               let domain = '';
               try {
@@ -460,65 +364,71 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
                 <div
                   key={fav.id}
                   onClick={() => onNavigate(fav.url)}
-                  className="group relative flex flex-col items-center justify-center p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 hover:border-white/15 transition-all duration-200 cursor-pointer text-center hover:-translate-y-0.5"
+                  className="p-3 rounded-xl bg-[#161616] hover:bg-[#1c1c1c] border border-[#242424] hover:border-[#333333] transition-all cursor-pointer flex flex-col items-start space-y-2 group relative text-left"
                 >
-                  {/* Context menu trigger */}
-                  <div
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <div className="flex items-center justify-between w-full">
+                    <div className="w-8 h-8 rounded-lg bg-[#202020] border border-[#2a2a2a] flex items-center justify-center p-1.5 overflow-hidden">
+                      <img
+                        src={faviconSrc}
+                        alt=""
+                        className="w-4 h-4 object-contain"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                      <div className="hidden font-mono font-medium text-white/70 text-[12px]">
+                        {fav.title[0]?.toUpperCase() || 'W'}
+                      </div>
+                    </div>
+
                     <button
-                      onClick={() => setActiveMenuId(activeMenuId === fav.id ? null : fav.id)}
-                      className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveMenuId(activeMenuId === fav.id ? null : fav.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 text-white/40 hover:text-white transition-opacity"
                     >
                       <MoreVertical className="w-3.5 h-3.5" />
                     </button>
-
-                    {activeMenuId === fav.id && (
-                      <div className="absolute right-0 top-6 w-32 bg-[#1e1e1e] border border-white/10 rounded-xl shadow-2xl py-1.5 z-30">
-                        <button
-                          onClick={() => openEditFavorite(fav)}
-                          className="w-full flex items-center space-x-2 px-3 py-1.5 text-[12px] text-white/80 hover:bg-white/10 text-left"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                          <span>Edit</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            onRemoveFavorite(fav.id);
-                            setActiveMenuId(null);
-                          }}
-                          className="w-full flex items-center space-x-2 px-3 py-1.5 text-[12px] text-red-400 hover:bg-red-500/10 text-left"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Delete</span>
-                        </button>
-                      </div>
-                    )}
                   </div>
 
-                  {/* Favicon Tile */}
-                  <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-center mb-2.5 group-hover:scale-105 group-hover:border-[#d4ad66]/40 transition-all overflow-hidden p-3">
-                    <img
-                      src={faviconSrc}
-                      alt=""
-                      className="w-6 h-6 sm:w-7 sm:h-7 object-contain"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                        e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                      }}
-                    />
-                    <div className="hidden font-mono font-bold text-[#d4ad66] text-[15px]">
-                      {fav.title[0]?.toUpperCase() || 'W'}
+                  <div className="w-full min-w-0">
+                    <span className="text-[13px] font-medium text-[#ededed] truncate block">
+                      {fav.title}
+                    </span>
+                    <span className="text-[11.5px] text-[#777777] font-mono truncate block mt-0.5">
+                      {domain}
+                    </span>
+                  </div>
+
+                  {activeMenuId === fav.id && (
+                    <div
+                      className="absolute right-2 top-9 w-28 rounded-xl bg-[#202020] border border-[#333333] shadow-xl py-1 z-20"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => openEditFavorite(fav)}
+                        className="w-full px-3 py-1.5 text-left text-[11.5px] text-white/80 hover:bg-white/10 flex items-center space-x-2"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onRemoveFavorite(fav.id);
+                          setActiveMenuId(null);
+                        }}
+                        className="w-full px-3 py-1.5 text-left text-[11.5px] text-red-400 hover:bg-white/10 flex items-center space-x-2"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Delete</span>
+                      </button>
                     </div>
-                  </div>
-
-                  <span className="text-[12px] sm:text-[13px] font-medium text-white/90 truncate w-full px-1">
-                    {fav.title}
-                  </span>
-                  <span className="text-[10px] sm:text-[11px] text-white/40 truncate w-full px-1 mt-0.5">
-                    {domain}
-                  </span>
+                  )}
                 </div>
               );
             })}
@@ -526,34 +436,30 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
             {/* Quick Add Button */}
             <button
               onClick={openAddFavorite}
-              className="flex flex-col items-center justify-center p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-dashed border-white/10 hover:border-[#d4ad66]/40 hover:bg-[#d4ad66]/5 transition-all text-white/40 hover:text-[#d4ad66] group cursor-pointer hover:-translate-y-0.5"
+              className="p-3 rounded-xl border border-dashed border-[#262626] hover:border-[#383838] hover:bg-[#161616]/60 transition-all text-[#666666] hover:text-[#aaaaaa] flex flex-col items-center justify-center min-h-[90px] cursor-pointer"
             >
-              <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-white/[0.02] group-hover:bg-[#d4ad66]/10 border border-white/5 flex items-center justify-center mb-2.5 transition-colors">
-                <Plus className="w-5 h-5" />
-              </div>
-              <span className="text-[12px] sm:text-[13px] font-medium">Add New</span>
-              <span className="text-[10px] sm:text-[11px] opacity-40 mt-0.5">Shortcut</span>
+              <Plus className="w-4 h-4 mb-1" />
+              <span className="text-[11px] font-medium">Add shortcut</span>
             </button>
           </div>
         </div>
 
-        {/* PICK UP WHERE YOU LEFT OFF (Recent Activity) */}
+        {/* 4. RECENT ACTIVITY (PICK UP WHERE YOU LEFT OFF) */}
         {recentHistory.length > 0 && (
-          <div className="w-full max-w-3xl lg:max-w-4xl">
-            <div className="flex items-center justify-between mb-3 px-1">
-              <div className="flex items-center space-x-2.5">
-                <Clock className="w-4 h-4 text-[#d4ad66]" />
-                <span className="text-[13px] sm:text-[14px] font-semibold text-white/80">Pick up where you left off</span>
-              </div>
+          <div className="w-full max-w-[620px]">
+            <div className="flex items-center justify-between mb-2.5 px-0.5">
+              <span className="text-[10.5px] font-semibold tracking-[0.11em] uppercase text-[#777777]">
+                Pick up where you left off
+              </span>
               <button
                 onClick={() => onNavigate('blanc://history')}
-                className="text-[12px] text-white/40 hover:text-white transition-colors"
+                className="text-[11px] text-[#777777] hover:text-[#cccccc] transition-colors"
               >
-                View all history →
+                history →
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {recentHistory.map((item) => {
                 let domain = '';
                 try {
@@ -565,14 +471,14 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
                   <div
                     key={item.id}
                     onClick={() => onNavigate(item.url)}
-                    className="flex items-center space-x-3.5 p-3 sm:p-3.5 rounded-2xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-white/10 transition-colors cursor-pointer text-left"
+                    className="flex items-center space-x-2.5 p-2.5 rounded-xl bg-[#141414] hover:bg-[#1a1a1a] border border-[#222222] hover:border-[#2e2e2e] transition-colors cursor-pointer text-left"
                   >
-                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/5 flex items-center justify-center text-[#d4ad66] shrink-0 text-[12px] sm:text-[13px] font-bold">
+                    <div className="w-7 h-7 rounded-lg bg-[#202020] flex items-center justify-center text-white/60 shrink-0 text-[11px] font-medium">
                       {item.title?.[0]?.toUpperCase() || 'W'}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] font-medium text-white/90 truncate">{item.title}</p>
-                      <p className="text-[11px] text-white/40 truncate">{domain}</p>
+                      <p className="text-[11.5px] text-[#777777] font-mono truncate">{domain}</p>
                     </div>
                   </div>
                 );
@@ -581,66 +487,31 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
           </div>
         )}
 
-        {/* PROTECTION HUD / TELEMETRY TICKER */}
-        <div className="w-full max-w-3xl lg:max-w-4xl p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-gradient-to-r from-white/[0.04] to-white/[0.01] border border-white/5 flex flex-col sm:flex-row items-center justify-between gap-5">
-          <div className="flex items-center space-x-4">
-            <div className="p-3 sm:p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shrink-0">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="text-[14px] sm:text-[15px] font-semibold text-white/90">Blanc Shield Protection</span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              </div>
-              <p className="text-[12px] sm:text-[13px] text-white/50 mt-1">
-                Independent network-layer filter • Zero ad trackers or third-party telemetries.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-5 text-[13px] shrink-0">
-            {currentTabBlockedTrackers > 0 && (
-              <>
-                <div className="text-center sm:text-right">
-                  <p className="text-white/40 text-[10px] sm:text-[11px] uppercase font-semibold">This Tab</p>
-                  <p className="font-mono font-bold text-emerald-400 text-[16px] sm:text-[18px]">
-                    {currentTabBlockedTrackers}
-                  </p>
-                </div>
-                <div className="h-7 w-[1px] bg-white/10" />
-              </>
-            )}
-            <div className="text-center sm:text-right">
-              <p className="text-white/40 text-[10px] sm:text-[11px] uppercase font-semibold">Trackers Blocked</p>
-              <p className="font-mono font-bold text-[#d4ad66] text-[16px] sm:text-[18px]">
-                {adblockStats.totalBlocked.toLocaleString()}
-              </p>
-            </div>
-            <div className="h-7 w-[1px] bg-white/10" />
-            <div className="text-center sm:text-right">
-              <p className="text-white/40 text-[10px] sm:text-[11px] uppercase font-semibold">Data Saved</p>
-              <p className="font-mono font-bold text-white/90 text-[16px] sm:text-[18px]">
-                ~{(adblockStats.totalBlocked * 0.08).toFixed(1)} MB
-              </p>
-            </div>
-          </div>
+        {/* 5. QUIET PRIVACY STATS FOOTER */}
+        <div className="flex items-center space-x-2 text-[13px] text-[#888888] pt-2">
+          <ShieldCheck className="w-3.5 h-3.5 text-[#d4ad66]" />
+          <span>
+            <span className="font-mono text-[#f5f5f5]">{adblockStats.totalBlocked.toLocaleString()}</span> ads & trackers blocked this week
+          </span>
         </div>
 
-        {/* FOOTER KEYBOARD SHORTCUTS HINTS */}
-        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px] sm:text-[13px] text-white/30 pt-2 font-mono">
-          <span><span className="text-white/60">⌘K</span> Quick Switcher</span>
+        {/* 6. SHORTCUT HINTS */}
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[12px] text-[#666666] font-mono">
+          <span><span className="text-[#999999]">Ctrl+K</span> Quick Switcher</span>
           <span>•</span>
-          <span><span className="text-white/60">⌘T</span> New Tab</span>
+          <span><span className="text-[#999999]">Ctrl+T</span> New Tab</span>
           <span>•</span>
-          <span><span className="text-white/60">⌘W</span> Close Tab</span>
+          <span><span className="text-[#999999]">Ctrl+L</span> Address Bar</span>
           <span>•</span>
-          <span><span className="text-white/60">⌘,</span> Settings</span>
+          <span><span className="text-[#999999]">Ctrl+Shift+V</span> Vertical Tabs</span>
+          <span>•</span>
+          <span><span className="text-[#999999]">Ctrl+,</span> Settings</span>
         </div>
 
         {/* BOTTOM PERSONALIZATION BAR (WALLPAPER CONTROLS & FONT SWITCHER) */}
-        <div className="flex flex-wrap items-center justify-between gap-4 w-full pt-4 border-t border-white/10 text-[12px]">
+        <div className="flex flex-wrap items-center justify-between gap-4 w-full pt-4 border-t border-[#222222] text-[13px]">
           {/* Wallpaper location & credit badge */}
-          {activeWallpaper && settings.natureWallpaper !== false ? (
+          {activeWallpaper && settings.natureWallpaper ? (
             <div className="flex items-center space-x-2 text-white/50 hover:text-white/80 transition-colors">
               <MapPin className="w-3.5 h-3.5 text-[#d4ad66] shrink-0" />
               <span className="font-medium text-white/70">{activeWallpaper.location}</span>
@@ -653,12 +524,12 @@ export const NewTabPage: React.FC<NewTabPageProps> = ({
 
           {/* Controls: Next Wallpaper & Font Switcher */}
           <div className="flex items-center space-x-2.5 ml-auto">
-            {settings.natureWallpaper !== false && (
+            {settings.natureWallpaper && (
               <button
                 type="button"
                 onClick={handleNextWallpaper}
                 title="Shuffle Nature Wallpaper"
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 hover:border-white/20 text-white/80 hover:text-white transition-all active:scale-95 cursor-pointer shadow-sm text-[12px]"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-[#2a2a2a] text-white/80 hover:text-white transition-all active:scale-95 cursor-pointer text-[12.5px]"
               >
                 <RefreshCw className="w-3.5 h-3.5 text-[#d4ad66]" />
                 <span>Next Nature View</span>

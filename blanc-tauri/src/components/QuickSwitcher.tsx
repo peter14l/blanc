@@ -17,6 +17,7 @@ import {
   Download,
   Keyboard,
   Activity,
+  PanelLeft,
 } from 'lucide-react';
 import {
   Tab,
@@ -33,6 +34,7 @@ interface QuickSwitcherProps {
   bookmarks?: Bookmark[];
   history?: HistoryEntry[];
   settings?: BrowserSettings;
+  onToggleVerticalTabs?: () => void;
   onSelectTab: (tabId: string) => void;
   onNavigate: (url: string) => void;
   onNewTab: (url?: string) => void;
@@ -47,6 +49,7 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
   bookmarks = [],
   history = [],
   settings,
+  onToggleVerticalTabs,
   onSelectTab,
   onNavigate,
   onNewTab,
@@ -131,6 +134,13 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
         desc: 'Inspect engine state and audit reports (blanc://diagnostics)',
         icon: 'activity',
         action: () => onNavigate('blanc://diagnostics'),
+      },
+      {
+        cmd: '/vertical',
+        title: 'Vertical Tabs',
+        desc: 'Toggle the floating vertical tabs sidebar (Ctrl+Shift+V)',
+        icon: 'panel-left',
+        action: () => onToggleVerticalTabs?.(),
       },
       {
         cmd: '/clear',
@@ -450,9 +460,9 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search tabs, history, bookmarks, or type / for commands..."
-            className="w-full bg-transparent text-[14px] text-white/95 placeholder-white/30 outline-none border-none font-normal"
+            className="w-full bg-transparent text-[15px] text-white/95 placeholder-white/30 outline-none border-none font-normal"
           />
-          <kbd className="px-1.5 py-0.5 text-[10px] font-medium text-white/40 bg-white/5 border border-white/10 rounded shrink-0">
+          <kbd className="px-1.5 py-0.5 text-[11px] font-medium text-white/40 bg-white/5 border border-white/10 rounded shrink-0">
             ESC
           </kbd>
         </div>
@@ -460,7 +470,7 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
         {/* Results List */}
         <div ref={listRef} className="max-h-[380px] overflow-y-auto p-2 space-y-0.5">
           {items.length === 0 ? (
-            <div className="py-10 text-center text-white/30 text-[13px]">
+            <div className="py-10 text-center text-white/30 text-[13.5px]">
               No results found for "{query}"
             </div>
           ) : (
@@ -513,6 +523,7 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
                           {item.icon === 'download' && <Download className="w-3.5 h-3.5" />}
                           {item.icon === 'keyboard' && <Keyboard className="w-3.5 h-3.5" />}
                           {item.icon === 'activity' && <Activity className="w-3.5 h-3.5" />}
+                          {item.icon === 'panel-left' && <PanelLeft className="w-3.5 h-3.5" />}
                           {item.icon === 'trash' && <Trash2 className="w-3.5 h-3.5" />}
                           {item.icon === 'moon' && <Moon className="w-3.5 h-3.5" />}
                           {item.icon === 'sun' && <Sun className="w-3.5 h-3.5" />}
@@ -526,15 +537,15 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center space-x-2">
-                        <p className="text-[13px] font-medium truncate">{item.title}</p>
+                        <p className="text-[14px] font-medium truncate">{item.title}</p>
                         {item.badge && (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-white/5 border border-white/5 text-white/40 shrink-0">
+                          <span className="px-1.5 py-0.2 rounded text-[11px] font-medium bg-white/5 border border-white/5 text-white/40 shrink-0">
                             {item.badge}
                           </span>
                         )}
                       </div>
                       {item.subtitle && (
-                        <p className="text-[11px] text-white/40 truncate">{item.subtitle}</p>
+                        <p className="text-[12.5px] text-white/40 truncate">{item.subtitle}</p>
                       )}
                     </div>
                   </div>
@@ -551,7 +562,7 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
         </div>
 
         {/* Footer shortcuts helper */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-white/5 bg-white/[0.02] text-[11px] text-white/40">
+        <div className="flex items-center justify-between px-4 py-2.5 border-t border-white/5 bg-white/[0.02] text-[11.5px] text-white/40">
           <div className="flex items-center space-x-3">
             <span>↑↓ Navigate</span>
             <span>↵ Select</span>
