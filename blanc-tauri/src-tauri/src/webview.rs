@@ -202,11 +202,6 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
             shiftKey: e.shiftKey
           };
           try {
-            if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
-              window.chrome.webview.postMessage(JSON.stringify(payload));
-            }
-          } catch(err) {}
-          try {
             if (window.parent && window.parent !== window) {
               window.parent.postMessage(payload, '*');
             }
@@ -225,11 +220,6 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
             altKey: e.altKey,
             shiftKey: e.shiftKey
           };
-          try {
-            if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
-              window.chrome.webview.postMessage(JSON.stringify(payload));
-            }
-          } catch(err) {}
           try {
             if (window.parent && window.parent !== window) {
               window.parent.postMessage(payload, '*');
@@ -630,10 +620,6 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
                                                 "tabId": notif_tab_id.clone(),
                                             }),
                                         );
-                                    } else if msg_type == "BLANC_KEYBOARD_SHORTCUT" {
-                                        let _ = notif_app.emit("blanc:keyboard-shortcut", val);
-                                    } else if msg_type == "BLANC_KEYBOARD_KEYUP" {
-                                        let _ = notif_app.emit("blanc:keyboard-keyup", val);
                                     }
                                 }
                             }

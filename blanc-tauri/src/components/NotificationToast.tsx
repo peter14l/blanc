@@ -16,44 +16,6 @@ interface NotificationToastProps {
   onClick: (tabId?: string) => void;
 }
 
-// Synthesizes a clean, pleasant notification chime using Web Audio API
-function playNotificationChime() {
-  try {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
-    
-    // Primary chime tone
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(880, ctx.currentTime); // A5
-    osc1.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.12); // E6
-    gain1.gain.setValueAtTime(0.12, ctx.currentTime);
-    gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-
-    osc1.connect(gain1);
-    gain1.connect(ctx.destination);
-    osc1.start();
-    osc1.stop(ctx.currentTime + 0.35);
-
-    // Harmonic bell overtone
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = 'triangle';
-    osc2.frequency.setValueAtTime(1760, ctx.currentTime + 0.05); // A6
-    gain2.gain.setValueAtTime(0.06, ctx.currentTime + 0.05);
-    gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-
-    osc2.connect(gain2);
-    gain2.connect(ctx.destination);
-    osc2.start(ctx.currentTime + 0.05);
-    osc2.stop(ctx.currentTime + 0.4);
-  } catch (err) {
-    // Audio context may be restricted by autoplay policy before user gesture
-  }
-}
-
 export const NotificationToast: React.FC<NotificationToastProps> = ({
   notification,
   onDismiss,
@@ -64,7 +26,6 @@ export const NotificationToast: React.FC<NotificationToastProps> = ({
   useEffect(() => {
     if (notification) {
       setIsVisible(true);
-      playNotificationChime();
 
       // Auto-dismiss after 6.5 seconds
       const timer = setTimeout(() => {

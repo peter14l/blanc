@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Tab,
   Bookmark,
@@ -204,6 +204,13 @@ export function useBrowserIPC(): BrowserIPCContextType {
     }
     return DEFAULT_INITIAL_TABS;
   });
+
+  const tabsRef = useRef<Tab[]>(tabs);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  const lastCreateTabTimeRef = useRef<number>(0);
 
   // Ensure persistent localStorage doesn't retain stale download URLs
   useEffect(() => {
@@ -485,6 +492,16 @@ export function useBrowserIPC(): BrowserIPCContextType {
   // Create a new tab
   const createTab = useCallback(
     async (url?: string): Promise<Tab> => {
+      const now = Date.now();
+      if (now - lastCreateTabTimeRef.current < 250) {
+        console.warn('[useBrowserIPC] createTab burst ignored by debounce (<250ms)');
+        const currentActive = tabsRef.current.find((t) => t.is_active) || tabsRef.current[0];
+        if (currentActive) {
+          return currentActive;
+        }
+      }
+      lastCreateTabTimeRef.current = now;
+
       const defaultUrl = url || 'blanc://newtab';
       const newTabId = `tab-${Date.now()}`;
       const title = getTabTitleFromUrl(defaultUrl);

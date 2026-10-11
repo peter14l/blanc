@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useBrowserIPC } from './hooks/useBrowserIPC';
 import { FloatingIsland } from './components/FloatingIsland';
 import { VerticalTabsPane } from './components/VerticalTabsPane';
@@ -76,327 +76,45 @@ export const App: React.FC = () => {
   const handleKeyDownRef = useRef<(e: any) => void>(() => {});
   const handleKeyUpRef = useRef<(e: any) => void>(() => {});
 
+  const tabsRef = useRef(tabs);
+  const activeTabRef = useRef(activeTab);
+  const bookmarksRef = useRef(bookmarks);
+  const addBookmarkRef = useRef(addBookmark);
+  const closeTabRef = useRef(closeTab);
+  const closeAllTabsRef = useRef(closeAllTabs);
+  const createTabRef = useRef(createTab);
+  const reopenClosedTabRef = useRef(reopenClosedTab);
+  const switchTabRef = useRef(switchTab);
+  const reloadTabRef = useRef(reloadTab);
+  const goBackRef = useRef(goBack);
+  const goForwardRef = useRef(goForward);
+  const navigateRef = useRef(navigate);
+  const toggleQuickSwitcherRef = useRef(toggleQuickSwitcher);
+  const maximizeWindowRef = useRef(maximizeWindow);
+
   useEffect(() => {
     isTabHUDOpenRef.current = isTabHUDOpen;
     tabHUDIndexRef.current = tabHUDIndex;
-  }, [isTabHUDOpen, tabHUDIndex]);
-
-  // Mouse Gestures & Rocker Navigation
-  const { hudState } = useMouseGestures({
-    enabled: settings.mouseGesturesEnabled !== false,
-    onGoBack: () => {
-      if (activeTab) goBack(activeTab.id);
-    },
-    onGoForward: () => {
-      if (activeTab) goForward(activeTab.id);
-    },
-    onReload: () => {
-      if (activeTab) reloadTab(activeTab.id);
-    },
-    onNewTab: () => {
-      createTab('blanc://newtab');
-    },
-    onCloseTab: () => {
-      if (activeTab) closeTab(activeTab.id);
-    },
-    onReopenClosedTab: () => {
-      reopenClosedTab();
-    },
-  });
-
-  // Global Keyboard Shortcuts (Standard Browser Navigation)
-  useEffect(() => {
-    const handleKeyDown = (e: any) => {
-      const isMeta = Boolean(e.metaKey || e.ctrlKey);
-      const key = (e.key || "").toLowerCase();
-
-      const isInputActive = () => {
-        const el = document.activeElement;
-        if (!el) return false;
-        const tag = el.tagName.toLowerCase();
-        return (
-          tag === 'input' ||
-          tag === 'textarea' ||
-          (el as HTMLElement).isContentEditable
-        );
-      };
-
-      // Omnibox focus: Ctrl+L, Alt+D, F6
-      if ((isMeta && key === 'l') || (e.altKey && key === 'd') || e.key === 'F6') {
-        e.preventDefault?.();
-        window.dispatchEvent(new CustomEvent('blanc:focus-address-bar'));
-      }
-      // Quick Switcher: Ctrl+K
-      else if (isMeta && key === 'k') {
-        e.preventDefault?.();
-        toggleQuickSwitcher();
-      }
-      // In-page Find: Ctrl+F
-      else if (isMeta && key === 'f') {
-        e.preventDefault?.();
-        setIsFindOpen((prev) => !prev);
-      }
-      // Zoom Controls: Ctrl+=, Ctrl+-, Ctrl+0
-      else if (isMeta && (e.key === '=' || e.key === '+')) {
-        e.preventDefault?.();
-        setZoomLevel((prev) => Math.min(3.0, Number((prev + 0.1).toFixed(1))));
-      } else if (isMeta && e.key === '-') {
-        e.preventDefault?.();
-        setZoomLevel((prev) => Math.max(0.5, Number((prev - 0.1).toFixed(1))));
-      } else if (isMeta && e.key === '0') {
-        e.preventDefault?.();
-        setZoomLevel(1.0);
-      }
-      // Reload / Hard Reload: F5, Ctrl+R, Ctrl+F5, Ctrl+Shift+R
-      else if (e.key === 'F5' || (isMeta && key === 'r')) {
-        e.preventDefault?.();
-        if (activeTab) {
-          reloadTab(activeTab.id);
-        }
-      }
-      // New Tab: Ctrl+T / Reopen Closed Tab: Ctrl+Shift+T
-      else if (isMeta && key === 't') {
-        e.preventDefault?.();
-        if (e.shiftKey) {
-          reopenClosedTab();
-        } else {
-          createTab('blanc://newtab');
-        }
-      }
-      // New Private / Incognito Tab: Ctrl+Shift+N
-      else if (isMeta && e.shiftKey && key === 'n') {
-        e.preventDefault?.();
-        createTab('blanc://newtab');
-      }
-      // New Tab from Window: Ctrl+N
-      else if (isMeta && !e.shiftKey && key === 'n') {
-        e.preventDefault?.();
-        createTab('blanc://newtab');
-      }
-      // Close Tab: Ctrl+W or Ctrl+F4 / Close All: Ctrl+Shift+W
-      else if ((isMeta && key === 'w') || (isMeta && e.key === 'F4')) {
-        e.preventDefault?.();
-        if (e.shiftKey) {
-          closeAllTabs();
-        } else if (activeTab) {
-          closeTab(activeTab.id);
-        }
-      }
-      // Back: Alt+Left, Alt+[, or Backspace (when not typing in an input)
-      else if (
-        (e.altKey && e.key === 'ArrowLeft') ||
-        (isMeta && (e.key === '[' || e.key === 'ArrowLeft') && e.altKey) ||
-        (e.key === 'Backspace' && !isMeta && !e.altKey && !isInputActive())
-      ) {
-        e.preventDefault?.();
-        if (activeTab) goBack(activeTab.id);
-      }
-      // Forward: Alt+Right, Alt+], or Shift+Backspace (when not typing in an input)
-      else if (
-        (e.altKey && e.key === 'ArrowRight') ||
-        (isMeta && (e.key === ']' || e.key === 'ArrowRight') && e.altKey) ||
-        (e.key === 'Backspace' && e.shiftKey && !isMeta && !e.altKey && !isInputActive())
-      ) {
-        e.preventDefault?.();
-        if (activeTab) goForward(activeTab.id);
-      }
-      // Tab Switching HUD: Alt+Tab, Ctrl+Tab, Ctrl+Shift+Tab, Alt+Shift+Tab
-      else if ((e.altKey || isMeta) && e.key === 'Tab') {
-        e.preventDefault?.();
-        if (tabs.length > 1) {
-          if (!isTabHUDOpenRef.current) {
-            const currentIdx = Math.max(0, tabs.findIndex((t) => t.id === activeTab?.id));
-            const nextIdx = e.shiftKey
-              ? (currentIdx - 1 + tabs.length) % tabs.length
-              : (currentIdx + 1) % tabs.length;
-            setTabHUDIndex(nextIdx);
-            setIsTabHUDOpen(true);
-          } else {
-            const nextIdx = e.shiftKey
-              ? (tabHUDIndexRef.current - 1 + tabs.length) % tabs.length
-              : (tabHUDIndexRef.current + 1) % tabs.length;
-            setTabHUDIndex(nextIdx);
-          }
-        }
-      }
-      // Tab Switching HUD keyboard navigation (Arrow keys, Escape, Enter)
-      else if (
-        isTabHUDOpenRef.current &&
-        (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'Escape' || e.key === 'Enter')
-      ) {
-        e.preventDefault?.();
-        if (e.key === 'ArrowRight') {
-          setTabHUDIndex((prev) => (prev + 1) % tabs.length);
-        } else if (e.key === 'ArrowLeft') {
-          setTabHUDIndex((prev) => (prev - 1 + tabs.length) % tabs.length);
-        } else if (e.key === 'Escape') {
-          setIsTabHUDOpen(false);
-        } else if (e.key === 'Enter') {
-          const target = tabs[tabHUDIndexRef.current];
-          if (target) {
-            switchTab(target.id);
-          }
-          setIsTabHUDOpen(false);
-        }
-      }
-      // Tab Switching without HUD: Ctrl+PageUp / Ctrl+PageDown
-      else if (isMeta && (e.key === 'PageDown' || e.key === 'PageUp')) {
-        e.preventDefault?.();
-        if (tabs.length > 1) {
-          const currentIdx = tabs.findIndex((t) => t.id === activeTab?.id);
-          const nextIdx = e.key === 'PageUp'
-            ? (currentIdx - 1 + tabs.length) % tabs.length
-            : (currentIdx + 1) % tabs.length;
-          switchTab(tabs[nextIdx].id);
-        }
-      }
-      // History: Ctrl+H or Ctrl+Y
-      else if (isMeta && (key === 'h' || key === 'y')) {
-        e.preventDefault?.();
-        if (activeTab) navigate(activeTab.id, 'blanc://history');
-        else createTab('blanc://history');
-      }
-      // Bookmarks Page: Ctrl+Shift+B or Ctrl+Shift+O
-      else if (isMeta && e.shiftKey && (key === 'b' || key === 'o')) {
-        e.preventDefault?.();
-        if (activeTab) navigate(activeTab.id, 'blanc://bookmarks');
-        else createTab('blanc://bookmarks');
-      }
-      // Add Bookmark: Ctrl+D
-      else if (isMeta && key === 'd' && !e.altKey) {
-        e.preventDefault?.();
-        if (activeTab && !bookmarks.some((b) => b.url === activeTab.url)) {
-          addBookmark({
-            title: activeTab.title || activeTab.url,
-            url: activeTab.url,
-            folder: 'Bookmarks',
-          });
-        }
-      }
-      // Number key 1-9 to jump to tab: Ctrl+1..9
-      else if (isMeta && e.key >= '1' && e.key <= '9') {
-        e.preventDefault?.();
-        const targetIdx = e.key === '9' ? tabs.length - 1 : parseInt(e.key, 10) - 1;
-        if (tabs[targetIdx]) {
-          switchTab(tabs[targetIdx].id);
-        }
-      }
-      // Settings: Ctrl+,
-      else if (isMeta && e.key === ',') {
-        e.preventDefault?.();
-        if (activeTab) navigate(activeTab.id, 'blanc://settings');
-        else createTab('blanc://settings');
-      }
-      // Downloads: Ctrl+J
-      else if (isMeta && key === 'j') {
-        e.preventDefault?.();
-        if (activeTab) navigate(activeTab.id, 'blanc://downloads');
-        else createTab('blanc://downloads');
-      }
-      // Shortcuts: Ctrl+/
-      else if (isMeta && e.key === '/') {
-        e.preventDefault?.();
-        if (activeTab) navigate(activeTab.id, 'blanc://shortcuts');
-        else createTab('blanc://shortcuts');
-      }
-      // Fullscreen / Maximize toggle: F11
-      else if (e.key === 'F11') {
-        e.preventDefault?.();
-        maximizeWindow();
-      }
-      // Home page: Alt+Home
-      else if (e.altKey && e.key === 'Home') {
-        e.preventDefault?.();
-        if (activeTab) navigate(activeTab.id, 'blanc://newtab');
-        else createTab('blanc://newtab');
-      }
-    };
-
-    const handleKeyUp = (e: any) => {
-      if (isTabHUDOpenRef.current) {
-        const k = e.key || '';
-        if (
-          k === 'Alt' ||
-          k === 'Control' ||
-          k === 'Meta' ||
-          k.toLowerCase() === 'alt' ||
-          k.toLowerCase() === 'control'
-        ) {
-          const target = tabs[tabHUDIndexRef.current];
-          if (target) {
-            switchTab(target.id);
-          }
-          setIsTabHUDOpen(false);
-        }
-      }
-    };
-
-    handleKeyDownRef.current = handleKeyDown;
-    handleKeyUpRef.current = handleKeyUp;
-
-    let unlistenShortcut: (() => void) | null = null;
-    let unlistenKeyup: (() => void) | null = null;
-    let unlistenAltTabPress: (() => void) | null = null;
-    let unlistenAltTabRelease: (() => void) | null = null;
-
-    if (isTauriAvailable) {
-      import('@tauri-apps/api/event').then(({ listen }) => {
-        listen<any>('blanc:keyboard-shortcut', (event) => {
-          if (event.payload) {
-            handleKeyDown(event.payload);
-          }
-        }).then((un) => { unlistenShortcut = un; });
-
-        listen<any>('blanc:keyboard-keyup', (event) => {
-          if (event.payload) {
-            handleKeyUp(event.payload);
-          }
-        }).then((un) => { unlistenKeyup = un; });
-
-        listen<any>('blanc:alt-tab-press', (event) => {
-          if (tabs.length > 1) {
-            const isShift = Boolean(event.payload?.shift);
-            if (!isTabHUDOpenRef.current) {
-              const currentIdx = Math.max(0, tabs.findIndex((t) => t.id === activeTab?.id));
-              const nextIdx = isShift
-                ? (currentIdx - 1 + tabs.length) % tabs.length
-                : (currentIdx + 1) % tabs.length;
-              setTabHUDIndex(nextIdx);
-              setIsTabHUDOpen(true);
-            } else {
-              const nextIdx = isShift
-                ? (tabHUDIndexRef.current - 1 + tabs.length) % tabs.length
-                : (tabHUDIndexRef.current + 1) % tabs.length;
-              setTabHUDIndex(nextIdx);
-            }
-          }
-        }).then((un) => { unlistenAltTabPress = un; });
-
-        listen<any>('blanc:alt-tab-release', () => {
-          if (isTabHUDOpenRef.current) {
-            const target = tabs[tabHUDIndexRef.current];
-            if (target) {
-              switchTab(target.id);
-            }
-            setIsTabHUDOpen(false);
-          }
-        }).then((un) => { unlistenAltTabRelease = un; });
-      }).catch(() => {});
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      if (unlistenShortcut) unlistenShortcut();
-      if (unlistenKeyup) unlistenKeyup();
-      if (unlistenAltTabPress) unlistenAltTabPress();
-      if (unlistenAltTabRelease) unlistenAltTabRelease();
-    };
+    tabsRef.current = tabs;
+    activeTabRef.current = activeTab;
+    bookmarksRef.current = bookmarks;
+    addBookmarkRef.current = addBookmark;
+    closeTabRef.current = closeTab;
+    closeAllTabsRef.current = closeAllTabs;
+    createTabRef.current = createTab;
+    reopenClosedTabRef.current = reopenClosedTab;
+    switchTabRef.current = switchTab;
+    reloadTabRef.current = reloadTab;
+    goBackRef.current = goBack;
+    goForwardRef.current = goForward;
+    navigateRef.current = navigate;
+    toggleQuickSwitcherRef.current = toggleQuickSwitcher;
+    maximizeWindowRef.current = maximizeWindow;
   }, [
-    activeTab,
+    isTabHUDOpen,
+    tabHUDIndex,
     tabs,
+    activeTab,
     bookmarks,
     addBookmark,
     closeTab,
@@ -411,6 +129,353 @@ export const App: React.FC = () => {
     toggleQuickSwitcher,
     maximizeWindow,
   ]);
+
+  // Mouse Gestures & Rocker Navigation
+  const { hudState } = useMouseGestures({
+    enabled: settings.mouseGesturesEnabled !== false,
+    onGoBack: () => {
+      if (activeTabRef.current) goBackRef.current(activeTabRef.current.id);
+    },
+    onGoForward: () => {
+      if (activeTabRef.current) goForwardRef.current(activeTabRef.current.id);
+    },
+    onReload: () => {
+      if (activeTabRef.current) reloadTabRef.current(activeTabRef.current.id);
+    },
+    onNewTab: () => {
+      createTabRef.current('blanc://newtab');
+    },
+    onCloseTab: () => {
+      if (activeTabRef.current) closeTabRef.current(activeTabRef.current.id);
+    },
+    onReopenClosedTab: () => {
+      reopenClosedTabRef.current();
+    },
+  });
+
+  // Global Keyboard Shortcuts (Standard Browser Navigation)
+  const handleKeyDown = useCallback((e: any) => {
+    const isMeta = Boolean(e.metaKey || e.ctrlKey);
+    const key = (e.key || "").toLowerCase();
+
+    const isInputActive = () => {
+      const el = document.activeElement;
+      if (!el) return false;
+      const tag = el.tagName.toLowerCase();
+      return (
+        tag === 'input' ||
+        tag === 'textarea' ||
+        (el as HTMLElement).isContentEditable
+      );
+    };
+
+    const currentActiveTab = activeTabRef.current;
+    const currentTabs = tabsRef.current;
+    const currentBookmarks = bookmarksRef.current;
+
+    // Omnibox focus: Ctrl+L, Alt+D, F6
+    if ((isMeta && key === 'l') || (e.altKey && key === 'd') || e.key === 'F6') {
+      e.preventDefault?.();
+      window.dispatchEvent(new CustomEvent('blanc:focus-address-bar'));
+    }
+    // Quick Switcher: Ctrl+K
+    else if (isMeta && key === 'k') {
+      e.preventDefault?.();
+      toggleQuickSwitcherRef.current();
+    }
+    // In-page Find: Ctrl+F
+    else if (isMeta && key === 'f') {
+      e.preventDefault?.();
+      setIsFindOpen((prev) => !prev);
+    }
+    // Zoom Controls: Ctrl+=, Ctrl+-, Ctrl+0
+    else if (isMeta && (e.key === '=' || e.key === '+')) {
+      e.preventDefault?.();
+      setZoomLevel((prev) => Math.min(3.0, Number((prev + 0.1).toFixed(1))));
+    } else if (isMeta && e.key === '-') {
+      e.preventDefault?.();
+      setZoomLevel((prev) => Math.max(0.5, Number((prev - 0.1).toFixed(1))));
+    } else if (isMeta && e.key === '0') {
+      e.preventDefault?.();
+      setZoomLevel(1.0);
+    }
+    // Reload / Hard Reload: F5, Ctrl+R, Ctrl+F5, Ctrl+Shift+R
+    else if (e.key === 'F5' || (isMeta && key === 'r')) {
+      e.preventDefault?.();
+      if (currentActiveTab) {
+        reloadTabRef.current(currentActiveTab.id);
+      }
+    }
+    // New Tab: Ctrl+T / Reopen Closed Tab: Ctrl+Shift+T
+    else if (isMeta && key === 't') {
+      e.preventDefault?.();
+      if (e.shiftKey) {
+        reopenClosedTabRef.current();
+      } else {
+        createTabRef.current('blanc://newtab');
+      }
+    }
+    // New Private / Incognito Tab: Ctrl+Shift+N
+    else if (isMeta && e.shiftKey && key === 'n') {
+      e.preventDefault?.();
+      createTabRef.current('blanc://newtab');
+    }
+    // New Tab from Window: Ctrl+N
+    else if (isMeta && !e.shiftKey && key === 'n') {
+      e.preventDefault?.();
+      createTabRef.current('blanc://newtab');
+    }
+    // Close Tab: Ctrl+W or Ctrl+F4 / Close All: Ctrl+Shift+W
+    else if ((isMeta && key === 'w') || (isMeta && e.key === 'F4')) {
+      e.preventDefault?.();
+      if (e.shiftKey) {
+        closeAllTabsRef.current();
+      } else if (currentActiveTab) {
+        closeTabRef.current(currentActiveTab.id);
+      }
+    }
+    // Back: Alt+Left, Alt+[, or Backspace (when not typing in an input)
+    else if (
+      (e.altKey && e.key === 'ArrowLeft') ||
+      (isMeta && (e.key === '[' || e.key === 'ArrowLeft') && e.altKey) ||
+      (e.key === 'Backspace' && !isMeta && !e.altKey && !isInputActive())
+    ) {
+      e.preventDefault?.();
+      if (currentActiveTab) goBackRef.current(currentActiveTab.id);
+    }
+    // Forward: Alt+Right, Alt+], or Shift+Backspace (when not typing in an input)
+    else if (
+      (e.altKey && e.key === 'ArrowRight') ||
+      (isMeta && (e.key === ']' || e.key === 'ArrowRight') && e.altKey) ||
+      (e.key === 'Backspace' && e.shiftKey && !isMeta && !e.altKey && !isInputActive())
+    ) {
+      e.preventDefault?.();
+      if (currentActiveTab) goForwardRef.current(currentActiveTab.id);
+    }
+    // Tab Switching HUD: Alt+Tab, Ctrl+Tab, Ctrl+Shift+Tab, Alt+Shift+Tab
+    else if ((e.altKey || isMeta) && e.key === 'Tab') {
+      e.preventDefault?.();
+      if (currentTabs.length > 1) {
+        if (!isTabHUDOpenRef.current) {
+          const currentIdx = Math.max(0, currentTabs.findIndex((t) => t.id === currentActiveTab?.id));
+          const nextIdx = e.shiftKey
+            ? (currentIdx - 1 + currentTabs.length) % currentTabs.length
+            : (currentIdx + 1) % currentTabs.length;
+          setTabHUDIndex(nextIdx);
+          setIsTabHUDOpen(true);
+        } else {
+          const nextIdx = e.shiftKey
+            ? (tabHUDIndexRef.current - 1 + currentTabs.length) % currentTabs.length
+            : (tabHUDIndexRef.current + 1) % currentTabs.length;
+          setTabHUDIndex(nextIdx);
+        }
+      }
+    }
+    // Tab Switching HUD keyboard navigation (Arrow keys, Escape, Enter)
+    else if (
+      isTabHUDOpenRef.current &&
+      (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'Escape' || e.key === 'Enter')
+    ) {
+      e.preventDefault?.();
+      if (e.key === 'ArrowRight') {
+        setTabHUDIndex((prev) => (prev + 1) % currentTabs.length);
+      } else if (e.key === 'ArrowLeft') {
+        setTabHUDIndex((prev) => (prev - 1 + currentTabs.length) % currentTabs.length);
+      } else if (e.key === 'Escape') {
+        setIsTabHUDOpen(false);
+      } else if (e.key === 'Enter') {
+        const target = currentTabs[tabHUDIndexRef.current];
+        if (target) {
+          switchTabRef.current(target.id);
+        }
+        setIsTabHUDOpen(false);
+      }
+    }
+    // Tab Switching without HUD: Ctrl+PageUp / Ctrl+PageDown
+    else if (isMeta && (e.key === 'PageDown' || e.key === 'PageUp')) {
+      e.preventDefault?.();
+      if (currentTabs.length > 1) {
+        const currentIdx = currentTabs.findIndex((t) => t.id === currentActiveTab?.id);
+        const nextIdx = e.key === 'PageUp'
+          ? (currentIdx - 1 + currentTabs.length) % currentTabs.length
+          : (currentIdx + 1) % currentTabs.length;
+        switchTabRef.current(currentTabs[nextIdx].id);
+      }
+    }
+    // History: Ctrl+H or Ctrl+Y
+    else if (isMeta && (key === 'h' || key === 'y')) {
+      e.preventDefault?.();
+      if (currentActiveTab) navigateRef.current(currentActiveTab.id, 'blanc://history');
+      else createTabRef.current('blanc://history');
+    }
+    // Bookmarks Page: Ctrl+Shift+B or Ctrl+Shift+O
+    else if (isMeta && e.shiftKey && (key === 'b' || key === 'o')) {
+      e.preventDefault?.();
+      if (currentActiveTab) navigateRef.current(currentActiveTab.id, 'blanc://bookmarks');
+      else createTabRef.current('blanc://bookmarks');
+    }
+    // Add Bookmark: Ctrl+D
+    else if (isMeta && key === 'd' && !e.altKey) {
+      e.preventDefault?.();
+      if (currentActiveTab && !currentBookmarks.some((b) => b.url === currentActiveTab.url)) {
+        addBookmarkRef.current({
+          title: currentActiveTab.title || currentActiveTab.url,
+          url: currentActiveTab.url,
+          folder: 'Bookmarks',
+        });
+      }
+    }
+    // Number key 1-9 to jump to tab: Ctrl+1..9
+    else if (isMeta && e.key >= '1' && e.key <= '9') {
+      e.preventDefault?.();
+      const targetIdx = e.key === '9' ? currentTabs.length - 1 : parseInt(e.key, 10) - 1;
+      if (currentTabs[targetIdx]) {
+        switchTabRef.current(currentTabs[targetIdx].id);
+      }
+    }
+    // Settings: Ctrl+,
+    else if (isMeta && e.key === ',') {
+      e.preventDefault?.();
+      if (currentActiveTab) navigateRef.current(currentActiveTab.id, 'blanc://settings');
+      else createTabRef.current('blanc://settings');
+    }
+    // Downloads: Ctrl+J
+    else if (isMeta && key === 'j') {
+      e.preventDefault?.();
+      if (currentActiveTab) navigateRef.current(currentActiveTab.id, 'blanc://downloads');
+      else createTabRef.current('blanc://downloads');
+    }
+    // Shortcuts: Ctrl+/
+    else if (isMeta && e.key === '/') {
+      e.preventDefault?.();
+      if (currentActiveTab) navigateRef.current(currentActiveTab.id, 'blanc://shortcuts');
+      else createTabRef.current('blanc://shortcuts');
+    }
+    // Fullscreen / Maximize toggle: F11
+    else if (e.key === 'F11') {
+      e.preventDefault?.();
+      maximizeWindowRef.current();
+    }
+    // Home page: Alt+Home
+    else if (e.altKey && e.key === 'Home') {
+      e.preventDefault?.();
+      if (currentActiveTab) navigateRef.current(currentActiveTab.id, 'blanc://newtab');
+      else createTabRef.current('blanc://newtab');
+    }
+  }, []);
+
+  const handleKeyUp = useCallback((e: any) => {
+    if (isTabHUDOpenRef.current) {
+      const k = e.key || '';
+      if (
+        k === 'Alt' ||
+        k === 'Control' ||
+        k === 'Meta' ||
+        k.toLowerCase() === 'alt' ||
+        k.toLowerCase() === 'control'
+      ) {
+        const target = tabsRef.current[tabHUDIndexRef.current];
+        if (target) {
+          switchTabRef.current(target.id);
+        }
+        setIsTabHUDOpen(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    handleKeyDownRef.current = handleKeyDown;
+    handleKeyUpRef.current = handleKeyUp;
+  }, [handleKeyDown, handleKeyUp]);
+
+  // Mount-only registration for keyboard listeners (prevents listener accumulation on tab changes)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      handleKeyDownRef.current(e);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      handleKeyUpRef.current(e);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+
+    let isSubscribed = true;
+    let unlistenShortcut: (() => void) | null = null;
+    let unlistenKeyup: (() => void) | null = null;
+    let unlistenAltTabPress: (() => void) | null = null;
+    let unlistenAltTabRelease: (() => void) | null = null;
+
+    if (isTauriAvailable) {
+      import('@tauri-apps/api/event').then(({ listen }) => {
+        if (!isSubscribed) return;
+
+        listen<any>('blanc:keyboard-shortcut', (event) => {
+          if (event.payload) {
+            handleKeyDownRef.current(event.payload);
+          }
+        }).then((un) => {
+          if (!isSubscribed) un();
+          else unlistenShortcut = un;
+        });
+
+        listen<any>('blanc:keyboard-keyup', (event) => {
+          if (event.payload) {
+            handleKeyUpRef.current(event.payload);
+          }
+        }).then((un) => {
+          if (!isSubscribed) un();
+          else unlistenKeyup = un;
+        });
+
+        listen<any>('blanc:alt-tab-press', (event) => {
+          const currentTabs = tabsRef.current;
+          if (currentTabs.length > 1) {
+            const isShift = Boolean(event.payload?.shift);
+            if (!isTabHUDOpenRef.current) {
+              const currentIdx = Math.max(0, currentTabs.findIndex((t) => t.id === activeTabRef.current?.id));
+              const nextIdx = isShift
+                ? (currentIdx - 1 + currentTabs.length) % currentTabs.length
+                : (currentIdx + 1) % currentTabs.length;
+              setTabHUDIndex(nextIdx);
+              setIsTabHUDOpen(true);
+            } else {
+              const nextIdx = isShift
+                ? (tabHUDIndexRef.current - 1 + currentTabs.length) % currentTabs.length
+                : (tabHUDIndexRef.current + 1) % currentTabs.length;
+              setTabHUDIndex(nextIdx);
+            }
+          }
+        }).then((un) => {
+          if (!isSubscribed) un();
+          else unlistenAltTabPress = un;
+        });
+
+        listen<any>('blanc:alt-tab-release', () => {
+          if (isTabHUDOpenRef.current) {
+            const target = tabsRef.current[tabHUDIndexRef.current];
+            if (target) {
+              switchTabRef.current(target.id);
+            }
+            setIsTabHUDOpen(false);
+          }
+        }).then((un) => {
+          if (!isSubscribed) un();
+          else unlistenAltTabRelease = un;
+        });
+      }).catch(() => {});
+    }
+
+    return () => {
+      isSubscribed = false;
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      if (unlistenShortcut) unlistenShortcut();
+      if (unlistenKeyup) unlistenKeyup();
+      if (unlistenAltTabPress) unlistenAltTabPress();
+      if (unlistenAltTabRelease) unlistenAltTabRelease();
+    };
+  }, [isTauriAvailable]);
 
   // Determine current active page type
   const activeUrl = activeTab?.url || 'blanc://newtab';
@@ -502,26 +567,29 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
       if (e.data && e.data.type === 'BLANC_NAV' && typeof e.data.url === 'string') {
-        if (activeTab) {
-          navigate(activeTab.id, e.data.url);
+        const cur = activeTabRef.current;
+        if (cur) {
+          navigateRef.current(cur.id, e.data.url);
         } else {
-          createTab(e.data.url);
+          createTabRef.current(e.data.url);
         }
       } else if (e.data && e.data.type === 'BLANC_PERMISSION_REQUEST') {
+        const cur = activeTabRef.current;
         setPendingPermissionPrompt?.({
           id: `perm-${Date.now()}`,
-          origin: e.data.origin || activeTab?.url || 'Site',
+          origin: e.data.origin || cur?.url || 'Site',
           resource: e.data.resource || 'camera',
-          tabId: activeTab?.id,
+          tabId: cur?.id,
         });
       } else if (e.data && e.data.type === 'BLANC_WEB_NOTIFICATION') {
+        const cur = activeTabRef.current;
         setPendingWebNotification?.({
           id: `notif-${Date.now()}`,
           title: e.data.title || 'Notification',
           body: e.data.body || '',
           icon: e.data.icon || '',
-          origin: e.data.origin || activeTab?.url || '',
-          tabId: activeTab?.id,
+          origin: e.data.origin || cur?.url || '',
+          tabId: cur?.id,
         });
       } else if (e.data && e.data.type === 'BLANC_KEYBOARD_SHORTCUT') {
         handleKeyDownRef.current(e.data);
@@ -531,7 +599,7 @@ export const App: React.FC = () => {
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [activeTab, navigate, createTab, setPendingPermissionPrompt, setPendingWebNotification]);
+  }, [setPendingPermissionPrompt, setPendingWebNotification]);
 
   if (isMobile) {
     return (
