@@ -72,6 +72,8 @@ export const App: React.FC = () => {
   const [tabHUDIndex, setTabHUDIndex] = useState(0);
   const isTabHUDOpenRef = useRef(false);
   const tabHUDIndexRef = useRef(0);
+  const handleKeyDownRef = useRef<(e: any) => void>(() => {});
+  const handleKeyUpRef = useRef<(e: any) => void>(() => {});
 
   useEffect(() => {
     isTabHUDOpenRef.current = isTabHUDOpen;
@@ -103,9 +105,9 @@ export const App: React.FC = () => {
 
   // Global Keyboard Shortcuts (Standard Browser Navigation)
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMeta = e.metaKey || e.ctrlKey;
-      const key = e.key.toLowerCase();
+    const handleKeyDown = (e: any) => {
+      const isMeta = Boolean(e.metaKey || e.ctrlKey);
+      const key = (e.key || "").toLowerCase();
 
       const isInputActive = () => {
         const el = document.activeElement;
@@ -120,40 +122,40 @@ export const App: React.FC = () => {
 
       // Omnibox focus: Ctrl+L, Alt+D, F6
       if ((isMeta && key === 'l') || (e.altKey && key === 'd') || e.key === 'F6') {
-        e.preventDefault();
+        e.preventDefault?.();
         window.dispatchEvent(new CustomEvent('blanc:focus-address-bar'));
       }
       // Quick Switcher: Ctrl+K
       else if (isMeta && key === 'k') {
-        e.preventDefault();
+        e.preventDefault?.();
         toggleQuickSwitcher();
       }
       // In-page Find: Ctrl+F
       else if (isMeta && key === 'f') {
-        e.preventDefault();
+        e.preventDefault?.();
         setIsFindOpen((prev) => !prev);
       }
       // Zoom Controls: Ctrl+=, Ctrl+-, Ctrl+0
       else if (isMeta && (e.key === '=' || e.key === '+')) {
-        e.preventDefault();
+        e.preventDefault?.();
         setZoomLevel((prev) => Math.min(3.0, Number((prev + 0.1).toFixed(1))));
       } else if (isMeta && e.key === '-') {
-        e.preventDefault();
+        e.preventDefault?.();
         setZoomLevel((prev) => Math.max(0.5, Number((prev - 0.1).toFixed(1))));
       } else if (isMeta && e.key === '0') {
-        e.preventDefault();
+        e.preventDefault?.();
         setZoomLevel(1.0);
       }
       // Reload / Hard Reload: F5, Ctrl+R, Ctrl+F5, Ctrl+Shift+R
       else if (e.key === 'F5' || (isMeta && key === 'r')) {
-        e.preventDefault();
+        e.preventDefault?.();
         if (activeTab) {
           reloadTab(activeTab.id);
         }
       }
       // New Tab: Ctrl+T / Reopen Closed Tab: Ctrl+Shift+T
       else if (isMeta && key === 't') {
-        e.preventDefault();
+        e.preventDefault?.();
         if (e.shiftKey) {
           reopenClosedTab();
         } else {
@@ -162,17 +164,17 @@ export const App: React.FC = () => {
       }
       // New Private / Incognito Tab: Ctrl+Shift+N
       else if (isMeta && e.shiftKey && key === 'n') {
-        e.preventDefault();
+        e.preventDefault?.();
         createTab('blanc://newtab');
       }
       // New Tab from Window: Ctrl+N
       else if (isMeta && !e.shiftKey && key === 'n') {
-        e.preventDefault();
+        e.preventDefault?.();
         createTab('blanc://newtab');
       }
       // Close Tab: Ctrl+W or Ctrl+F4 / Close All: Ctrl+Shift+W
       else if ((isMeta && key === 'w') || (isMeta && e.key === 'F4')) {
-        e.preventDefault();
+        e.preventDefault?.();
         if (e.shiftKey) {
           closeAllTabs();
         } else if (activeTab) {
@@ -185,7 +187,7 @@ export const App: React.FC = () => {
         (isMeta && (e.key === '[' || e.key === 'ArrowLeft') && e.altKey) ||
         (e.key === 'Backspace' && !isMeta && !e.altKey && !isInputActive())
       ) {
-        e.preventDefault();
+        e.preventDefault?.();
         if (activeTab) goBack(activeTab.id);
       }
       // Forward: Alt+Right, Alt+], or Shift+Backspace (when not typing in an input)
@@ -194,12 +196,12 @@ export const App: React.FC = () => {
         (isMeta && (e.key === ']' || e.key === 'ArrowRight') && e.altKey) ||
         (e.key === 'Backspace' && e.shiftKey && !isMeta && !e.altKey && !isInputActive())
       ) {
-        e.preventDefault();
+        e.preventDefault?.();
         if (activeTab) goForward(activeTab.id);
       }
       // Tab Switching HUD: Alt+Tab, Ctrl+Tab, Ctrl+Shift+Tab, Alt+Shift+Tab
       else if ((e.altKey || isMeta) && e.key === 'Tab') {
-        e.preventDefault();
+        e.preventDefault?.();
         if (tabs.length > 1) {
           if (!isTabHUDOpenRef.current) {
             const currentIdx = Math.max(0, tabs.findIndex((t) => t.id === activeTab?.id));
@@ -221,7 +223,7 @@ export const App: React.FC = () => {
         isTabHUDOpenRef.current &&
         (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'Escape' || e.key === 'Enter')
       ) {
-        e.preventDefault();
+        e.preventDefault?.();
         if (e.key === 'ArrowRight') {
           setTabHUDIndex((prev) => (prev + 1) % tabs.length);
         } else if (e.key === 'ArrowLeft') {
@@ -238,7 +240,7 @@ export const App: React.FC = () => {
       }
       // Tab Switching without HUD: Ctrl+PageUp / Ctrl+PageDown
       else if (isMeta && (e.key === 'PageDown' || e.key === 'PageUp')) {
-        e.preventDefault();
+        e.preventDefault?.();
         if (tabs.length > 1) {
           const currentIdx = tabs.findIndex((t) => t.id === activeTab?.id);
           const nextIdx = e.key === 'PageUp'
@@ -249,19 +251,19 @@ export const App: React.FC = () => {
       }
       // History: Ctrl+H or Ctrl+Y
       else if (isMeta && (key === 'h' || key === 'y')) {
-        e.preventDefault();
+        e.preventDefault?.();
         if (activeTab) navigate(activeTab.id, 'blanc://history');
         else createTab('blanc://history');
       }
       // Bookmarks Page: Ctrl+Shift+B or Ctrl+Shift+O
       else if (isMeta && e.shiftKey && (key === 'b' || key === 'o')) {
-        e.preventDefault();
+        e.preventDefault?.();
         if (activeTab) navigate(activeTab.id, 'blanc://bookmarks');
         else createTab('blanc://bookmarks');
       }
       // Add Bookmark: Ctrl+D
       else if (isMeta && key === 'd' && !e.altKey) {
-        e.preventDefault();
+        e.preventDefault?.();
         if (activeTab && !bookmarks.some((b) => b.url === activeTab.url)) {
           addBookmark({
             title: activeTab.title || activeTab.url,
@@ -272,7 +274,7 @@ export const App: React.FC = () => {
       }
       // Number key 1-9 to jump to tab: Ctrl+1..9
       else if (isMeta && e.key >= '1' && e.key <= '9') {
-        e.preventDefault();
+        e.preventDefault?.();
         const targetIdx = e.key === '9' ? tabs.length - 1 : parseInt(e.key, 10) - 1;
         if (tabs[targetIdx]) {
           switchTab(tabs[targetIdx].id);
@@ -280,38 +282,45 @@ export const App: React.FC = () => {
       }
       // Settings: Ctrl+,
       else if (isMeta && e.key === ',') {
-        e.preventDefault();
+        e.preventDefault?.();
         if (activeTab) navigate(activeTab.id, 'blanc://settings');
         else createTab('blanc://settings');
       }
       // Downloads: Ctrl+J
       else if (isMeta && key === 'j') {
-        e.preventDefault();
+        e.preventDefault?.();
         if (activeTab) navigate(activeTab.id, 'blanc://downloads');
         else createTab('blanc://downloads');
       }
       // Shortcuts: Ctrl+/
       else if (isMeta && e.key === '/') {
-        e.preventDefault();
+        e.preventDefault?.();
         if (activeTab) navigate(activeTab.id, 'blanc://shortcuts');
         else createTab('blanc://shortcuts');
       }
       // Fullscreen / Maximize toggle: F11
       else if (e.key === 'F11') {
-        e.preventDefault();
+        e.preventDefault?.();
         maximizeWindow();
       }
       // Home page: Alt+Home
       else if (e.altKey && e.key === 'Home') {
-        e.preventDefault();
+        e.preventDefault?.();
         if (activeTab) navigate(activeTab.id, 'blanc://newtab');
         else createTab('blanc://newtab');
       }
     };
 
-    const handleKeyUp = (e: KeyboardEvent) => {
+    const handleKeyUp = (e: any) => {
       if (isTabHUDOpenRef.current) {
-        if (e.key === 'Alt' || e.key === 'Control' || e.key === 'Meta') {
+        const k = e.key || '';
+        if (
+          k === 'Alt' ||
+          k === 'Control' ||
+          k === 'Meta' ||
+          k.toLowerCase() === 'alt' ||
+          k.toLowerCase() === 'control'
+        ) {
           const target = tabs[tabHUDIndexRef.current];
           if (target) {
             switchTab(target.id);
@@ -321,11 +330,68 @@ export const App: React.FC = () => {
       }
     };
 
+    handleKeyDownRef.current = handleKeyDown;
+    handleKeyUpRef.current = handleKeyUp;
+
+    let unlistenShortcut: (() => void) | null = null;
+    let unlistenKeyup: (() => void) | null = null;
+    let unlistenAltTabPress: (() => void) | null = null;
+    let unlistenAltTabRelease: (() => void) | null = null;
+
+    if (isTauriAvailable) {
+      import('@tauri-apps/api/event').then(({ listen }) => {
+        listen<any>('blanc:keyboard-shortcut', (event) => {
+          if (event.payload) {
+            handleKeyDown(event.payload);
+          }
+        }).then((un) => { unlistenShortcut = un; });
+
+        listen<any>('blanc:keyboard-keyup', (event) => {
+          if (event.payload) {
+            handleKeyUp(event.payload);
+          }
+        }).then((un) => { unlistenKeyup = un; });
+
+        listen<any>('blanc:alt-tab-press', (event) => {
+          if (tabs.length > 1) {
+            const isShift = Boolean(event.payload?.shift);
+            if (!isTabHUDOpenRef.current) {
+              const currentIdx = Math.max(0, tabs.findIndex((t) => t.id === activeTab?.id));
+              const nextIdx = isShift
+                ? (currentIdx - 1 + tabs.length) % tabs.length
+                : (currentIdx + 1) % tabs.length;
+              setTabHUDIndex(nextIdx);
+              setIsTabHUDOpen(true);
+            } else {
+              const nextIdx = isShift
+                ? (tabHUDIndexRef.current - 1 + tabs.length) % tabs.length
+                : (tabHUDIndexRef.current + 1) % tabs.length;
+              setTabHUDIndex(nextIdx);
+            }
+          }
+        }).then((un) => { unlistenAltTabPress = un; });
+
+        listen<any>('blanc:alt-tab-release', () => {
+          if (isTabHUDOpenRef.current) {
+            const target = tabs[tabHUDIndexRef.current];
+            if (target) {
+              switchTab(target.id);
+            }
+            setIsTabHUDOpen(false);
+          }
+        }).then((un) => { unlistenAltTabRelease = un; });
+      }).catch(() => {});
+    }
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      if (unlistenShortcut) unlistenShortcut();
+      if (unlistenKeyup) unlistenKeyup();
+      if (unlistenAltTabPress) unlistenAltTabPress();
+      if (unlistenAltTabRelease) unlistenAltTabRelease();
     };
   }, [
     activeTab,
@@ -452,6 +518,10 @@ export const App: React.FC = () => {
           origin: e.data.origin || activeTab?.url || '',
           tabId: activeTab?.id,
         });
+      } else if (e.data && e.data.type === 'BLANC_KEYBOARD_SHORTCUT') {
+        handleKeyDownRef.current(e.data);
+      } else if (e.data && e.data.type === 'BLANC_KEYBOARD_KEYUP') {
+        handleKeyUpRef.current(e.data);
       }
     };
     window.addEventListener('message', handleMessage);

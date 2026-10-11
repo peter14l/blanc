@@ -14,6 +14,8 @@ pub mod store;
 pub mod sync;
 pub mod webview;
 pub mod workspaces;
+#[cfg(target_os = "windows")]
+pub mod keyboard_hook;
 
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -1264,6 +1266,9 @@ pub fn run() {
         .setup(|app| {
             log_msg("Tauri app initialized in setup hook");
             let app_handle = app.handle().clone();
+            #[cfg(target_os = "windows")]
+            keyboard_hook::init_keyboard_hook(&app_handle);
+
             if let Some(state) = app_handle.try_state::<AppState>() {
                 if let Ok(browser) = state.browser.lock() {
                     emit_state_projection(&app_handle, &browser);

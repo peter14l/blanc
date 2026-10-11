@@ -149,14 +149,76 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
         }
       }, true);
 
-      // Keyboard navigation shortcuts inside webview
+      // Keyboard shortcuts forwarder to Blanc shell
       window.addEventListener('keydown', function(e) {
-        if (e.altKey && e.key === 'ArrowLeft') {
-          window.history.back();
-        } else if (e.altKey && e.key === 'ArrowRight') {
-          window.history.forward();
-        } else if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) {
-          window.location.reload();
+        var isMeta = e.ctrlKey || e.metaKey;
+        var key = e.key ? e.key.toLowerCase() : '';
+        var isShortcut = false;
+
+        if ((isMeta && key === 'l') || (e.altKey && key === 'd') || e.key === 'F6') {
+          isShortcut = true;
+        } else if (isMeta && (key === 'k' || key === 'f' || key === 'h' || key === 'y' || key === 'j')) {
+          isShortcut = true;
+        } else if (isMeta && (key === 't' || key === 'n' || key === 'w')) {
+          isShortcut = true;
+        } else if (isMeta && (e.key === 'F4' || e.key === 'Tab' || e.key === 'PageUp' || e.key === 'PageDown')) {
+          isShortcut = true;
+        } else if (isMeta && (e.key >= '1' && e.key <= '9')) {
+          isShortcut = true;
+        } else if (isMeta && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0' || e.key === ',' || e.key === '/')) {
+          isShortcut = true;
+        } else if (e.key === 'F5' || (isMeta && key === 'r') || e.key === 'F11') {
+          isShortcut = true;
+        } else if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home')) {
+          isShortcut = true;
+        }
+
+        if (isShortcut) {
+          e.preventDefault();
+          e.stopPropagation();
+          var payload = {
+            type: 'BLANC_KEYBOARD_SHORTCUT',
+            key: e.key,
+            code: e.code,
+            ctrlKey: e.ctrlKey,
+            metaKey: e.metaKey,
+            altKey: e.altKey,
+            shiftKey: e.shiftKey
+          };
+          try {
+            if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+              window.chrome.webview.postMessage(JSON.stringify(payload));
+            }
+          } catch(err) {}
+          try {
+            if (window.parent && window.parent !== window) {
+              window.parent.postMessage(payload, '*');
+            }
+          } catch(err) {}
+        }
+      }, true);
+
+      window.addEventListener('keyup', function(e) {
+        if (e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') {
+          var payload = {
+            type: 'BLANC_KEYBOARD_KEYUP',
+            key: e.key,
+            code: e.code,
+            ctrlKey: e.ctrlKey,
+            metaKey: e.metaKey,
+            altKey: e.altKey,
+            shiftKey: e.shiftKey
+          };
+          try {
+            if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+              window.chrome.webview.postMessage(JSON.stringify(payload));
+            }
+          } catch(err) {}
+          try {
+            if (window.parent && window.parent !== window) {
+              window.parent.postMessage(payload, '*');
+            }
+          } catch(err) {}
         }
       }, true);
 
@@ -336,6 +398,7 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
     #[cfg(target_os = "windows")]
     {
         use webview2_com::{
+            AcceleratorKeyPressedEventHandler,
             AddScriptToExecuteOnDocumentCreatedCompletedHandler,
             Microsoft::Web::WebView2::Win32::*,
             WebMessageReceivedEventHandler,
@@ -347,6 +410,7 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
         let filter_tab_id = tab_id.to_string();
         let notif_app = app.clone();
         let notif_tab_id = tab_id.to_string();
+        let accel_app = app.clone();
 
         let cosmetic_css = if let Some(state) = app.try_state::<AppState>() {
             if let Ok(adblock) = state.adblock.lock() {
@@ -510,7 +574,8 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
                             if args.TryGetWebMessageAsString(&mut msg_pwstr).is_ok() && !msg_pwstr.is_null() {
                                 let msg = webview2_com::take_pwstr(msg_pwstr);
                                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&msg) {
-                                    if val.get("type").and_then(|t| t.as_str()) == Some("BLANC_WEB_NOTIFICATION") {
+                                    let msg_type = val.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                                    if msg_type == "BLANC_WEB_NOTIFICATION" {
                                         crate::log_msg(&format!("Web notification received in tab {}: {:?}", notif_tab_id, val));
                                         let _ = notif_app.emit(
                                             "blanc:web-notification",
@@ -523,6 +588,10 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
                                                 "tabId": notif_tab_id.clone(),
                                             }),
                                         );
+                                    } else if msg_type == "BLANC_KEYBOARD_SHORTCUT" {
+                                        let _ = notif_app.emit("blanc:keyboard-shortcut", val);
+                                    } else if msg_type == "BLANC_KEYBOARD_KEYUP" {
+                                        let _ = notif_app.emit("blanc:keyboard-keyup", val);
                                     }
                                 }
                             }
@@ -530,6 +599,117 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
                         },
                     ));
                     let _ = core.add_WebMessageReceived(&msg_handler, &mut msg_token);
+
+                    let mut accel_token = 0i64;
+                    let accel_handler = AcceleratorKeyPressedEventHandler::create(Box::new(
+                        move |_sender, args| {
+                            let Some(args) = args else {
+                                return Ok(());
+                            };
+                            let mut event_kind = COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN;
+                            if args.KeyEventKind(&mut event_kind).is_err() {
+                                return Ok(());
+                            }
+
+                            let mut vk = 0u32;
+                            if args.VirtualKey(&mut vk).is_err() {
+                                return Ok(());
+                            }
+
+                            let is_down = event_kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN
+                                || event_kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN;
+                            let is_up = event_kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_UP
+                                || event_kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_UP;
+
+                            let ctrl_down = (windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x11) as u16 & 0x8000) != 0;
+                            let alt_down = (windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x12) as u16 & 0x8000) != 0;
+                            let shift_down = (windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x10) as u16 & 0x8000) != 0;
+
+                            if is_up {
+                                if vk == 0x11 || vk == 0x12 || vk == 0xA2 || vk == 0xA3 || vk == 0xA4 || vk == 0xA5 {
+                                    let key_name = if vk == 0x12 || vk == 0xA4 || vk == 0xA5 { "Alt" } else { "Control" };
+                                    let _ = accel_app.emit("blanc:keyboard-keyup", serde_json::json!({
+                                        "key": key_name,
+                                        "ctrlKey": ctrl_down,
+                                        "altKey": alt_down,
+                                        "shiftKey": shift_down,
+                                    }));
+                                }
+                                return Ok(());
+                            }
+
+                            if is_down {
+                                let mut handled_shortcut: Option<(&str, &str)> = None;
+
+                                if ctrl_down {
+                                    match vk {
+                                        0x54 => handled_shortcut = Some(("t", "KeyT")),
+                                        0x57 => handled_shortcut = Some(("w", "KeyW")),
+                                        0x73 => handled_shortcut = Some(("F4", "F4")),
+                                        0x52 => handled_shortcut = Some(("r", "KeyR")),
+                                        0x4C => handled_shortcut = Some(("l", "KeyL")),
+                                        0x4B => handled_shortcut = Some(("k", "KeyK")),
+                                        0x46 => handled_shortcut = Some(("f", "KeyF")),
+                                        0x48 => handled_shortcut = Some(("h", "KeyH")),
+                                        0x59 => handled_shortcut = Some(("y", "KeyY")),
+                                        0x4A => handled_shortcut = Some(("j", "KeyJ")),
+                                        0x4E => handled_shortcut = Some(("n", "KeyN")),
+                                        0x44 if !alt_down => handled_shortcut = Some(("d", "KeyD")),
+                                        0x42 if shift_down => handled_shortcut = Some(("b", "KeyB")),
+                                        0x4F if shift_down => handled_shortcut = Some(("o", "KeyO")),
+                                        0x09 => handled_shortcut = Some(("Tab", "Tab")),
+                                        0x21 => handled_shortcut = Some(("PageUp", "PageUp")),
+                                        0x22 => handled_shortcut = Some(("PageDown", "PageDown")),
+                                        0x31 => handled_shortcut = Some(("1", "Digit1")),
+                                        0x32 => handled_shortcut = Some(("2", "Digit2")),
+                                        0x33 => handled_shortcut = Some(("3", "Digit3")),
+                                        0x34 => handled_shortcut = Some(("4", "Digit4")),
+                                        0x35 => handled_shortcut = Some(("5", "Digit5")),
+                                        0x36 => handled_shortcut = Some(("6", "Digit6")),
+                                        0x37 => handled_shortcut = Some(("7", "Digit7")),
+                                        0x38 => handled_shortcut = Some(("8", "Digit8")),
+                                        0x39 => handled_shortcut = Some(("9", "Digit9")),
+                                        0x30 => handled_shortcut = Some(("0", "Digit0")),
+                                        0xBB => handled_shortcut = Some(("=", "Equal")),
+                                        0xBD => handled_shortcut = Some(("-", "Minus")),
+                                        0xBC => handled_shortcut = Some((",", "Comma")),
+                                        0xBF => handled_shortcut = Some(("/", "Slash")),
+                                        _ => {}
+                                    }
+                                } else if alt_down {
+                                    match vk {
+                                        0x44 => handled_shortcut = Some(("d", "KeyD")),
+                                        0x24 => handled_shortcut = Some(("Home", "Home")),
+                                        0x25 => handled_shortcut = Some(("ArrowLeft", "ArrowLeft")),
+                                        0x27 => handled_shortcut = Some(("ArrowRight", "ArrowRight")),
+                                        0x09 => handled_shortcut = Some(("Tab", "Tab")),
+                                        _ => {}
+                                    }
+                                } else {
+                                    match vk {
+                                        0x74 => handled_shortcut = Some(("F5", "F5")),
+                                        0x75 => handled_shortcut = Some(("F6", "F6")),
+                                        0x7A => handled_shortcut = Some(("F11", "F11")),
+                                        _ => {}
+                                    }
+                                }
+
+                                if let Some((key_name, code_name)) = handled_shortcut {
+                                    let _ = args.SetHandled(true);
+                                    let _ = accel_app.emit("blanc:keyboard-shortcut", serde_json::json!({
+                                        "key": key_name,
+                                        "code": code_name,
+                                        "ctrlKey": ctrl_down,
+                                        "metaKey": false,
+                                        "altKey": alt_down,
+                                        "shiftKey": shift_down,
+                                    }));
+                                }
+                            }
+                            Ok(())
+                        },
+                    ));
+                    let _ = controller.add_AcceleratorKeyPressed(&accel_handler, &mut accel_token);
                 }
             }
         });
