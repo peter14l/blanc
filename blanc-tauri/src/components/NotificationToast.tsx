@@ -117,7 +117,17 @@ export const NotificationToast: React.FC<NotificationToastProps> = ({
         <div className="flex-1 min-w-0 pr-6">
           <div className="flex items-center gap-1.5 mb-0.5">
             <span className="text-[11px] font-mono text-white/40 truncate max-w-[180px]">
-              {notification?.origin ? new URL(notification.origin).hostname : 'Website'}
+              {(() => {
+                if (!notification?.origin) return 'Website';
+                try {
+                  if (notification.origin.startsWith('http://') || notification.origin.startsWith('https://')) {
+                    return new URL(notification.origin).hostname;
+                  }
+                  return notification.origin;
+                } catch {
+                  return notification.origin || 'Website';
+                }
+              })()}
             </span>
             <span className="text-white/20 text-[10px]">• now</span>
           </div>

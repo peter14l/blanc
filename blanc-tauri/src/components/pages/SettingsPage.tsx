@@ -18,6 +18,7 @@ import {
   Mic,
   Bell,
   MapPin,
+  Sidebar,
 } from 'lucide-react';
 import {
   BrowserSettings,
@@ -217,7 +218,75 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </section>
 
-        {/* 3. TYPOGRAPHY & INBUILT FONT SWITCHER */}
+        {/* 3. TAB LAYOUT & VERTICAL TABS */}
+        <section className="space-y-3 pt-4 border-t border-white/10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">
+              <Sidebar className="w-4 h-4 text-[#d4ad66]" />
+              <span>Tab Layout & Vertical Tabs</span>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={Boolean(settings.verticalTabs)}
+                onChange={(e) => onUpdateSettings({ verticalTabs: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d4ad66]"></div>
+            </label>
+          </div>
+          <p className="text-[12px] text-white/50">
+            Show open tabs in a floating vertical pane on the left side of the window. The top Floating Island pill remains visible for navigation and search. Users can disable the vertical layout if they want to, immediately restoring the default layout.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            {/* Default Horizontal Layout Card */}
+            <div
+              onClick={() => onUpdateSettings({ verticalTabs: false })}
+              className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                !settings.verticalTabs
+                  ? 'bg-white/10 border-[#d4ad66]/50 shadow-md ring-1 ring-[#d4ad66]/30'
+                  : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/5'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[13px] font-medium text-white/90">Default Layout</span>
+                {!settings.verticalTabs && (
+                  <div className="p-1 rounded-full bg-[#d4ad66] text-black">
+                    <Check className="w-3 h-3 stroke-[3]" />
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] text-white/40 leading-snug">
+                Minimalist Island Chrome floating at the top with on-demand tab switching. Full viewport dedicated to web content.
+              </p>
+            </div>
+
+            {/* Vertical Tabs Pane Card */}
+            <div
+              onClick={() => onUpdateSettings({ verticalTabs: true })}
+              className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                settings.verticalTabs
+                  ? 'bg-white/10 border-[#d4ad66]/50 shadow-md ring-1 ring-[#d4ad66]/30'
+                  : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/5'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[13px] font-medium text-white/90">Vertical Tabs Pane</span>
+                {settings.verticalTabs && (
+                  <div className="p-1 rounded-full bg-[#d4ad66] text-black">
+                    <Check className="w-3 h-3 stroke-[3]" />
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] text-white/40 leading-snug">
+                Left floating pane displaying all active tabs with favicons and titles, while preserving the top pill for commands.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* 4. TYPOGRAPHY & INBUILT FONT SWITCHER */}
         <section className="space-y-3 pt-4 border-t border-white/10">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2 text-[14px] font-semibold text-white/90">

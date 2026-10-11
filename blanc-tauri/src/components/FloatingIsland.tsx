@@ -12,6 +12,7 @@ import {
   History,
   Download,
   Settings,
+  Sidebar,
 } from 'lucide-react';
 import { Tab, HistoryEntry, Bookmark as BookmarkType } from '../types/browser';
 import { WindowControls } from './WindowControls';
@@ -38,6 +39,8 @@ interface FloatingIslandProps {
   history?: HistoryEntry[];
   bookmarks?: BookmarkType[];
   onSuggestionsOpenChange?: (open: boolean) => void;
+  isVerticalTabs?: boolean;
+  onToggleVerticalTabs?: () => void;
   className?: string;
 }
 
@@ -61,6 +64,8 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   history = [],
   bookmarks = [],
   onSuggestionsOpenChange,
+  isVerticalTabs = false,
+  onToggleVerticalTabs,
   className = '',
 }) => {
   const [inputUrl, setInputUrl] = useState('');
@@ -512,6 +517,25 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
                 {tabsCount}
               </span>
             </button>
+
+            {/* Vertical Tabs Toggle Button */}
+            {onToggleVerticalTabs && (
+              <button
+                onClick={onToggleVerticalTabs}
+                title={
+                  isVerticalTabs
+                    ? 'Disable Vertical Tabs (Switch to Default Layout)'
+                    : 'Switch to Vertical Tabs Layout'
+                }
+                className={`p-2 rounded-xl transition-colors ${
+                  isVerticalTabs
+                    ? 'text-[#d4ad66] bg-[#d4ad66]/15 hover:bg-[#d4ad66]/25 border border-[#d4ad66]/30'
+                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Sidebar className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Settings Button */}
             <button

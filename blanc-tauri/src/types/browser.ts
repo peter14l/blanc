@@ -79,6 +79,8 @@ export interface BrowserSettings {
   microphonePermission?: 'ask' | 'allow' | 'block';
   notificationsPermission?: 'ask' | 'allow' | 'block';
   geolocationPermission?: 'ask' | 'allow' | 'block';
+  verticalTabs?: boolean;
+  verticalTabsCollapsed?: boolean;
 }
 
 export interface AdblockStats {
@@ -126,7 +128,7 @@ export interface BrowserIPCContextType {
   // Dialogs / Overlays
   toggleQuickSwitcher: (open?: boolean) => void;
   toggleTabSwitcher: (open?: boolean) => void;
-  setViewport: (x: number, y: number, width: number, height: number, hidden: boolean) => Promise<void>;
+  setViewport: (x: number, y: number, width: number, height: number, hidden: boolean, tabId?: string) => Promise<void>;
 
   // History
   history: HistoryEntry[];

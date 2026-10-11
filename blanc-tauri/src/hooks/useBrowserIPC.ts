@@ -27,6 +27,27 @@ import { applyFontToDocument } from '../data/googleFonts';
 import { PermissionPromptData } from '../components/PermissionPrompt';
 import { WebNotificationData } from '../components/NotificationToast';
 
+const isDownloadUrl = (url?: string): boolean => {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return (
+    lower.includes('download_folder.php') ||
+    lower.includes('forcedownload=1') ||
+    lower.endsWith('.zip') ||
+    lower.endsWith('.tar.gz') ||
+    lower.endsWith('.tar') ||
+    lower.endsWith('.gz') ||
+    lower.endsWith('.tgz') ||
+    lower.endsWith('.exe') ||
+    lower.endsWith('.msi') ||
+    lower.endsWith('.dmg') ||
+    lower.endsWith('.pkg') ||
+    lower.endsWith('.deb') ||
+    lower.endsWith('.rpm') ||
+    lower.endsWith('.apk')
+  );
+};
+
 // Storage Keys
 const STORAGE_KEYS = {
   TABS: 'blanc_tabs',
@@ -53,6 +74,8 @@ const DEFAULT_SETTINGS: BrowserSettings = {
   microphonePermission: 'ask',
   notificationsPermission: 'ask',
   geolocationPermission: 'ask',
+  verticalTabs: false,
+  verticalTabsCollapsed: false,
 };
 
 const DEFAULT_FAVORITES: Favorite[] = [
@@ -174,10 +197,30 @@ export function useBrowserIPC(): BrowserIPCContextType {
     const savedTabs = getStored<Tab[]>(STORAGE_KEYS.TABS, []);
     const savedSettings = getStored<BrowserSettings>(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
     if (savedSettings.startupBehavior === 'restore' && savedTabs.length > 0) {
-      return savedTabs;
+      return savedTabs.map((t) => ({
+        ...t,
+        url: isDownloadUrl(t.url) ? 'blanc://newtab' : t.url,
+      }));
     }
     return DEFAULT_INITIAL_TABS;
   });
+
+  // Ensure persistent localStorage doesn't retain stale download URLs
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.TABS);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.some((t: any) => isDownloadUrl(t.url))) {
+          const cleaned = parsed.map((t: any) => ({
+            ...t,
+            url: isDownloadUrl(t.url) ? 'blanc://newtab' : t.url,
+          }));
+          localStorage.setItem(STORAGE_KEYS.TABS, JSON.stringify(cleaned));
+        }
+      }
+    } catch {}
+  }, []);
 
   // History, Bookmarks, Favorites, Adblock
   const [history, setHistory] = useState<HistoryEntry[]>(() =>
@@ -415,7 +458,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
 
   // Helper to determine readable tab title from URL
   const getTabTitleFromUrl = (url: string): string => {
-    if (url === 'blanc://newtab' || url === 'about:blank' || !url) return 'New Tab';
+    if (!url || typeof url !== 'string' || url === 'blanc://newtab' || url === 'about:blank') return 'New Tab';
     if (url === 'blanc://history') return 'History';
     if (url === 'blanc://settings') return 'Settings';
     if (url === 'blanc://bookmarks') return 'Bookmarks';
@@ -686,6 +729,18 @@ export function useBrowserIPC(): BrowserIPCContextType {
             }
           }
         }
+      }
+
+      if (isDownloadUrl(cleanUrl)) {
+        if (isTauriAvailable) {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke('navigate', { tab_id: tabId, tabId, url: cleanUrl });
+          } catch (err) {
+            console.warn('[useBrowserIPC] Tauri navigate download failed:', err);
+          }
+        }
+        return;
       }
 
       if (isTauriAvailable) {
@@ -978,7 +1033,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
   }, []);
 
   const setViewport = useCallback(
-    async (x: number, y: number, width: number, height: number, hidden: boolean): Promise<void> => {
+    async (x: number, y: number, width: number, height: number, hidden: boolean, tabId?: string): Promise<void> => {
       if (isTauriAvailable) {
         try {
           const { invoke } = await import('@tauri-apps/api/core');
@@ -988,6 +1043,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
             width: Math.max(1, Math.round(width)),
             height: Math.max(1, Math.round(height)),
             hidden,
+            tabId: tabId || null,
           });
         } catch (err) {
           console.warn('[useBrowserIPC] Tauri set_viewport failed:', err);
@@ -1089,17 +1145,20 @@ export function useBrowserIPC(): BrowserIPCContextType {
             setTabs((prev) =>
               mainWin.tabs.map((t: any) => {
                 const existing = prev.find((p) => p.id === t.id);
+                const safeUrl = isDownloadUrl(t.url)
+                  ? (existing && !isDownloadUrl(existing.url) ? existing.url : 'blanc://newtab')
+                  : t.url;
                 return {
                   id: t.id,
-                  url: t.url,
-                  title: t.title,
+                  url: safeUrl,
+                  title: isDownloadUrl(t.url) ? (existing?.title || 'New Tab') : t.title,
                   is_active: t.id === mainWin.activeTabId,
                   is_loading: t.loading ?? false,
                   is_asleep: t.asleep ?? false,
                   blocked_trackers: t.blocked ?? 0,
                   can_go_back: existing ? existing.can_go_back : (t.can_go_back ?? false),
                   can_go_forward: existing ? existing.can_go_forward : (t.can_go_forward ?? false),
-                  history: existing?.history || [t.url],
+                  history: existing?.history || [safeUrl],
                   historyIndex: existing?.historyIndex ?? 0,
                   favicon: t.favicon,
                 };
@@ -1125,16 +1184,27 @@ export function useBrowserIPC(): BrowserIPCContextType {
 
       listen<{ tab_id: string; url?: string; title?: string }>('tab-navigated', (event) => {
         const { tab_id, url, title } = event.payload;
+        if (url && isDownloadUrl(url)) {
+          return;
+        }
+
+        if (url && typeof url === 'string' && !url.startsWith('blanc://') && !url.startsWith('about:')) {
+          setTabs((currentTabs) => {
+            const target = currentTabs.find((t) => t.id === tab_id);
+            if (target && !target.is_private) {
+              setTimeout(() => {
+                addHistoryEntry({ url, title: title || getTabTitleFromUrl(url) });
+              }, 0);
+            }
+            return currentTabs;
+          });
+        }
+
         setTabs((prev) => {
-          // Don't record history for private tabs
-          const tab = prev.find((t) => t.id === tab_id);
-          if (url && !url.startsWith('blanc://') && !url.startsWith('about:') && !tab?.is_private) {
-            addHistoryEntry({ url, title: title || getTabTitleFromUrl(url) });
-          }
           return prev.map((t) => {
             if (t.id === tab_id) {
-              const updatedUrl = url || t.url;
-              const updatedTitle = title || (url ? getTabTitleFromUrl(url) : t.title);
+              const updatedUrl = url || t.url || 'blanc://newtab';
+              const updatedTitle = title || (url ? getTabTitleFromUrl(url) : (t.title || 'New Tab'));
 
               const hist: string[] = (t as any).history || [t.url];
               const idx: number = (t as any).historyIndex ?? (hist.length - 1);

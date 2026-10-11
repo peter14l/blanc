@@ -370,7 +370,24 @@ async fn navigate(
 
     match decision {
         navigation::NavigationDecision::Allow { url: allowed_url } => {
-            log_msg(&format!("Navigation allowed: target={}", allowed_url));
+            let is_download = {
+                let l = allowed_url.to_lowercase();
+                l.contains("download_folder.php")
+                    || l.contains("forcedownload=1")
+                    || l.ends_with(".zip")
+                    || l.ends_with(".tar.gz")
+                    || l.ends_with(".tar")
+                    || l.ends_with(".gz")
+                    || l.ends_with(".tgz")
+                    || l.ends_with(".exe")
+                    || l.ends_with(".msi")
+                    || l.ends_with(".dmg")
+                    || l.ends_with(".pkg")
+                    || l.ends_with(".deb")
+                    || l.ends_with(".rpm")
+                    || l.ends_with(".apk")
+            };
+
             let is_private = {
                 let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
                 if browser.tabs.get(&tab_id).is_none() {
@@ -378,7 +395,8 @@ async fn navigate(
                     let window_label = "main";
                     let _ = browser.ensure_window(window_label, Some(PERSONAL_PROFILE.to_string()), false);
                     let partition = SessionPartition::Profile(PERSONAL_PROFILE.to_string());
-                    let mut new_tab = TabRecord::new(window_label.to_string(), allowed_url.clone(), partition);
+                    let initial_url = if is_download { "blanc://newtab".to_string() } else { allowed_url.clone() };
+                    let mut new_tab = TabRecord::new(window_label.to_string(), initial_url, partition);
                     new_tab.id = tab_id.clone();
                     browser.tabs.insert(tab_id.clone(), new_tab);
                     if let Some(w) = browser.windows.get_mut(window_label) {
@@ -387,7 +405,7 @@ async fn navigate(
                         }
                         w.active_tab_id = Some(tab_id.clone());
                     }
-                } else {
+                } else if !is_download {
                     browser.update_tab_navigation(&tab_id, Some(allowed_url.clone()), None)?;
                     if let Some(tab) = browser.tabs.get(&tab_id) {
                         let win_id = tab.window_id.clone();
@@ -397,15 +415,15 @@ async fn navigate(
                     }
                 }
 
-                // Check if URL is an ad/tracker
-                {
+                if !is_download {
+                    // Check if URL is an ad/tracker
                     if let Ok(adblock) = state.adblock.lock() {
                         if adblock.should_block(&allowed_url, None, "document") {
                             let _ = browser.increment_tab_blocked(&tab_id, 1);
                         }
                     }
+                    emit_state_projection(&app, &browser);
                 }
-                emit_state_projection(&app, &browser);
 
                 browser
                     .tabs
@@ -758,6 +776,7 @@ async fn set_viewport(
     width: f64,
     height: f64,
     hidden: bool,
+    tab_id: Option<String>,
 ) -> Result<(), String> {
     let viewport = webview::Viewport {
         x,
@@ -767,14 +786,14 @@ async fn set_viewport(
     };
     *state.viewport.lock().map_err(|e| e.to_string())? = Some(viewport);
 
-    let active_id = {
+    let active_id = tab_id.or_else(|| {
         state
             .browser
             .lock()
-            .map_err(|e| e.to_string())?
+            .ok()?
             .get_window("main")
             .and_then(|w| w.active_tab_id.clone())
-    };
+    });
     webview::apply_viewport(&app, active_id.as_deref(), viewport, hidden)
 }
 

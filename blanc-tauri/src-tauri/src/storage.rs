@@ -51,6 +51,10 @@ pub struct UserSettings {
     pub block_third_party_cookies: bool,
     pub auto_https: bool,
     pub startup_behavior: String,
+    #[serde(default)]
+    pub vertical_tabs: bool,
+    #[serde(default)]
+    pub vertical_tabs_collapsed: bool,
 }
 
 impl Default for UserSettings {
@@ -62,6 +66,8 @@ impl Default for UserSettings {
             block_third_party_cookies: true,
             auto_https: true,
             startup_behavior: "newtab".to_string(),
+            vertical_tabs: false,
+            vertical_tabs_collapsed: false,
         }
     }
 }

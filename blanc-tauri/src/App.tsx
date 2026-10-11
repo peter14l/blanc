@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useBrowserIPC } from './hooks/useBrowserIPC';
 import { FloatingIsland } from './components/FloatingIsland';
+import { VerticalTabsPane } from './components/VerticalTabsPane';
 import { TabSwitcher } from './components/TabSwitcher';
 import { TabSwitcherHUD } from './components/TabSwitcherHUD';
 import { QuickSwitcher } from './components/QuickSwitcher';
@@ -442,6 +443,8 @@ export const App: React.FC = () => {
   };
 
   const [isMobile, setIsMobile] = useState<boolean>(checkMobile);
+  const isVerticalTabs = Boolean(settings.verticalTabs) && !isMobile;
+  const isVerticalTabsCollapsed = Boolean(settings.verticalTabsCollapsed);
 
   const mainRef = useRef<HTMLElement>(null);
 
@@ -453,7 +456,7 @@ export const App: React.FC = () => {
       if (!mainRef.current) return;
       const rect = mainRef.current.getBoundingClientRect();
       const hidden = isInternalPage || isQuickSwitcherOpen || isTabSwitcherOpen || isOmniboxSuggestionsOpen || isTabHUDOpen;
-      setViewport(rect.left, rect.top, rect.width, rect.height, hidden);
+      setViewport(rect.left, rect.top, rect.width, rect.height, hidden, activeTab?.id);
     };
 
     updateNativeViewport();
@@ -482,6 +485,8 @@ export const App: React.FC = () => {
     isOmniboxSuggestionsOpen,
     isTabHUDOpen,
     setViewport,
+    settings.verticalTabs,
+    settings.verticalTabsCollapsed,
   ]);
 
   useEffect(() => {
@@ -600,7 +605,13 @@ export const App: React.FC = () => {
       )}
 
       {/* TOP FLOATING ISLAND CONTAINER (Blanc Faux Header Strip) */}
-      <header className="fixed top-0 left-0 right-0 h-[78px] bg-[#0e0e0e] flex items-center justify-center pointer-events-none z-50 pt-2 transition-colors duration-150">
+      <header className={`fixed top-0 ${
+        isVerticalTabs
+          ? isVerticalTabsCollapsed
+            ? 'left-[82px] sm:left-[86px]'
+            : 'left-[262px] sm:left-[270px]'
+          : 'left-0'
+      } right-0 h-[78px] bg-[#0e0e0e] flex items-center justify-center pointer-events-none z-50 pt-2 transition-colors duration-150`}>
         <div className="pointer-events-auto w-full flex justify-center px-4">
           <FloatingIsland
             activeTab={activeTab}
@@ -643,15 +654,39 @@ export const App: React.FC = () => {
             history={history}
             bookmarks={bookmarks}
             onSuggestionsOpenChange={setIsOmniboxSuggestionsOpen}
+            isVerticalTabs={isVerticalTabs}
+            onToggleVerticalTabs={() => updateSettings({ verticalTabs: !settings.verticalTabs })}
           />
         </div>
       </header>
+
+      {/* VERTICAL TABS PANE (LEFT FLOATING SIDEBAR) */}
+      {isVerticalTabs && (
+        <VerticalTabsPane
+          tabs={tabs}
+          activeTab={activeTab}
+          collapsed={isVerticalTabsCollapsed}
+          onToggleCollapse={() =>
+            updateSettings({ verticalTabsCollapsed: !isVerticalTabsCollapsed })
+          }
+          onSwitchTab={switchTab}
+          onCloseTab={closeTab}
+          onCreateTab={(url) => createTab(url)}
+          onDisableVerticalTabs={() => updateSettings({ verticalTabs: false })}
+        />
+      )}
 
       {/* MAIN VIEWPORT CONTAINER */}
       <main
         ref={mainRef}
         style={{ zoom: zoomLevel }}
-        className={`absolute inset-x-3 sm:inset-x-4 top-[80px] bottom-3 sm:bottom-4 rounded-2xl border border-[var(--island-border-adaptive,rgba(255,255,255,0.1))] shadow-2xl overflow-hidden flex flex-col z-10 ${
+        className={`absolute top-[80px] bottom-3 sm:bottom-4 right-3 sm:right-4 ${
+          isVerticalTabs
+            ? isVerticalTabsCollapsed
+              ? 'left-[82px] sm:left-[86px]'
+              : 'left-[262px] sm:left-[270px]'
+            : 'left-3 sm:left-4'
+        } rounded-2xl border border-[var(--island-border-adaptive,rgba(255,255,255,0.1))] shadow-2xl overflow-hidden flex flex-col z-10 ${
           !isInternalPage && isTauriAvailable
             ? 'bg-transparent pointer-events-none'
             : 'bg-[#0e0e0e] pointer-events-auto'

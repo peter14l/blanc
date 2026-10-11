@@ -37,11 +37,27 @@ fn fallback_viewport(app: &AppHandle) -> Viewport {
             Some((size.width, size.height))
         })
         .unwrap_or((1280.0, 800.0));
+
+    let (x_offset, right_margin) = if let Some(state) = app.try_state::<AppState>() {
+        let settings = state.storage.load().settings;
+        if settings.vertical_tabs {
+            if settings.vertical_tabs_collapsed {
+                (86.0, 16.0)
+            } else {
+                (270.0, 16.0)
+            }
+        } else {
+            (16.0, 16.0)
+        }
+    } else {
+        (16.0, 16.0)
+    };
+
     Viewport {
-        x: 16.0,
-        y: 74.0,
-        width: (w - 32.0).max(1.0),
-        height: (h - 90.0).max(1.0),
+        x: x_offset,
+        y: 80.0,
+        width: (w - x_offset - right_margin).max(1.0),
+        height: (h - 96.0).max(1.0),
     }
 }
 
@@ -331,14 +347,32 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
             let nav_app = nav_app.clone();
             let nav_id = nav_id.clone();
             move |url| {
-                let _ = nav_app.emit(
-                    "tab-navigated",
-                    TabNavigated {
-                        tab_id: nav_id.clone(),
-                        url: Some(url.to_string()),
-                        title: None,
-                    },
-                );
+                let url_str = url.as_str().to_lowercase();
+                let is_download = url_str.contains("download_folder.php")
+                    || url_str.contains("forcedownload=1")
+                    || url_str.ends_with(".zip")
+                    || url_str.ends_with(".tar.gz")
+                    || url_str.ends_with(".tar")
+                    || url_str.ends_with(".gz")
+                    || url_str.ends_with(".tgz")
+                    || url_str.ends_with(".exe")
+                    || url_str.ends_with(".msi")
+                    || url_str.ends_with(".dmg")
+                    || url_str.ends_with(".pkg")
+                    || url_str.ends_with(".deb")
+                    || url_str.ends_with(".rpm")
+                    || url_str.ends_with(".apk");
+
+                if !is_download {
+                    let _ = nav_app.emit(
+                        "tab-navigated",
+                        TabNavigated {
+                            tab_id: nav_id.clone(),
+                            url: Some(url.to_string()),
+                            title: None,
+                        },
+                    );
+                }
 
                 // Inject cosmetic rules for newly navigated URL if active webview is navigated
                 if let Some(wv) = nav_app.get_webview(&nav_id) {
@@ -369,14 +403,17 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
             }
         })
         .on_document_title_changed(move |_webview, title| {
-            let _ = title_app.emit(
-                "tab-navigated",
-                TabNavigated {
-                    tab_id: title_id.clone(),
-                    url: None,
-                    title: Some(title),
-                },
-            );
+            let lower = title.to_lowercase();
+            if !lower.contains("download_folder") && !lower.ends_with(".zip") {
+                let _ = title_app.emit(
+                    "tab-navigated",
+                    TabNavigated {
+                        tab_id: title_id.clone(),
+                        url: None,
+                        title: Some(title),
+                    },
+                );
+            }
         });
 
     crate::log_msg("create_tab_webview: calling window.add_child...");
@@ -399,6 +436,9 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
     {
         use webview2_com::{
             AcceleratorKeyPressedEventHandler,
+            BytesReceivedChangedEventHandler,
+            DownloadStartingEventHandler,
+            StateChangedEventHandler,
             AddScriptToExecuteOnDocumentCreatedCompletedHandler,
             Microsoft::Web::WebView2::Win32::*,
             WebMessageReceivedEventHandler,
@@ -411,6 +451,8 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
         let notif_app = app.clone();
         let notif_tab_id = tab_id.to_string();
         let accel_app = app.clone();
+        let dl_app = app.clone();
+        let dl_tab_id = tab_id.to_string();
 
         let cosmetic_css = if let Some(state) = app.try_state::<AppState>() {
             if let Ok(adblock) = state.adblock.lock() {
@@ -710,6 +752,178 @@ pub fn create_tab_webview(app: &AppHandle, tab_id: &str, target_url: &str) -> Re
                         },
                     ));
                     let _ = controller.add_AcceleratorKeyPressed(&accel_handler, &mut accel_token);
+
+if let Ok(core4) = core.cast::<ICoreWebView2_4>() {
+                        let mut dl_token = 0i64;
+                        let dl_handler = DownloadStartingEventHandler::create(Box::new(
+                            move |_sender, args| {
+                                let Some(args) = args else {
+                                    return Ok(());
+                                };
+
+                                let mut path_pwstr = windows::core::PWSTR::null();
+                                let _ = args.ResultFilePath(&mut path_pwstr);
+                                let path_str = webview2_com::take_pwstr(path_pwstr);
+
+                                let Ok(op) = args.DownloadOperation() else {
+                                    return Ok(());
+                                };
+
+                                let mut uri_pwstr = windows::core::PWSTR::null();
+                                let _ = op.Uri(&mut uri_pwstr);
+                                let uri = webview2_com::take_pwstr(uri_pwstr);
+
+                                let mut total_bytes = 0i64;
+                                let _ = op.TotalBytesToReceive(&mut total_bytes);
+
+                                let filename = std::path::Path::new(&path_str)
+                                    .file_name()
+                                    .map(|f| f.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| {
+                                        uri.split('/').last().unwrap_or("download").to_string()
+                                    });
+
+                                let dl_id = if let Some(state) = dl_app.try_state::<AppState>() {
+                                    if let Ok(mut dm) = state.downloads.lock() {
+                                        let item = dm.start_download(
+                                            "main".to_string(),
+                                            dl_tab_id.clone(),
+                                            uri.clone(),
+                                            filename.clone(),
+                                            if total_bytes > 0 { Some(total_bytes as u64) } else { None },
+                                            false,
+                                            None,
+                                        );
+                                        item.id
+                                    } else {
+                                        format!("dl-{}", chrono::Utc::now().timestamp_millis())
+                                    }
+                                } else {
+                                    format!("dl-{}", chrono::Utc::now().timestamp_millis())
+                                };
+
+                                crate::log_msg(&format!(
+                                    "Download started in tab {}: id={}, file='{}' -> '{}'",
+                                    dl_tab_id, dl_id, filename, path_str
+                                ));
+
+                                let _ = dl_app.emit(
+                                    "blanc:download-started",
+                                    serde_json::json!({
+                                        "id": dl_id,
+                                        "fileName": filename,
+                                        "targetPath": path_str,
+                                        "totalBytes": if total_bytes > 0 { Some(total_bytes) } else { None },
+                                        "url": uri,
+                                    }),
+                                );
+
+                                let _ = dl_app.emit(
+                                    "blanc:web-notification",
+                                    serde_json::json!({
+                                        "id": format!("dl-toast-{}", chrono::Utc::now().timestamp_millis()),
+                                        "title": "Download Started",
+                                        "body": format!("Saving {} to Downloads", filename),
+                                        "icon": "",
+                                        "origin": "Blanc Downloads",
+                                        "tabId": dl_tab_id.clone(),
+                                    }),
+                                );
+
+                                // If the download was initiated by a login redirect (e.g. Moodle $SESSION->wantsurl),
+                                // automatically navigate the webview to the student dashboard /my/ so it doesn't stay on a blank screen.
+                                if uri.contains("download_folder.php") || uri.contains("forcedownload=1") {
+                                    if let Ok(parsed_uri) = url::Url::parse(&uri) {
+                                        if let Some(host) = parsed_uri.host_str() {
+                                            let dashboard_str = format!("https://{}/my/", host);
+                                            if let Ok(target_nav) = url::Url::parse(&dashboard_str) {
+                                                if let Some(wv) = dl_app.get_webview(&dl_tab_id) {
+                                                    crate::log_msg(&format!(
+                                                        "Moodle download redirect detected in tab {}; navigating to dashboard {}",
+                                                        dl_tab_id, dashboard_str
+                                                    ));
+                                                    let _ = wv.navigate(target_nav);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                let state_app = dl_app.clone();
+                                let state_id = dl_id.clone();
+                                let state_filename = filename.clone();
+                                let mut state_token = 0i64;
+                                let state_handler = StateChangedEventHandler::create(Box::new(
+                                    move |sender, _args| {
+                                        if let Some(op) = sender {
+                                            let mut dl_state = COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS;
+                                            if op.State(&mut dl_state).is_ok() {
+                                                if dl_state == COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED {
+                                                    crate::log_msg(&format!("Download completed: id={}, file='{}'", state_id, state_filename));
+                                                    if let Some(app_state) = state_app.try_state::<AppState>() {
+                                                        if let Ok(mut dm) = app_state.downloads.lock() {
+                                                            let _ = dm.complete_download(&state_id);
+                                                        }
+                                                    }
+                                                    let _ = state_app.emit(
+                                                        "blanc:download-completed",
+                                                        serde_json::json!({ "id": state_id, "fileName": state_filename }),
+                                                    );
+                                                    let _ = state_app.emit(
+                                                        "blanc:web-notification",
+                                                        serde_json::json!({
+                                                            "id": format!("dl-done-{}", chrono::Utc::now().timestamp_millis()),
+                                                            "title": "Download Complete",
+                                                            "body": format!("{} is ready in your Downloads folder.", state_filename),
+                                                            "icon": "",
+                                                            "origin": "Blanc Downloads",
+                                                        }),
+                                                    );
+                                                } else if dl_state == COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED {
+                                                    crate::log_msg(&format!("Download interrupted: id={}, file='{}'", state_id, state_filename));
+                                                    if let Some(app_state) = state_app.try_state::<AppState>() {
+                                                        if let Ok(mut dm) = app_state.downloads.lock() {
+                                                            let _ = dm.fail_download(&state_id, "Download interrupted".to_string());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Ok(())
+                                    }
+                                ));
+                                let _ = op.add_StateChanged(&state_handler, &mut state_token);
+
+                                let prog_app = dl_app.clone();
+                                let prog_id = dl_id.clone();
+                                let mut prog_token = 0i64;
+                                let prog_handler = BytesReceivedChangedEventHandler::create(Box::new(
+                                    move |sender, _args| {
+                                        if let Some(op) = sender {
+                                            let mut bytes = 0i64;
+                                            if op.BytesReceived(&mut bytes).is_ok() {
+                                                if let Some(app_state) = prog_app.try_state::<AppState>() {
+                                                    if let Ok(mut dm) = app_state.downloads.lock() {
+                                                        let _ = dm.update_progress(&prog_id, bytes as u64);
+                                                    }
+                                                }
+                                                let _ = prog_app.emit(
+                                                    "blanc:download-progress",
+                                                    serde_json::json!({ "id": prog_id, "receivedBytes": bytes }),
+                                                );
+                                            }
+                                        }
+                                        Ok(())
+                                    }
+                                ));
+                                let _ = op.add_BytesReceivedChanged(&prog_handler, &mut prog_token);
+
+                                Ok(())
+                            }
+                        ));
+                        let _ = core4.add_DownloadStarting(&dl_handler, &mut dl_token);
+                    }
+
                 }
             }
         });
@@ -738,16 +952,28 @@ pub fn apply_viewport(
     hidden: bool,
 ) -> Result<(), String> {
     crate::log_msg(&format!("apply_viewport: active_tab_id={:?}, hidden={}, vp=({}, {}, {}, {})", active_tab_id, hidden, viewport.x, viewport.y, viewport.width, viewport.height));
-    for (label, wv) in app.webviews() {
-        if label == "main" {
-            continue;
+    let child_webviews: Vec<_> = app.webviews().into_iter().filter(|(l, _)| l != "main").collect();
+
+    let target_label = if let Some(target) = active_tab_id {
+        if child_webviews.iter().any(|(l, _)| l == target) {
+            Some(target.to_string())
+        } else if let Some((first_label, _)) = child_webviews.first() {
+            crate::log_msg(&format!("apply_viewport: target '{:?}' not in webviews, falling back to existing child webview '{}'", target, first_label));
+            Some(first_label.clone())
+        } else {
+            None
         }
-        if Some(label.as_str()) == active_tab_id && !hidden {
+    } else if let Some((first_label, _)) = child_webviews.first() {
+        Some(first_label.clone())
+    } else {
+        None
+    };
+
+    for (label, wv) in &child_webviews {
+        if target_label.as_deref() == Some(label.as_str()) && !hidden {
             let _ = wv.set_position(LogicalPosition::new(viewport.x, viewport.y));
             let _ = wv.set_size(LogicalSize::new(viewport.width, viewport.height));
             let _ = wv.show();
-            // Do NOT call wv.set_focus() here: stealing focus during viewport resizing or
-            // suggestion popup toggle steals keyboard focus from the omnibox input.
         } else {
             let _ = wv.hide();
         }
