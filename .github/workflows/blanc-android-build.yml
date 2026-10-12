@@ -40,11 +40,7 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: latest
-          packages: |
-            platforms;android-34
-            build-tools;34.0.0
-            platform-tools
-            ndk;26.3.11579264
+          packages: "platforms;android-34 build-tools;34.0.0 platform-tools"
 
       - name: Cache Gradle dependencies
         uses: actions/cache@v4
@@ -155,11 +151,7 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: latest
-          packages: |
-            platforms;android-34
-            build-tools;34.0.0
-            platform-tools
-            ndk;26.3.11579264
+          packages: "platforms;android-34 build-tools;34.0.0 platform-tools ndk;26.3.11579264"
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -253,12 +245,7 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: latest
-          packages: |
-            platforms;android-34
-            build-tools;34.0.0
-            platform-tools
-            emulator
-            ndk;26.3.11579264
+          packages: "platforms;android-34 build-tools;34.0.0 platform-tools emulator ndk;26.3.11579264"
 
       - name: Start Android Emulator
         uses: android-actions/emulator@v2
