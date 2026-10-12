@@ -25,14 +25,14 @@ object BookmarksHtmlImporter {
     )
 
     private val FOLDER_REGEX =
-        Regex("<H3[^>]*>(.*?)</H3>", RegexOption.IGNORE_CASE or RegexOption.DOT_MATCHES_ALL)
+        Regex("<H3[^>]*>(.*?)</H3>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val ANCHOR_REGEX =
-        Regex("<A[^>]*>(.*?)</A>", RegexOption.IGNORE_CASE or RegexOption.DOT_MATCHES_ALL)
+        Regex("<A[^>]*>(.*?)</A>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val HREF_REGEX =
         Regex("HREF\\s*=\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
     private val GENERIC_ANCHOR_REGEX = Regex(
         "<a\\b[^>]*?href\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</a>",
-        RegexOption.IGNORE_CASE or RegexOption.DOT_MATCHES_ALL
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
     private val NAMED_ENTITIES = mapOf(

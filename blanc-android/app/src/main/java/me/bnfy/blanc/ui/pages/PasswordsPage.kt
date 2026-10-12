@@ -62,7 +62,7 @@ fun PasswordsPage(
                     onAction = if (canOpenAutofillSettings) {
                         {
                             runCatching {
-                                context.startActivity(Intent(Settings.ACTION_AUTOFILL_SETTINGS))
+                                context.startActivity(Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE))
                             }
                         }
                     } else null

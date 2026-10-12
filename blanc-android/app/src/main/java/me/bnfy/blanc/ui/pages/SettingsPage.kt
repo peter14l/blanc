@@ -894,7 +894,7 @@ fun SettingsPage(
 
     // 5h. Wallpaper Dialog
     if (showWallpaperDialog) {
-        val isDarkDialog = luminance(MaterialTheme.colorScheme.surface) < 0.5f
+        val isDarkDialog = MaterialTheme.colorScheme.surface.luminance() < 0.5f
         AlertDialog(
             onDismissRequest = { showWallpaperDialog = false },
             title = { Text("New Tab Background") },
@@ -994,7 +994,7 @@ fun SettingsPage(
                         outcome.getOrNull() == null ->
                             "No bookmarks found in that file"
                         else -> {
-                            val (imported, skipped) = outcome.getOrThrow()
+                            val (imported, skipped) = outcome.getOrThrow()!!
                             if (skipped > 0) "Imported $imported bookmarks ($skipped duplicates skipped)"
                             else "Imported $imported bookmarks"
                         }

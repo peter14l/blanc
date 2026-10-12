@@ -232,7 +232,7 @@ tab-cycle HUD.
 
 | File | Change |
 | --- | --- |
-| `ui/pages/PasswordsPage.kt` | **New.** Read-only "Saved passwords" page (`Screen.Passwords`): honestly states the mobile app stores no passwords on-device (autofill is delegated to Android's system Autofill via `BlancAutofillService`) and offers "Open system autofill settings" (`Settings.ACTION_AUTOFILL_SETTINGS`, API 26+, guarded). No vault was invented — the credential store remains a documented divergence. |
+| `ui/pages/PasswordsPage.kt` | **New.** Read-only "Saved passwords" page (`Screen.Passwords`): honestly states the mobile app stores no passwords on-device (autofill is delegated to Android's system Autofill via `BlancAutofillService`) and offers "Open system autofill settings" (`Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE`, API 26+, guarded). No vault was invented — the credential store remains a documented divergence. |
 | `res/drawable/ic_lock.xml` | **New.** Material lock vector for the page + overflow menu. |
 | `ui/SlashCommands.kt` | Added `/passwords` ("View saved passwords & autofill") — picked up automatically by the Shortcuts page and Quick Switcher palette (both iterate `SlashCommands.ALL`). |
 | `ui/BrowserScreen.kt` | Added `Screen.Passwords`, `/passwords` slash-command dispatch, render branch, and overflow-menu "Saved passwords" entry (`onPasswords`). |

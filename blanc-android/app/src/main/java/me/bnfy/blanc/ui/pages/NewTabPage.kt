@@ -90,7 +90,7 @@ fun NewTabPage(
 
     val groups by tabManager.groupsFlow.collectAsState(initial = emptyList())
     val wallpaper by repository.wallpaper.collectAsState(initial = "none")
-    val isDark = luminance(MaterialTheme.colorScheme.surface) < 0.5f
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val wallpaperBrush = wallpaperBrushFor(wallpaper, isDark)
     val todayLabel = remember {
         SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(Date())
