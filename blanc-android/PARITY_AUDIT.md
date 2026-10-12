@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-10-12
 **Reference implementation:** `blanc-tauri` (React 18 + Tauri v2/Rust core, v0.3.8)
-**Target:** `blanc-android` (Kotlin + Jetpack Compose + native multi-`WebView`, v1.0.18)
+**Target:** `blanc-android` (Kotlin + Jetpack Compose + native multi-`WebView`, v1.0.19)
 **Scope:** user-facing features and their backing engine/IPC, feature-by-feature.
 
 This document is both the **report** (what exists where) and the **executable plan**

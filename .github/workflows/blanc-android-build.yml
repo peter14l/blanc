@@ -247,24 +247,17 @@ jobs:
           cmdline-tools-version: latest
           packages: "platforms;android-34 build-tools;34.0.0 platform-tools emulator ndk;26.3.11579264"
 
-      - name: Start Android Emulator
-        uses: android-actions/emulator@v2
+      - name: Run Instrumented Tests
+        uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          avd-name: test
           api-level: 34
           arch: x86_64
+          avd-name: test
           force-avd-creation: false
           ram-size: 2048M
-          gpu-mode: auto
-          options: -no-snapshot-load -no-snapshot-save
-
-      - name: Wait for Emulator
-        run: |
-          adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
-
-      - name: Run Instrumented Tests
-        working-directory: blanc-android
-        run: ./gradlew connectedAndroidTest --no-daemon
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          working-directory: blanc-android
+          script: ./gradlew connectedAndroidTest --no-daemon
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
