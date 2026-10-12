@@ -143,6 +143,7 @@ export interface BrowserIPCContextType {
   addBookmark: (bookmark: Omit<Bookmark, 'id' | 'createdAt'>) => void;
   removeBookmark: (id: string) => void;
   updateBookmark: (id: string, updates: Partial<Bookmark>) => void;
+  refreshImportedData: () => Promise<void>;
 
   // Favorites
   favorites: Favorite[];

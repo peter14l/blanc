@@ -10,6 +10,7 @@ import { NewTabPage } from './components/pages/NewTabPage';
 import { HistoryPage } from './components/pages/HistoryPage';
 import { SettingsPage } from './components/pages/SettingsPage';
 import { BookmarksPage } from './components/pages/BookmarksPage';
+import { PasswordsPage } from './components/pages/PasswordsPage';
 import { DownloadsPage } from './components/pages/DownloadsPage';
 import { ShortcutsPage } from './components/pages/ShortcutsPage';
 import { DiagnosticsPage } from './components/pages/DiagnosticsPage';
@@ -52,6 +53,7 @@ export const App: React.FC = () => {
     addBookmark,
     removeBookmark,
     updateBookmark,
+    refreshImportedData,
     favorites,
     addFavorite,
     removeFavorite,
@@ -548,6 +550,7 @@ export const App: React.FC = () => {
   const isHistory = activeUrl === 'blanc://history';
   const isSettings = activeUrl === 'blanc://settings';
   const isBookmarks = activeUrl === 'blanc://bookmarks';
+  const isPasswords = activeUrl === 'blanc://passwords';
   const isDownloads = activeUrl === 'blanc://downloads';
   const isShortcuts = activeUrl === 'blanc://shortcuts';
   const isDiagnostics = activeUrl === 'blanc://diagnostics';
@@ -556,6 +559,7 @@ export const App: React.FC = () => {
     isHistory ||
     isSettings ||
     isBookmarks ||
+    isPasswords ||
     isDownloads ||
     isShortcuts ||
     isDiagnostics;
@@ -809,6 +813,9 @@ export const App: React.FC = () => {
               if (activeTab) navigate(activeTab.id, 'blanc://downloads');
               else createTab('blanc://downloads');
             }}
+            onNewTab={(url) => createTab(url || 'blanc://newtab')}
+            onClearHistory={clearHistory}
+            onSetTheme={(theme) => updateSettings({ theme })}
             history={history}
             bookmarks={bookmarks}
             onSuggestionsOpenChange={setIsOmniboxSuggestionsOpen}
@@ -894,6 +901,7 @@ export const App: React.FC = () => {
               if (activeTab) navigate(activeTab.id, url);
               else createTab(url);
             }}
+            onImportedData={refreshImportedData}
           />
         )}
 
@@ -909,6 +917,16 @@ export const App: React.FC = () => {
             onAddBookmark={addBookmark}
             onRemoveBookmark={removeBookmark}
             onUpdateBookmark={updateBookmark}
+          />
+        )}
+
+        {/* INTERNAL PAGE: Saved Passwords */}
+        {isPasswords && (
+          <PasswordsPage
+            onNavigate={(url) => {
+              if (activeTab) navigate(activeTab.id, url);
+              else createTab(url);
+            }}
           />
         )}
 

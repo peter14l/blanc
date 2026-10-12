@@ -6,12 +6,14 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.map
 import androidx.lifecycle.asLiveData
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -21,7 +23,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import me.bnfy.blanc.util.BookmarksHtmlImporter
 import java.lang.reflect.Type
+import java.util.UUID
 import kotlinx.coroutines.CoroutineExceptionHandler
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "blanc_preferences")
@@ -64,6 +68,9 @@ class Repository private constructor(
     private val KEY_SHOW_BOOKMARKS_BAR = booleanPreferencesKey("show_bookmarks_bar")
     private val KEY_TAB_PREVIEW = booleanPreferencesKey("tab_preview")
     private val KEY_SMOOTH_SCROLLING = booleanPreferencesKey("smooth_scrolling")
+    private val KEY_TEXT_ZOOM = intPreferencesKey("text_zoom") // 75..150 percent
+    private val KEY_FONT_FAMILY = stringPreferencesKey("font_family") // system, sans, serif, mono
+    private val KEY_WALLPAPER = stringPreferencesKey("newtab_wallpaper") // gradient preset id or "none"
 
     // Profile/Sync
     private val KEY_ACTIVE_PROFILE_ID = stringPreferencesKey("active_profile_id")
@@ -209,6 +216,21 @@ class Repository private constructor(
         .map { it[KEY_SMOOTH_SCROLLING] ?: true }
         .distinctUntilChanged()
 
+    /** Text zoom percentage applied to WebViews (75..150). */
+    val textZoom: Flow<Int> = preferencesFlow
+        .map { it[KEY_TEXT_ZOOM] ?: 100 }
+        .distinctUntilChanged()
+
+    /** Font family applied to WebView text (system, sans, serif, mono). */
+    val fontFamily: Flow<String> = preferencesFlow
+        .map { it[KEY_FONT_FAMILY] ?: "system" }
+        .distinctUntilChanged()
+
+    /** New tab wallpaper preset id ("none" for the plain surface). */
+    val wallpaper: Flow<String> = preferencesFlow
+        .map { it[KEY_WALLPAPER] ?: "none" }
+        .distinctUntilChanged()
+
     /** Active profile ID. */
     val activeProfileId: Flow<String> = preferencesFlow
         .map { it[KEY_ACTIVE_PROFILE_ID] ?: "personal" }
@@ -328,6 +350,18 @@ class Repository private constructor(
 
     suspend fun setSmoothScrolling(enabled: Boolean) {
         dataStore.edit { it[KEY_SMOOTH_SCROLLING] = enabled }
+    }
+
+    suspend fun setTextZoom(percent: Int) {
+        dataStore.edit { it[KEY_TEXT_ZOOM] = percent.coerceIn(75, 150) }
+    }
+
+    suspend fun setFontFamily(value: String) {
+        dataStore.edit { it[KEY_FONT_FAMILY] = value }
+    }
+
+    suspend fun setWallpaper(value: String) {
+        dataStore.edit { it[KEY_WALLPAPER] = value }
     }
 
     suspend fun setActiveProfileId(profileId: String) {
@@ -616,15 +650,95 @@ class Repository private constructor(
         return gson.toJson(data)
     }
 
-    /** Imports user data from backup. */
-    suspend fun importData(json: String) {
-        val type = object : TypeToken<Map<String, Any>>() {}.type
-        val data = gson.fromJson<Map<String, Any>>(json, type)
+    /** Imports user data from a Blanc export archive (favorites, bookmarks, history, workspaces, settings). */
+    suspend fun importData(json: String): Boolean {
+        return try {
+            val root = gson.fromJson<Map<String, Any>>(
+                json,
+                object : TypeToken<Map<String, Any>>() {}.type
+            ) ?: return false
 
-        database.runInTransaction {
-            // Import logic would go here
-            // This is a simplified version - real implementation would be more complex
+            database.withTransaction {
+                (root["favorites"] as? List<*>)?.let { raw ->
+                    val list = gson.fromJson<List<Favorite>>(
+                        gson.toJson(raw),
+                        object : TypeToken<List<Favorite>>() {}.type
+                    )
+                    if (!list.isNullOrEmpty()) favoriteDao.insertAll(list)
+                }
+                (root["bookmarks"] as? List<*>)?.let { raw ->
+                    val list = gson.fromJson<List<Bookmark>>(
+                        gson.toJson(raw),
+                        object : TypeToken<List<Bookmark>>() {}.type
+                    )
+                    if (!list.isNullOrEmpty()) bookmarkDao.insertAll(list)
+                }
+                (root["history"] as? List<*>)?.let { raw ->
+                    val list = gson.fromJson<List<HistoryEntry>>(
+                        gson.toJson(raw),
+                        object : TypeToken<List<HistoryEntry>>() {}.type
+                    )
+                    if (!list.isNullOrEmpty()) historyDao.insertAll(list)
+                }
+                (root["workspaces"] as? List<*>)?.let { raw ->
+                    val list = gson.fromJson<List<WorkspaceEntity>>(
+                        gson.toJson(raw),
+                        object : TypeToken<List<WorkspaceEntity>>() {}.type
+                    )
+                    list?.forEach { profileDao.insertWorkspace(it) }
+                }
+                root["settings"]?.let { raw ->
+                    val settings = gson.fromJson<UserSettings>(
+                        gson.toJson(raw),
+                        UserSettings::class.java
+                    )
+                    if (settings != null) saveSettings(settings)
+                }
+            }
+            true
+        } catch (e: Exception) {
+            // Fail closed on malformed archives; the caller surfaces the status.
+            false
         }
+    }
+
+    /**
+     * Imports bookmarks parsed from another browser's HTML export into the
+     * user-visible Favorites store. URLs that already exist (case-insensitive)
+     * are skipped. Returns (imported, skipped).
+     */
+    suspend fun importBookmarks(entries: List<BookmarksHtmlImporter.Entry>): Pair<Int, Int> {
+        val existing = favoriteDao.getAll("personal")
+            .map { it.url.trim().lowercase() }
+            .toHashSet()
+        val seen = HashSet<String>()
+        val toInsert = ArrayList<Favorite>(entries.size)
+        var skipped = 0
+        val now = System.currentTimeMillis()
+        for (entry in entries) {
+            val urlKey = entry.url.trim().lowercase()
+            if (urlKey in existing || !seen.add(urlKey)) {
+                skipped++
+                continue
+            }
+            toInsert.add(
+                Favorite(
+                    id = UUID.randomUUID().toString(),
+                    url = entry.url.trim(),
+                    title = entry.title.trim().ifBlank { entry.url.trim() },
+                    profileId = "personal",
+                    createdAt = now,
+                    updatedAt = now
+                )
+            )
+        }
+        if (toInsert.isNotEmpty()) {
+            val start = favoriteDao.getMaxPosition("personal", false) + 1
+            favoriteDao.insertAll(
+                toInsert.mapIndexed { index, fav -> fav.copy(position = start + index) }
+            )
+        }
+        return toInsert.size to skipped
     }
 }
 

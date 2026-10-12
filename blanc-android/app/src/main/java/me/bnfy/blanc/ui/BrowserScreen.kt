@@ -97,9 +97,12 @@ import me.bnfy.blanc.R
 import me.bnfy.blanc.util.UserAgentUtils
 import me.bnfy.blanc.ui.pages.NewTabPage
 import me.bnfy.blanc.ui.pages.SettingsPage
+import me.bnfy.blanc.ui.pages.ShortcutsPage
+import me.bnfy.blanc.ui.pages.DiagnosticsPage
 import me.bnfy.blanc.ui.pages.BookmarksPage
 import me.bnfy.blanc.ui.pages.HistoryPage
 import me.bnfy.blanc.ui.pages.DownloadsPage
+import me.bnfy.blanc.ui.pages.PasswordsPage
 import me.bnfy.blanc.storage.DownloadEntity
 import android.webkit.JsResult
 import android.webkit.JsPromptResult
@@ -167,6 +170,7 @@ fun BrowserScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showFindInPage by remember { mutableStateOf(false) }
     var showShieldPopover by remember { mutableStateOf(false) }
+    var showQuickSwitcher by remember { mutableStateOf(false) }
 
     // Onboarding and theme state
     val hasCompletedOnboarding by repository.hasCompletedOnboarding.collectAsState(initial = true)
@@ -178,6 +182,7 @@ fun BrowserScreen(
     // Android System Back Navigation Handler
     BackHandler(enabled = true) {
         when {
+            showQuickSwitcher -> showQuickSwitcher = false
             showShieldPopover -> showShieldPopover = false
             showFindInPage -> showFindInPage = false
             showMenu -> showMenu = false
@@ -213,6 +218,8 @@ fun BrowserScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val allFavorites by repository.favoriteDao.getAllFlow("personal").collectAsState(initial = emptyList())
+    val paletteHistory by repository.historyDao.getHistoryPageFlow("personal", 30, 0, null)
+        .collectAsState(initial = emptyList())
     val isBookmarked = remember(activeTab?.url, allFavorites) {
         val u = activeTab?.url ?: ""
         u.isNotBlank() && u != "about:blank" && !u.startsWith("blanc://") && allFavorites.any { it.url == u }
@@ -326,6 +333,9 @@ fun BrowserScreen(
                 }
                 "/downloads" -> {
                     currentScreen = Screen.Downloads
+                }
+                "/passwords" -> {
+                    currentScreen = Screen.Passwords
                 }
                 "/settings" -> {
                     currentScreen = Screen.Settings
@@ -546,8 +556,20 @@ fun BrowserScreen(
                 onBack = { currentScreen = Screen.Browser },
                 repository = repository
             )
+            Screen.Passwords -> PasswordsPage(
+                onBack = { currentScreen = Screen.Browser }
+            )
             Screen.Settings -> SettingsPage(
                 repository = repository,
+                onBack = { currentScreen = Screen.Browser }
+            )
+            Screen.Shortcuts -> ShortcutsPage(
+                onBack = { currentScreen = Screen.Browser }
+            )
+            Screen.Diagnostics -> DiagnosticsPage(
+                repository = repository,
+                adblockEngine = adblockEngine,
+                tabs = tabs,
                 onBack = { currentScreen = Screen.Browser }
             )
         }
@@ -608,12 +630,16 @@ fun BrowserScreen(
             onBookmarks = { currentScreen = Screen.Bookmarks; showMenu = false },
             onHistory = { currentScreen = Screen.History; showMenu = false },
             onDownloads = { currentScreen = Screen.Downloads; showMenu = false },
+            onPasswords = { currentScreen = Screen.Passwords; showMenu = false },
             onSettings = { currentScreen = Screen.Settings; showMenu = false },
             onFindInPage = { showFindInPage = true; showMenu = false },
             onBookmark = { handleBookmarkToggle(); showMenu = false },
             onShare = { handleShare(); showMenu = false },
             onCopyUrl = { handleCopyUrl(); showMenu = false },
-            onDesktopSite = { handleDesktopSiteToggle(); showMenu = false }
+            onDesktopSite = { handleDesktopSiteToggle(); showMenu = false },
+            onCommandPalette = { showQuickSwitcher = true },
+            onShortcuts = { currentScreen = Screen.Shortcuts },
+            onDiagnostics = { currentScreen = Screen.Diagnostics }
         )
     }
     
@@ -622,6 +648,27 @@ fun BrowserScreen(
         FindInPageOverlay(
             activeTab = activeTab,
             onDismiss = { showFindInPage = false }
+        )
+    }
+
+    // Quick Switcher / command palette
+    if (showQuickSwitcher) {
+        QuickSwitcherOverlay(
+            tabs = tabs,
+            favorites = allFavorites,
+            history = paletteHistory,
+            activeTabId = activeTabId,
+            onSelectTab = { tabId ->
+                tabManager.switchTab(tabId)
+                currentScreen = Screen.Browser
+            },
+            onNavigate = { url ->
+                val resolved = resolveUrlOrSearch(url, defaultSearchEngine)
+                activeTabId?.let { tabManager.navigate(it, resolved) } ?: tabManager.createTab(resolved)
+                currentScreen = Screen.Browser
+            },
+            onRunCommand = { command -> handleSlashCommand(command) },
+            onDismiss = { showQuickSwitcher = false }
         )
     }
 
@@ -795,7 +842,7 @@ fun SidebarPane(
 }
 
 enum class Screen {
-    Browser, NewTab, Bookmarks, History, Downloads, Settings
+    Browser, NewTab, Bookmarks, History, Downloads, Passwords, Settings, Shortcuts, Diagnostics
 }
 
 /**
@@ -841,6 +888,8 @@ fun BrowserContent(
     val blockedCount = activeTab?.blockedCount ?: 0
     val canGoBack = activeTab?.canGoBack == true
     val canGoForward = activeTab?.canGoForward == true
+    val context = LocalContext.current
+    var contextMenuTarget by remember { mutableStateOf<ContextMenuTarget?>(null) }
     
     val currentUrl = activeTab?.url ?: ""
     val isNewTab = currentUrl.isEmpty() || currentUrl == "about:blank" || currentUrl.startsWith("blanc://newtab")
@@ -903,6 +952,7 @@ fun BrowserContent(
                     pendingJsPrompt = Triple(url, message, Pair(defVal, result))
                 },
                 onScrollChange = handleScroll,
+                onLongPress = { link, image -> contextMenuTarget = ContextMenuTarget(link, image) },
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
@@ -1335,6 +1385,32 @@ fun BrowserContent(
                         Text("Cancel")
                     }
                 }
+            )
+        }
+
+        // Long-press context menu — rendered above everything in the content area
+        contextMenuTarget?.let { target ->
+            ContextMenuOverlay(
+                target = target,
+                pageUrl = activeTab?.url ?: "",
+                canGoBack = canGoBack,
+                canGoForward = canGoForward,
+                onBack = onBack,
+                onForward = onForward,
+                onReload = onReload,
+                onNewTab = onNewTab,
+                onOpenInNewTab = { url -> tabManager.createTab(url) },
+                onNavigate = { url -> onNavigate(url) },
+                onCopy = { text ->
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Blanc", text))
+                },
+                onSaveImage = { url -> (activeTab?.webView as? ContentWebView)?.downloadUrl(url) },
+                onDuplicateTab = { activeTab?.id?.let { tabManager.duplicateTab(it) } },
+                onCloseTab = { activeTab?.id?.let { onTabClose(it) } },
+                onPrint = { (activeTab?.webView as? ContentWebView)?.printPage() },
+                onOpenSettings = onShowSettings,
+                onDismiss = { contextMenuTarget = null }
             )
         }
     }
@@ -2024,12 +2100,16 @@ fun MenuOverlay(
     onBookmarks: () -> Unit,
     onHistory: () -> Unit,
     onDownloads: () -> Unit,
+    onPasswords: () -> Unit = {},
     onSettings: () -> Unit,
     onFindInPage: () -> Unit,
     onBookmark: () -> Unit = {},
     onShare: () -> Unit,
     onCopyUrl: () -> Unit,
-    onDesktopSite: () -> Unit
+    onDesktopSite: () -> Unit,
+    onCommandPalette: () -> Unit = {},
+    onShortcuts: () -> Unit = {},
+    onDiagnostics: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -2095,6 +2175,19 @@ fun MenuOverlay(
                     text = "Downloads",
                     onClick = { onDownloads(); onDismiss() }
                 )
+
+                MenuItem(
+                    icon = R.drawable.ic_lock,
+                    text = "Saved passwords",
+                    onClick = { onPasswords(); onDismiss() }
+                )
+
+                MenuItem(
+                    icon = R.drawable.ic_search,
+                    text = "Command palette",
+                    onClick = { onCommandPalette(); onDismiss() },
+                    iconTint = MaterialTheme.colorScheme.primary
+                )
                 
                 HorizontalDivider(
                     modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
@@ -2139,6 +2232,18 @@ fun MenuOverlay(
                 )
                 
                 // Settings
+                MenuItem(
+                    icon = R.drawable.ic_menu,
+                    text = "Shortcuts",
+                    onClick = { onShortcuts(); onDismiss() }
+                )
+
+                MenuItem(
+                    icon = R.drawable.ic_info,
+                    text = "Diagnostics",
+                    onClick = { onDiagnostics(); onDismiss() }
+                )
+
                 MenuItem(
                     icon = R.drawable.ic_settings,
                     text = "Settings",

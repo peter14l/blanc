@@ -399,6 +399,10 @@ mod tests {
             classify_input("blanc://history/"),
             NavigationTarget::Internal(Surface::History)
         );
+        assert_eq!(
+            classify_input("blanc://passwords/"),
+            NavigationTarget::Internal(Surface::Passwords)
+        );
         // Traversal is blocked
         assert_eq!(
             classify_input("blanc://newtab/../../secret"),

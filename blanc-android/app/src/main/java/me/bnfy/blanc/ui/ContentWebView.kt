@@ -41,6 +41,7 @@ import me.bnfy.blanc.storage.DownloadEntity
 import me.bnfy.blanc.tab.Tab
 import kotlinx.coroutines.launch
 import me.bnfy.blanc.tab.TabManager
+import me.bnfy.blanc.tab.WebViewFactory
 import timber.log.Timber
 
 /**
@@ -59,6 +60,7 @@ class ContentWebView(
     var onJsAlertCallback: ((url: String, message: String, result: JsResult) -> Unit)? = null
     var onJsConfirmCallback: ((url: String, message: String, result: JsResult) -> Unit)? = null
     var onJsPromptCallback: ((url: String, message: String, defaultValue: String, result: JsPromptResult) -> Unit)? = null
+    var onLongPressCallback: ((linkUrl: String?, imageUrl: String?) -> Unit)? = null
     
     init {
         setupWebView()
@@ -82,6 +84,26 @@ class ContentWebView(
         settings.setSupportZoom(true)
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
+        settings.textZoom = WebViewFactory.currentTextZoom()
+
+        // Adapted typography (see WebViewFactory for the same mapping).
+        when (WebViewFactory.currentFontFamily()) {
+            "sans" -> {
+                settings.standardFontFamily = "sans-serif"
+                settings.sansSerifFontFamily = "sans-serif"
+            }
+            "serif" -> {
+                settings.standardFontFamily = "serif"
+                settings.sansSerifFontFamily = "serif"
+                settings.serifFontFamily = "serif"
+            }
+            "mono" -> {
+                settings.standardFontFamily = "monospace"
+                settings.sansSerifFontFamily = "monospace"
+                settings.fixedFontFamily = "monospace"
+            }
+            else -> Unit
+        }
         
         // User agent
         settings.userAgentString = buildUserAgentString()
@@ -127,6 +149,26 @@ class ContentWebView(
         // Download listener
         setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
             startDownload(url, userAgent, contentDisposition, mimeType, contentLength)
+        }
+
+        // Long-press context menu: intercept only for links and images so the
+        // native text-selection menu still handles plain text selection.
+        setOnLongClickListener { view ->
+            val wv = view as? WebView ?: return@setOnLongClickListener false
+            val result = wv.hitTestResult
+            val extra = result?.extra
+            when (result?.type) {
+                WebView.HitTestResult.SRC_ANCHOR_TYPE,
+                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+                    onLongPressCallback?.invoke(extra, null)
+                    true
+                }
+                WebView.HitTestResult.IMAGE_TYPE -> {
+                    onLongPressCallback?.invoke(null, extra)
+                    true
+                }
+                else -> false
+            }
         }
         
         // Set clients
@@ -430,6 +472,13 @@ class ContentWebView(
     }
 
     /**
+     * Starts a download for an arbitrary URL (e.g. "Save image" from the context menu).
+     */
+    fun downloadUrl(url: String) {
+        startDownload(url, null, null, null, 0L)
+    }
+
+    /**
      * Prints the current web page using Android PrintManager.
      */
     fun printPage() {
@@ -488,6 +537,7 @@ fun ContentWebViewContainer(
     onJsConfirm: ((url: String, message: String, result: JsResult) -> Unit)? = null,
     onJsPrompt: ((url: String, message: String, defaultValue: String, result: JsPromptResult) -> Unit)? = null,
     onScrollChange: ((dy: Int, scrollY: Int) -> Unit)? = null,
+    onLongPress: ((linkUrl: String?, imageUrl: String?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (activeTab != null) {
@@ -502,6 +552,7 @@ fun ContentWebViewContainer(
                             this.onJsAlertCallback = onJsAlert
                             this.onJsConfirmCallback = onJsConfirm
                             this.onJsPromptCallback = onJsPrompt
+                            this.onLongPressCallback = onLongPress
                             bind(activeTab, tabManager, onFileChooser, onRequestPermission)
                             onResume()
                         }
@@ -515,6 +566,7 @@ fun ContentWebViewContainer(
                             this.onJsAlertCallback = onJsAlert
                             this.onJsConfirmCallback = onJsConfirm
                             this.onJsPromptCallback = onJsPrompt
+                            this.onLongPressCallback = onLongPress
                             bind(activeTab, tabManager, onFileChooser, onRequestPermission)
                         }
                     }
@@ -524,6 +576,7 @@ fun ContentWebViewContainer(
                     webView.onJsAlertCallback = onJsAlert
                     webView.onJsConfirmCallback = onJsConfirm
                     webView.onJsPromptCallback = onJsPrompt
+                    webView.onLongPressCallback = onLongPress
                     webView.bind(activeTab, tabManager, onFileChooser, onRequestPermission)
                     webView.onResume()
                 },
@@ -556,6 +609,7 @@ fun ContentWebViewContainer(
     onJsConfirm: ((url: String, message: String, result: JsResult) -> Unit)? = null,
     onJsPrompt: ((url: String, message: String, defaultValue: String, result: JsPromptResult) -> Unit)? = null,
     onScrollChange: ((dy: Int, scrollY: Int) -> Unit)? = null,
+    onLongPress: ((linkUrl: String?, imageUrl: String?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     ContentWebViewContainer(
@@ -567,6 +621,7 @@ fun ContentWebViewContainer(
         onJsConfirm = onJsConfirm,
         onJsPrompt = onJsPrompt,
         onScrollChange = onScrollChange,
+        onLongPress = onLongPress,
         modifier = modifier
     )
 }

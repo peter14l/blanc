@@ -1,8 +1,13 @@
 package me.bnfy.blanc.ui.pages
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.webkit.CookieManager
 import android.webkit.WebStorage
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -52,14 +57,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import me.bnfy.blanc.BlancApplication
 import me.bnfy.blanc.BuildConfig
 import me.bnfy.blanc.R
 import me.bnfy.blanc.storage.Repository
+import me.bnfy.blanc.util.BookmarksHtmlImporter
+import me.bnfy.blanc.tab.TabManager
+import me.bnfy.blanc.ui.WALLPAPER_PRESETS
+import me.bnfy.blanc.ui.wallpaperBrushFor
+import me.bnfy.blanc.ui.wallpaperLabelFor
 
 /**
  * Settings page with interactive options and containerized layout.
@@ -67,7 +80,8 @@ import me.bnfy.blanc.storage.Repository
 @Composable
 fun SettingsPage(
     repository: Repository,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    tabManager: TabManager = BlancApplication.getInstance().tabManager
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -85,6 +99,13 @@ fun SettingsPage(
     val theme by repository.theme.collectAsState(initial = "system")
     val appIcon by repository.appIcon.collectAsState(initial = "sunrise")
     val syncEnabled by repository.syncEnabled.collectAsState(initial = false)
+    val sitePermissions by repository.profileDao.getPermissionsByProfileFlow("personal")
+        .collectAsState(initial = emptyList())
+    val patronActive by repository.patronActive.collectAsState(initial = false)
+    val workspaces by repository.getWorkspaces("personal").collectAsState(initial = emptyList())
+    val textZoom by repository.textZoom.collectAsState(initial = 100)
+    val fontFamily by repository.fontFamily.collectAsState(initial = "system")
+    val wallpaper by repository.wallpaper.collectAsState(initial = "none")
 
     // Dialog display states
     var showSearchEngineDialog by remember { mutableStateOf(false) }
@@ -92,6 +113,13 @@ fun SettingsPage(
     var showStartupDialog by remember { mutableStateOf(false) }
     var showQuietTabsDialog by remember { mutableStateOf(false) }
     var showExceptionsDialog by remember { mutableStateOf(false) }
+    var showPermissionsDialog by remember { mutableStateOf(false) }
+    var showWorkspacesDialog by remember { mutableStateOf(false) }
+    var showPatronDialog by remember { mutableStateOf(false) }
+    var showTextZoomDialog by remember { mutableStateOf(false) }
+    var showFontDialog by remember { mutableStateOf(false) }
+    var showWallpaperDialog by remember { mutableStateOf(false) }
+    var showDataBackupDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showAppIconDialog by remember { mutableStateOf(false) }
     var showSyncDialog by remember { mutableStateOf(false) }
@@ -208,6 +236,17 @@ fun SettingsPage(
                                 }
                             }
                         )
+                        SettingsDivider()
+                        SettingsItem(
+                            title = "Site permissions",
+                            subtitle = if (sitePermissions.isEmpty()) {
+                                "No saved decisions"
+                            } else {
+                                "${sitePermissions.size} saved decisions"
+                            },
+                            icon = R.drawable.ic_shield,
+                            onClick = { showPermissionsDialog = true }
+                        )
                     }
                 }
 
@@ -226,6 +265,50 @@ fun SettingsPage(
                             subtitle = getAppIconDisplay(appIcon),
                             icon = R.drawable.ic_launch,
                             onClick = { showAppIconDialog = true }
+                        )
+                        SettingsDivider()
+                        SettingsItem(
+                            title = "Text scaling",
+                            subtitle = "$textZoom%",
+                            icon = R.drawable.ic_find,
+                            onClick = { showTextZoomDialog = true }
+                        )
+                        SettingsDivider()
+                        SettingsItem(
+                            title = "Typography",
+                            subtitle = getFontDisplay(fontFamily),
+                            icon = R.drawable.ic_info,
+                            onClick = { showFontDialog = true }
+                        )
+                        SettingsDivider()
+                        SettingsItem(
+                            title = "New tab background",
+                            subtitle = wallpaperLabelFor(wallpaper),
+                            icon = R.drawable.ic_image,
+                            onClick = { showWallpaperDialog = true }
+                        )
+                    }
+                }
+
+                // Workspaces & Patron section
+                SettingsSection(title = "Workspaces") {
+                    SettingsContainerCard {
+                        SettingsItem(
+                            title = "Workspaces",
+                            subtitle = if (workspaces.isEmpty()) {
+                                "No workspaces yet"
+                            } else {
+                                "${workspaces.size} saved"
+                            },
+                            icon = R.drawable.ic_tab,
+                            onClick = { showWorkspacesDialog = true }
+                        )
+                        SettingsDivider()
+                        SettingsItem(
+                            title = "Blanc Patron",
+                            subtitle = if (patronActive) "Active" else "Unlock named workspaces",
+                            icon = R.drawable.ic_launch,
+                            onClick = { showPatronDialog = true }
                         )
                     }
                 }
@@ -252,6 +335,13 @@ fun SettingsPage(
                             subtitle = "Version ${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
                             icon = R.drawable.ic_info,
                             onClick = { showAboutDialog = true }
+                        )
+                        SettingsDivider()
+                        SettingsItem(
+                            title = "Data backup",
+                            subtitle = "Export or import favorites, history & settings",
+                            icon = R.drawable.ic_data,
+                            onClick = { showDataBackupDialog = true }
                         )
                     }
                 }
@@ -480,6 +570,536 @@ fun SettingsPage(
             },
             confirmButton = {
                 TextButton(onClick = { showExceptionsDialog = false }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
+
+    // 5b. Site Permissions Dialog
+    if (showPermissionsDialog) {
+        val groupedPermissions = sitePermissions.groupBy { it.origin }
+        AlertDialog(
+            onDismissRequest = { showPermissionsDialog = false },
+            title = { Text("Site Permissions") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Decisions Blanc stored when sites asked for camera, microphone, " +
+                            "location or notifications.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (groupedPermissions.isEmpty()) {
+                        Text(
+                            text = "No site permissions saved yet.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 320.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(groupedPermissions.keys.toList().sorted()) { origin ->
+                                val decisions = groupedPermissions[origin].orEmpty()
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            MaterialTheme.colorScheme.surfaceVariant,
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = origin,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    repository.profileDao
+                                                        .deletePermissionsForOrigin(origin, "personal")
+                                                }
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_close),
+                                                contentDescription = "Clear",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                    decisions.sortedBy { it.resource }.forEach { decision ->
+                                        Text(
+                                            text = "${permissionResourceLabel(decision.resource)} · " +
+                                                permissionDecisionLabel(decision.decision),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPermissionsDialog = false }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
+
+    // 5c. Workspaces Dialog
+    if (showWorkspacesDialog) {
+        var newWorkspaceName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showWorkspacesDialog = false },
+            title = { Text("Workspaces") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 440.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Workspaces keep sets of tabs together. Tap one to focus its tabs.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = newWorkspaceName,
+                            onValueChange = { newWorkspaceName = it },
+                            placeholder = { Text("Workspace name") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        Button(
+                            onClick = {
+                                val clean = newWorkspaceName.trim()
+                                if (clean.isNotBlank() && patronActive) {
+                                    coroutineScope.launch {
+                                        repository.createWorkspace(clean)
+                                        newWorkspaceName = ""
+                                    }
+                                }
+                            },
+                            enabled = patronActive && newWorkspaceName.isNotBlank()
+                        ) {
+                            Text("Add")
+                        }
+                    }
+                    if (!patronActive) {
+                        Text(
+                            text = "Creating named workspaces requires Blanc Patron.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    if (workspaces.isEmpty()) {
+                        Text(
+                            text = "No workspaces yet.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 280.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(workspaces, key = { it.id }) { ws ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            MaterialTheme.colorScheme.surfaceVariant,
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
+                                            tabManager.switchWorkspace(ws.id)
+                                            showWorkspacesDialog = false
+                                            onBack()
+                                        }
+                                        .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = ws.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "Tap to switch",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                repository.deleteWorkspace(ws.id)
+                                            }
+                                        },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_close),
+                                            contentDescription = "Delete workspace",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showWorkspacesDialog = false }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
+
+    // 5d. Patron Dialog
+    if (showPatronDialog) {
+        AlertDialog(
+            onDismissRequest = { showPatronDialog = false },
+            title = { Text("Blanc Patron") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Blanc Patron supports development and unlocks named workspaces.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (patronActive) "Patron active" else "Not activated",
+                            fontWeight = FontWeight.Medium
+                        )
+                        Switch(
+                            checked = patronActive,
+                            onCheckedChange = { active ->
+                                coroutineScope.launch {
+                                    repository.setPatronActive(active)
+                                    repository.setPatronEntitlements(
+                                        if (active) "{\"workspaces\":true}" else "{}"
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    Text(
+                        text = "Patron is support for Blanc, not a source-code restriction.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showPatronDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    // 5e. Text Zoom Dialog
+    if (showTextZoomDialog) {
+        val zoomOptions = listOf(
+            "75" to "Smaller (75%)",
+            "85" to "Compact (85%)",
+            "100" to "Default (100%)",
+            "115" to "Larger (115%)",
+            "130" to "Large (130%)",
+            "150" to "Extra large (150%)"
+        )
+        SingleChoiceDialog(
+            title = "Text Scaling",
+            options = zoomOptions,
+            selectedKey = textZoom.toString(),
+            onSelect = { selected ->
+                coroutineScope.launch {
+                    val percent = selected.toIntOrNull() ?: 100
+                    repository.setTextZoom(percent)
+                    tabManager.applyTextZoomToAll(percent)
+                    showTextZoomDialog = false
+                }
+            },
+            onDismiss = { showTextZoomDialog = false }
+        )
+    }
+
+    // 5g. Typography Dialog
+    if (showFontDialog) {
+        val fontOptions = listOf(
+            "system" to "System default",
+            "sans" to "Sans-serif",
+            "serif" to "Serif",
+            "mono" to "Monospace"
+        )
+        SingleChoiceDialog(
+            title = "Typography",
+            options = fontOptions,
+            selectedKey = fontFamily,
+            onSelect = { selected ->
+                coroutineScope.launch {
+                    repository.setFontFamily(selected)
+                    tabManager.applyFontToAll(selected)
+                    showFontDialog = false
+                }
+            },
+            onDismiss = { showFontDialog = false }
+        )
+    }
+
+    // 5h. Wallpaper Dialog
+    if (showWallpaperDialog) {
+        val isDarkDialog = luminance(MaterialTheme.colorScheme.surface) < 0.5f
+        AlertDialog(
+            onDismissRequest = { showWallpaperDialog = false },
+            title = { Text("New Tab Background") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Gradient presets replace the desktop nature-wallpaper set. " +
+                            "They adapt to light and dark themes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    WALLPAPER_PRESETS.forEach { preset ->
+                        val selected = preset.id == wallpaper
+                        val brush = wallpaperBrushFor(preset.id, isDarkDialog)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    coroutineScope.launch {
+                                        repository.setWallpaper(preset.id)
+                                        showWallpaperDialog = false
+                                    }
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 44.dp, height = 30.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (brush != null) brush else SolidColor(
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (brush == null) {
+                                    Text(
+                                        text = "−",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Text(
+                                text = preset.label,
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.Medium
+                            )
+                            RadioButton(selected = selected, onClick = null)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showWallpaperDialog = false }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
+
+    // 5f. Data Backup Dialog
+    if (showDataBackupDialog) {
+        var importText by remember { mutableStateOf("") }
+        var exporting by remember { mutableStateOf(false) }
+        var importing by remember { mutableStateOf(false) }
+        var importingBookmarks by remember { mutableStateOf(false) }
+        val bookmarksHtmlLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.GetContent()
+        ) { uri ->
+            if (uri != null && !importingBookmarks) {
+                importingBookmarks = true
+                coroutineScope.launch {
+                    val outcome = runCatching {
+                        val content = context.contentResolver
+                            .openInputStream(uri)?.use { it.readBytes() }
+                            ?.toString(Charsets.UTF_8)
+                        if (content.isNullOrBlank()) return@runCatching null
+                        val entries = BookmarksHtmlImporter.parse(content)
+                        if (entries.isEmpty()) return@runCatching null
+                        repository.importBookmarks(entries)
+                    }
+                    importingBookmarks = false
+                    val message = when {
+                        outcome.isFailure ->
+                            "Import failed - ${outcome.exceptionOrNull()?.message ?: "could not read file"}"
+                        outcome.getOrNull() == null ->
+                            "No bookmarks found in that file"
+                        else -> {
+                            val (imported, skipped) = outcome.getOrThrow()
+                            if (skipped > 0) "Imported $imported bookmarks ($skipped duplicates skipped)"
+                            else "Imported $imported bookmarks"
+                        }
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { showDataBackupDialog = false },
+            title = { Text("Data Backup") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Export a JSON archive of favorites, bookmarks, history, " +
+                            "workspaces and settings. Import a previously exported archive " +
+                            "to merge it back in.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = {
+                            exporting = true
+                            coroutineScope.launch {
+                                val json = repository.exportData()
+                                val clipboard = context.getSystemService(
+                                    Context.CLIPBOARD_SERVICE
+                                ) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Blanc backup", json))
+                                exporting = false
+                                Toast.makeText(
+                                    context,
+                                    "Backup copied to clipboard",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        enabled = !exporting,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (exporting) "Exporting…" else "Export & copy to clipboard")
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    OutlinedTextField(
+                        value = importText,
+                        onValueChange = { importText = it },
+                        placeholder = { Text("Paste a Blanc backup JSON…") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 140.dp),
+                        minLines = 3
+                    )
+                    Button(
+                        onClick = {
+                            importing = true
+                            coroutineScope.launch {
+                                val ok = repository.importData(importText.trim())
+                                importing = false
+                                Toast.makeText(
+                                    context,
+                                    if (ok) "Backup imported" else "Import failed — invalid archive",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                if (ok) {
+                                    importText = ""
+                                    showDataBackupDialog = false
+                                }
+                            }
+                        },
+                        enabled = !importing && importText.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (importing) "Importing…" else "Import backup")
+                    }
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    Text(
+                        text = "Import from a browser",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Bring bookmarks from Chrome, Edge, Brave or Firefox via their " +
+                            "\"Export bookmarks\" HTML file. Android cannot read another installed " +
+                            "browser's data directly, so the export file is the supported route.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = { bookmarksHtmlLauncher.launch("*/*") },
+                        enabled = !importingBookmarks,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (importingBookmarks) "Importing…" else "Import bookmarks from HTML…")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDataBackupDialog = false }) {
                     Text("Done")
                 }
             }
@@ -993,4 +1613,27 @@ private fun getAppIconDisplay(key: String): String = when (key.lowercase()) {
     "dark" -> "Midnight Noir"
     "minimal" -> "Minimal"
     else -> key.replaceFirstChar { it.uppercase() }
+}
+
+private fun getFontDisplay(key: String): String = when (key.lowercase()) {
+    "system" -> "System default"
+    "sans" -> "Sans-serif"
+    "serif" -> "Serif"
+    "mono" -> "Monospace"
+    else -> key.replaceFirstChar { it.uppercase() }
+}
+
+private fun permissionResourceLabel(resource: String): String = when (resource.lowercase()) {
+    "camera" -> "Camera"
+    "microphone" -> "Microphone"
+    "geolocation", "location" -> "Location"
+    "notifications" -> "Notifications"
+    else -> resource.replaceFirstChar { it.uppercase() }
+}
+
+private fun permissionDecisionLabel(decision: Int): String = when (decision) {
+    1 -> "Allowed"
+    2 -> "Blocked"
+    3 -> "Ask every time"
+    else -> "Default"
 }

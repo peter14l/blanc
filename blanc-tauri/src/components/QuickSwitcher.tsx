@@ -18,6 +18,7 @@ import {
   Keyboard,
   Activity,
   PanelLeft,
+  KeyRound,
 } from 'lucide-react';
 import {
   Tab,
@@ -27,6 +28,7 @@ import {
   ThemeMode,
   QuickSwitcherItem,
 } from '../types/browser';
+import { SLASH_COMMANDS, matchSlashCommands, SlashCommandContext } from '../data/slashCommands';
 
 interface QuickSwitcherProps {
   isOpen: boolean;
@@ -78,109 +80,18 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
     const q = raw.toLowerCase();
     const result: QuickSwitcherItem[] = [];
 
-    // 1. SLASH COMMANDS
-    const commands: {
-      cmd: string;
-      title: string;
-      desc: string;
-      icon: string;
-      action: () => void;
-    }[] = [
-      {
-        cmd: '/newtab',
-        title: 'New Tab',
-        desc: 'Open a blank Blanc start page',
-        icon: 'plus',
-        action: () => onNewTab('blanc://newtab'),
-      },
-      {
-        cmd: '/history',
-        title: 'Browsing History',
-        desc: 'Open history viewer (blanc://history)',
-        icon: 'history',
-        action: () => onNavigate('blanc://history'),
-      },
-      {
-        cmd: '/settings',
-        title: 'Settings',
-        desc: 'Open browser preferences (blanc://settings)',
-        icon: 'settings',
-        action: () => onNavigate('blanc://settings'),
-      },
-      {
-        cmd: '/bookmarks',
-        title: 'Bookmarks',
-        desc: 'Open saved bookmarks (blanc://bookmarks)',
-        icon: 'bookmark',
-        action: () => onNavigate('blanc://bookmarks'),
-      },
-      {
-        cmd: '/downloads',
-        title: 'Downloads',
-        desc: 'Open downloads manager (blanc://downloads)',
-        icon: 'download',
-        action: () => onNavigate('blanc://downloads'),
-      },
-      {
-        cmd: '/shortcuts',
-        title: 'Shortcuts',
-        desc: 'Open keyboard shortcuts guide (blanc://shortcuts)',
-        icon: 'keyboard',
-        action: () => onNavigate('blanc://shortcuts'),
-      },
-      {
-        cmd: '/diagnostics',
-        title: 'Diagnostics',
-        desc: 'Inspect engine state and audit reports (blanc://diagnostics)',
-        icon: 'activity',
-        action: () => onNavigate('blanc://diagnostics'),
-      },
-      {
-        cmd: '/vertical',
-        title: 'Vertical Tabs',
-        desc: 'Toggle the floating vertical tabs sidebar (Ctrl+Shift+V)',
-        icon: 'panel-left',
-        action: () => onToggleVerticalTabs?.(),
-      },
-      {
-        cmd: '/clear',
-        title: 'Clear History',
-        desc: 'Clear all local browsing history records',
-        icon: 'trash',
-        action: () => onClearHistory?.(),
-      },
-      {
-        cmd: '/dark',
-        title: 'Theme: Dark',
-        desc: 'Switch to Obsidian dark palette',
-        icon: 'moon',
-        action: () => onSetTheme?.('dark'),
-      },
-      {
-        cmd: '/light',
-        title: 'Theme: Light',
-        desc: 'Switch to Porcelain light palette',
-        icon: 'sun',
-        action: () => onSetTheme?.('light'),
-      },
-      {
-        cmd: '/sunrise',
-        title: 'Theme: Sunrise',
-        desc: 'Switch to Warm Gold & Ivory palette',
-        icon: 'sunrise',
-        action: () => onSetTheme?.('sunrise'),
-      },
-      {
-        cmd: '/patron',
-        title: 'Theme: Patron',
-        desc: 'Switch to Deep Espresso & Gilded Brass',
-        icon: 'sparkles',
-        action: () => onSetTheme?.('patron'),
-      },
-    ];
+    // 1. SLASH COMMANDS (shared registry with the island address bar)
+    const slashContext: SlashCommandContext = {
+      onNavigate,
+      onNewTab,
+      onToggleVerticalTabs,
+      onClearHistory,
+      onSetTheme,
+    };
+    const commands = SLASH_COMMANDS;
 
     if (q.startsWith('/')) {
-      const matchCmds = commands.filter((c) => c.cmd.startsWith(q));
+      const matchCmds = matchSlashCommands(raw);
       matchCmds.forEach((c) => {
         result.push({
           id: `cmd-${c.cmd}`,
@@ -189,7 +100,7 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
           subtitle: `${c.title} — ${c.desc}`,
           badge: 'Command',
           icon: c.icon,
-          action: c.action,
+          action: () => c.run(slashContext),
         });
       });
       return result;
@@ -334,7 +245,7 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
             subtitle: `${c.title} — ${c.desc}`,
             badge: 'Command',
             icon: c.icon,
-            action: c.action,
+            action: () => c.run(slashContext),
           });
         }
       });
@@ -370,6 +281,15 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
       });
 
       result.push({
+        id: 'action-go-passwords',
+        type: 'command',
+        title: 'Open Saved Passwords',
+        subtitle: 'blanc://passwords or type /passwords',
+        badge: 'Page',
+        action: () => onNavigate('blanc://passwords'),
+      });
+
+      result.push({
         id: 'action-go-settings',
         type: 'command',
         title: 'Open Settings',
@@ -400,6 +320,7 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
     onSelectTab,
     onNavigate,
     onNewTab,
+    onToggleVerticalTabs,
     onClearHistory,
     onSetTheme,
   ]);
@@ -520,6 +441,7 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({
                           {item.icon === 'history' && <History className="w-3.5 h-3.5" />}
                           {item.icon === 'settings' && <Settings className="w-3.5 h-3.5" />}
                           {item.icon === 'bookmark' && <BookmarkIcon className="w-3.5 h-3.5" />}
+                          {item.icon === 'key' && <KeyRound className="w-3.5 h-3.5" />}
                           {item.icon === 'download' && <Download className="w-3.5 h-3.5" />}
                           {item.icon === 'keyboard' && <Keyboard className="w-3.5 h-3.5" />}
                           {item.icon === 'activity' && <Activity className="w-3.5 h-3.5" />}

@@ -16,6 +16,7 @@ object SlashCommands {
         SlashCommandItem("/bookmarks", "Open favorites & bookmarks"),
         SlashCommandItem("/history", "Open browsing history"),
         SlashCommandItem("/downloads", "Open downloads"),
+        SlashCommandItem("/passwords", "View saved passwords & autofill"),
         SlashCommandItem("/settings", "Open browser settings"),
         SlashCommandItem("/find", "Find text on current page"),
         SlashCommandItem("/pin", "Pin or unpin active tab"),

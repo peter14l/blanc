@@ -45,12 +45,15 @@ interface SettingsPageProps {
   settings: BrowserSettings;
   onUpdateSettings: (updates: Partial<BrowserSettings>) => void;
   onNavigate: (url: string) => void;
+  /** Called after an import completes so the app can sync Rust-stored data into the UI. */
+  onImportedData?: () => void;
 }
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({
   settings,
   onUpdateSettings,
   onNavigate,
+  onImportedData,
 }) => {
   const isTauri = () =>
     typeof window !== 'undefined' &&
@@ -880,7 +883,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       {isImportModalOpen && (
         <ImportBrowserDataModal
           onClose={() => setIsImportModalOpen(false)}
-          onBookmarksUpdated={loadSavedPasswords}
+          onBookmarksUpdated={() => {
+            loadSavedPasswords();
+            onImportedData?.();
+          }}
         />
       )}
     </div>

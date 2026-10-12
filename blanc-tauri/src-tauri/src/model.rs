@@ -128,6 +128,7 @@ pub enum Surface {
     NewTab,
     Favorites,
     History,
+    Passwords,
     Downloads,
     Settings,
     Shortcuts,
@@ -146,6 +147,7 @@ impl Surface {
             Surface::NewTab => "newtab.html",
             Surface::Favorites => "favorites.html",
             Surface::History => "history.html",
+            Surface::Passwords => "passwords.html",
             Surface::Downloads => "downloads.html",
             Surface::Settings => "settings.html",
             Surface::Shortcuts => "shortcuts.html",
@@ -160,7 +162,12 @@ impl Surface {
     pub fn is_utility(&self) -> bool {
         matches!(
             self,
-            Surface::Favorites | Surface::History | Surface::Downloads | Surface::Settings | Surface::Shortcuts
+            Surface::Favorites
+                | Surface::History
+                | Surface::Passwords
+                | Surface::Downloads
+                | Surface::Settings
+                | Surface::Shortcuts
         )
     }
 
@@ -170,6 +177,7 @@ impl Surface {
             Surface::NewTab => "newtab",
             Surface::Favorites => "favorites",
             Surface::History => "history",
+            Surface::Passwords => "passwords",
             Surface::Downloads => "downloads",
             Surface::Settings => "settings",
             Surface::Shortcuts => "shortcuts",
@@ -202,6 +210,7 @@ impl Surface {
             "newtab" => Some(Surface::NewTab),
             "favorites" => Some(Surface::Favorites),
             "history" => Some(Surface::History),
+            "passwords" => Some(Surface::Passwords),
             "downloads" => Some(Surface::Downloads),
             "settings" => Some(Surface::Settings),
             "shortcuts" => Some(Surface::Shortcuts),
@@ -340,6 +349,7 @@ pub fn derive_title(url: &str) -> String {
             Surface::NewTab => "New Tab",
             Surface::Favorites => "Favorites",
             Surface::History => "History",
+            Surface::Passwords => "Saved Passwords",
             Surface::Downloads => "Downloads",
             Surface::Settings => "Settings",
             Surface::Shortcuts => "Keyboard Shortcuts",
@@ -554,6 +564,7 @@ mod tests {
             Surface::NewTab,
             Surface::Favorites,
             Surface::History,
+            Surface::Passwords,
             Surface::Downloads,
             Surface::Settings,
             Surface::Shortcuts,
@@ -587,6 +598,7 @@ mod tests {
             Surface::NewTab,
             Surface::Favorites,
             Surface::History,
+            Surface::Passwords,
             Surface::Downloads,
             Surface::Settings,
             Surface::Shortcuts,
@@ -609,6 +621,7 @@ mod tests {
     fn utility_surfaces_match_the_electron_sheet_contract() {
         assert!(Surface::Favorites.is_utility());
         assert!(Surface::History.is_utility());
+        assert!(Surface::Passwords.is_utility());
         assert!(Surface::Downloads.is_utility());
         assert!(Surface::Settings.is_utility());
         assert!(Surface::Shortcuts.is_utility());

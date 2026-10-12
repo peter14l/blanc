@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardActions
@@ -43,7 +44,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,6 +55,10 @@ import me.bnfy.blanc.BlancApplication
 import me.bnfy.blanc.R
 import me.bnfy.blanc.storage.Repository
 import me.bnfy.blanc.tab.TabManager
+import me.bnfy.blanc.ui.wallpaperBrushFor
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * New Tab page - shows favorites, recent tabs, search bar.
@@ -80,9 +88,19 @@ fun NewTabPage(
         getRecentTabs()
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.surface
+    val groups by tabManager.groupsFlow.collectAsState(initial = emptyList())
+    val wallpaper by repository.wallpaper.collectAsState(initial = "none")
+    val isDark = luminance(MaterialTheme.colorScheme.surface) < 0.5f
+    val wallpaperBrush = wallpaperBrushFor(wallpaper, isDark)
+    val todayLabel = remember {
+        SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(Date())
+    }
+    val totalBlocked = BlancApplication.getInstance().adblockEngine.getTotalBlocked()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(wallpaperBrush ?: SolidColor(MaterialTheme.colorScheme.surface))
     ) {
         LazyColumn(
             modifier = Modifier
@@ -92,6 +110,28 @@ fun NewTabPage(
             contentPadding = PaddingValues(bottom = 88.dp),
             verticalArrangement = Arrangement.Top
         ) {
+            item {
+                // Date line (ledger header)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = todayLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Where to?",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
             item {
                 // Search bar
                 SearchBar(onSearch = onNavigate)
@@ -145,6 +185,50 @@ fun NewTabPage(
                 }
             }
 
+            // Tab groups — pick up where you left off
+            if (groups.isNotEmpty()) {
+                item {
+                    SectionHeader(
+                        title = "Pick up where you left off",
+                        onClickAll = { onOpenHistory?.invoke() }
+                    )
+                }
+                item {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(groups, key = { "grp_${it.id}" }) { group ->
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .width(150.dp)
+                                    .clickable { tabManager.focusGroup(group.id) }
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = group.name,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${group.tabIds.size} tab" +
+                                            if (group.tabIds.size == 1) "" else "s",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Favorites
             if (favorites.isNotEmpty()) {
                 item {
@@ -169,6 +253,22 @@ fun NewTabPage(
                 items(recentTabs, key = { "recent_${it.id}" }) { item ->
                     RecentTabCard(item = item, onClick = { onNavigate(item.url) })
                 }
+            }
+
+            item {
+                // Blocked-count footer
+                Text(
+                    text = if (totalBlocked > 0) {
+                        "$totalBlocked ads & trackers blocked in total"
+                    } else {
+                        "Blanc is protecting you at the network layer"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                )
             }
 
             item {

@@ -1571,6 +1571,55 @@ class TabManager(
             true
         }
     }
+
+    /**
+     * Applies a new text zoom percentage to every live tab WebView and seeds the
+     * factory cache so subsequently created WebViews pick it up too.
+     */
+    fun applyTextZoomToAll(percent: Int) {
+        WebViewFactory.updateTextZoom(percent)
+        mainHandler.post {
+            tabs.values.forEach { tab ->
+                (tab.webView as? WebView)?.settings?.textZoom = percent.coerceIn(75, 150)
+            }
+        }
+    }
+
+    /**
+     * Applies a new font family remap to every live tab WebView and seeds the
+     * factory cache for subsequently created WebViews.
+     */
+    fun applyFontToAll(family: String) {
+        WebViewFactory.updateFontFamily(family)
+        mainHandler.post {
+            tabs.values.forEach { tab ->
+                val wv = tab.webView as? WebView ?: return@forEach
+                val settings = wv.settings
+                when (family) {
+                    "sans" -> {
+                        settings.standardFontFamily = "sans-serif"
+                        settings.sansSerifFontFamily = "sans-serif"
+                    }
+                    "serif" -> {
+                        settings.standardFontFamily = "serif"
+                        settings.sansSerifFontFamily = "serif"
+                        settings.serifFontFamily = "serif"
+                    }
+                    "mono" -> {
+                        settings.standardFontFamily = "monospace"
+                        settings.sansSerifFontFamily = "monospace"
+                        settings.fixedFontFamily = "monospace"
+                    }
+                    else -> {
+                        settings.standardFontFamily = "sans-serif"
+                        settings.sansSerifFontFamily = "sans-serif"
+                        settings.serifFontFamily = "serif"
+                        settings.fixedFontFamily = "monospace"
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**

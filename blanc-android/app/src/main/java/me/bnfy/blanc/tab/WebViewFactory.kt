@@ -19,17 +19,43 @@ import me.bnfy.blanc.util.UserAgentUtils
 @Keep
 class WebViewFactory private constructor(
     private val context: Context,
-    private val isPrivate: Boolean
+    private val isPrivate: Boolean,
+    private val textZoom: Int = 100,
+    private val fontFamily: String = "system"
 ) {
 
     /**
      * Creates a new WebViewFactory for regular (non-private) tabs.
      */
     companion object {
-        fun createRegular(context: Context): WebViewFactory = WebViewFactory(context, false)
+        @Volatile
+        private var cachedTextZoom: Int = 100
+
+        @Volatile
+        private var cachedFontFamily: String = "system"
+
+        /** Loads the current zoom into the cache (called at startup and on change). */
+        fun updateTextZoom(percent: Int) {
+            cachedTextZoom = percent.coerceIn(75, 150)
+        }
+
+        /** Current cached text zoom, for views created outside the factory. */
+        fun currentTextZoom(): Int = cachedTextZoom
+
+        /** Loads the current font family into the cache (called at startup and on change). */
+        fun updateFontFamily(family: String) {
+            cachedFontFamily = family
+        }
+
+        /** Current cached font family, for views created outside the factory. */
+        fun currentFontFamily(): String = cachedFontFamily
+
+        fun createRegular(context: Context): WebViewFactory =
+            WebViewFactory(context, false, cachedTextZoom, cachedFontFamily)
 
         /** Creates a new WebViewFactory for private/incognito tabs. */
-        fun createPrivate(context: Context): WebViewFactory = WebViewFactory(context, true)
+        fun createPrivate(context: Context): WebViewFactory =
+            WebViewFactory(context, true, cachedTextZoom, cachedFontFamily)
     }
 
     /**
@@ -80,6 +106,27 @@ class WebViewFactory private constructor(
         settings.setSupportZoom(true)
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
+        settings.textZoom = textZoom
+
+        // Adapted typography: remap the default font families like the desktop
+        // FontSwitcher does, using generic platform families instead of web fonts.
+        when (fontFamily) {
+            "sans" -> {
+                settings.standardFontFamily = "sans-serif"
+                settings.sansSerifFontFamily = "sans-serif"
+            }
+            "serif" -> {
+                settings.standardFontFamily = "serif"
+                settings.sansSerifFontFamily = "serif"
+                settings.serifFontFamily = "serif"
+            }
+            "mono" -> {
+                settings.standardFontFamily = "monospace"
+                settings.sansSerifFontFamily = "monospace"
+                settings.fixedFontFamily = "monospace"
+            }
+            else -> Unit // "system": leave WebView defaults untouched
+        }
 
         // User agent - use system default with Blanc identifier
         settings.userAgentString = buildUserAgentString()

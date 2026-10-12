@@ -6,6 +6,7 @@ import {
   History,
   CornerDownLeft,
   Compass,
+  Terminal,
 } from 'lucide-react';
 import { SuggestionItem } from '../hooks/useSearchSuggestions';
 
@@ -80,6 +81,8 @@ export const SuggestionPicker: React.FC<SuggestionPickerProps> = ({
                     <History className="w-4 h-4" />
                   ) : item.type === 'internal' ? (
                     <Compass className="w-4 h-4" />
+                  ) : item.type === 'command' ? (
+                    <Terminal className="w-4 h-4" />
                   ) : (
                     <Search className="w-4 h-4" />
                   )}

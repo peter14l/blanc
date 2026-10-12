@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import me.bnfy.blanc.adblock.AdblockEngine
 import me.bnfy.blanc.storage.Repository
 import me.bnfy.blanc.tab.TabManager
@@ -54,6 +55,15 @@ class BlancApplication : Application() {
         
         // Initialize WebView (must be called before any WebView creation)
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+        
+        // Load persisted text zoom and font family into the WebView factory cache
+        // so newly created WebViews honor the user's scaling/typography prefs.
+        scope.launch {
+            runCatching {
+                WebViewFactory.updateTextZoom(repository.textZoom.first())
+                WebViewFactory.updateFontFamily(repository.fontFamily.first())
+            }.onFailure { Timber.e(it, "Failed to load WebView preferences") }
+        }
         
         // Initialize core components lazily via getters
         // This ensures proper order: Repository -> AdblockEngine -> TabManager -> BlancBridge

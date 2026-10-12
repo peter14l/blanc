@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { HistoryEntry, Bookmark } from '../types/browser';
 
-export type SuggestionType = 'website' | 'bookmark' | 'history' | 'internal' | 'query';
+export type SuggestionType = 'website' | 'bookmark' | 'history' | 'internal' | 'query' | 'command';
 
 export interface SuggestionItem {
   id: string;
@@ -11,6 +11,8 @@ export interface SuggestionItem {
   url?: string;
   query?: string;
   badge?: string;
+  /** Slash commands carry their own action instead of a URL/query. */
+  action?: () => void;
 }
 
 export interface TopSite {

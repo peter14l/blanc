@@ -48,6 +48,33 @@ const isDownloadUrl = (url?: string): boolean => {
   );
 };
 
+// Shapes returned by the Rust storage commands (snake_case field names).
+interface RustBookmark {
+  id: string;
+  url: string;
+  title: string;
+  favicon?: string | null;
+  created_at: number;
+  folder?: string | null;
+  tags: string[];
+}
+
+interface RustHistoryEntry {
+  id: string;
+  url: string;
+  title: string;
+  visited_at: number;
+  visit_count: number;
+}
+
+// Prepend incoming items whose URL is not already present, preserving existing
+// entries (dedupe-by-URL matches the Rust import path).
+function mergeByUrl<T extends { url: string }>(existing: T[], incoming: T[]): T[] {
+  const seen = new Set(existing.map((i) => i.url));
+  const fresh = incoming.filter((i) => !seen.has(i.url));
+  return [...fresh, ...existing];
+}
+
 // Storage Keys
 const STORAGE_KEYS = {
   TABS: 'blanc_tabs',
@@ -445,6 +472,60 @@ export function useBrowserIPC(): BrowserIPCContextType {
     );
   }, []);
 
+  // -------------------------------------------------------------------------
+  // IMPORTED-DATA REFRESH
+  //
+  // Browser-data import (Settings → Import & Data Migration) writes into the
+  // Rust on-disk storage, which the UI mirror (localStorage) never sees. After
+  // an import completes this pulls the Rust store back in and merges it into
+  // the bookmarks/history state so imported items actually appear.
+  // -------------------------------------------------------------------------
+
+  const refreshImportedData = useCallback(async () => {
+    if (!isTauriAvailable) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const [rustBookmarks, rustHistory] = await Promise.all([
+        invoke<RustBookmark[]>('get_bookmarks'),
+        invoke<RustHistoryEntry[]>('get_history'),
+      ]);
+
+      const incomingBookmarks: Bookmark[] = rustBookmarks.map((b) => ({
+        id: b.id,
+        url: b.url,
+        title: b.title,
+        folder: b.folder ?? undefined,
+        tags: b.tags,
+        createdAt: b.created_at,
+        favicon: b.favicon ?? undefined,
+      }));
+      const incomingHistory: HistoryEntry[] = rustHistory.map((h) => ({
+        id: h.id,
+        url: h.url,
+        title: h.title,
+        timestamp: h.visited_at,
+        visitCount: h.visit_count,
+      }));
+
+      setBookmarks((prev) => {
+        const merged = mergeByUrl(prev, incomingBookmarks);
+        try {
+          setStored(STORAGE_KEYS.BOOKMARKS, merged);
+        } catch {}
+        return merged;
+      });
+      setHistory((prev) => {
+        const merged = mergeByUrl(prev, incomingHistory);
+        try {
+          setStored(STORAGE_KEYS.HISTORY, merged);
+        } catch {}
+        return merged;
+      });
+    } catch (e) {
+      console.warn('[useBrowserIPC] refreshImportedData failed:', e);
+    }
+  }, [isTauriAvailable]);
+
   // Favorites operations
   const addFavorite = useCallback((favorite: Omit<Favorite, 'id'>) => {
     const newFav: Favorite = {
@@ -501,6 +582,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
     if (url === 'blanc://history') return 'History';
     if (url === 'blanc://settings') return 'Settings';
     if (url === 'blanc://bookmarks') return 'Bookmarks';
+    if (url === 'blanc://passwords') return 'Saved Passwords';
     return url.replace(/^https?:\/\//, '').split('/')[0] || url;
   };
 
@@ -1455,6 +1537,7 @@ export function useBrowserIPC(): BrowserIPCContextType {
     addBookmark,
     removeBookmark,
     updateBookmark,
+    refreshImportedData,
     favorites,
     addFavorite,
     removeFavorite,

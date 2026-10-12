@@ -419,8 +419,10 @@ export const ImportBrowserDataModal: React.FC<Props> = ({ onClose, onBookmarksUp
                       onChange={setImportPasswords}
                       disabled={!selectedSource.hasPasswords}
                       notice={
-                        selectedSource.browserId === 'chrome'
-                          ? 'Chrome 127+ uses App-Bound Encryption. Use CSV export if direct import fails.'
+                        ['chrome', 'edge', 'brave', 'vivaldi', 'opera', 'chromium'].includes(
+                          selectedSource.browserId
+                        )
+                          ? `${selectedSource.browserName} 127+ encrypts saved passwords on Windows (App-Bound Encryption). Direct import may fail — keep the CSV export ready.`
                           : undefined
                       }
                     />
@@ -497,19 +499,74 @@ export const ImportBrowserDataModal: React.FC<Props> = ({ onClose, onBookmarksUp
                         </div>
                       )}
                     </div>
+
+                    {/* Password import is often blocked by Chromium App-Bound
+                        Encryption (127+ on Windows) — be explicit about it so a
+                        silent zero never reads as "no passwords exist". */}
+                    {importPasswords &&
+                      result.passwordsImported === 0 &&
+                      selectedSource?.hasPasswords &&
+                      result.warnings.some((w) => w.toLowerCase().includes('app-bound')) && (
+                        <div className="flex gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400/80" />
+                          <div className="text-[11px] text-amber-400/80 space-y-1">
+                            <p className="font-medium text-amber-300/90">
+                              Saved passwords could not be imported
+                            </p>
+                            <p>
+                              {selectedSource.browserName} encrypts its password vault on Windows
+                              (App-Bound Encryption, Chromium 127+), which Blanc cannot decrypt. In
+                              {selectedSource.browserName}: Settings → Profile → Passwords → Export
+                              passwords, then use “Import Passwords CSV” above.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                    {importPasswords &&
+                      result.passwordsImported === 0 &&
+                      selectedSource?.hasPasswords &&
+                      !result.warnings.some((w) => w.toLowerCase().includes('app-bound')) && (
+                        <div className="flex gap-2 p-3 rounded-xl bg-white/[0.03] border border-white/10">
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-white/40" />
+                          <div className="text-[11px] text-white/50 space-y-1">
+                            <p className="font-medium text-white/70">
+                              No saved passwords were found to import
+                            </p>
+                            <p>
+                              {selectedSource.browserName} reports a password vault but nothing
+                              decryptable was read. If you have saved passwords, export a CSV (
+                              Settings → Profile → Passwords → Export passwords) and use “Import
+                              Passwords CSV” above.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                    {!importPasswords && selectedSource?.hasPasswords && (
+                      <div className="flex gap-2 p-3 rounded-xl bg-white/[0.03] border border-white/10">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-white/40" />
+                        <div className="text-[11px] text-white/50">
+                          Saved Passwords was turned off for this import. Run the import again with
+                          the Saved Passwords toggle enabled to bring them across.
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {result.warnings.length > 0 && (
+                  {result.warnings.filter((w) => !w.toLowerCase().includes('app-bound')).length > 0 && (
                     <div className="space-y-1.5">
-                      {result.warnings.map((w, i) => (
-                        <div
-                          key={i}
-                          className="flex gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400/80"
-                        >
-                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                          <span>{w}</span>
-                        </div>
-                      ))}
+                      {result.warnings
+                        .filter((w) => !w.toLowerCase().includes('app-bound'))
+                        .map((w, i) => (
+                          <div
+                            key={i}
+                            className="flex gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400/80"
+                          >
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                            <span>{w}</span>
+                          </div>
+                        ))}
                     </div>
                   )}
                 </>

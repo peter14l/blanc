@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -8,10 +8,11 @@ import {
   Globe,
   PanelLeft,
 } from 'lucide-react';
-import { Tab, HistoryEntry, Bookmark as BookmarkType, AdblockStats } from '../types/browser';
-import { useSearchSuggestions, SuggestionItem } from '../hooks/useSearchSuggestions';
+import { Tab, HistoryEntry, Bookmark as BookmarkType, AdblockStats, ThemeMode } from '../types/browser';
+import { useSearchSuggestions, SuggestionItem, SuggestionType } from '../hooks/useSearchSuggestions';
 import { SuggestionPicker } from './SuggestionPicker';
 import { ShieldFlyout } from './ShieldFlyout';
+import { matchSlashCommands, SlashCommand, SlashCommandContext } from '../data/slashCommands';
 
 interface FloatingIslandProps {
   activeTab: Tab | null;
@@ -32,6 +33,9 @@ interface FloatingIslandProps {
   onOpenHistory?: () => void;
   onOpenDownloads?: () => void;
   onOpenDiagnostics?: () => void;
+  onNewTab?: (url?: string) => void;
+  onClearHistory?: () => void;
+  onSetTheme?: (theme: ThemeMode) => void;
   history?: HistoryEntry[];
   bookmarks?: BookmarkType[];
   onSuggestionsOpenChange?: (open: boolean) => void;
@@ -51,6 +55,9 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   onGoForward,
   onOpenSettings,
   onOpenDiagnostics,
+  onNewTab,
+  onClearHistory,
+  onSetTheme,
   history = [],
   bookmarks = [],
   onSuggestionsOpenChange,
@@ -69,15 +76,65 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const activeTabIdRef = useRef<string | null>(null);
 
+  const isSlashQuery = inputUrl.trim().startsWith('/');
+
+  // Search suggestions are suppressed for `/`-prefixed input; slash commands
+  // take over the picker instead so typing `/` in the address bar shows the
+  // command list rather than searching for "/".
   const { suggestions } = useSearchSuggestions({
     query: inputUrl,
     history,
     bookmarks,
-    enabled: isFocused && inputUrl.trim().length > 0,
+    enabled: isFocused && !isSlashQuery && inputUrl.trim().length > 0,
   });
 
+  const runSlashCommand = (command: SlashCommand) => {
+    const ctx: SlashCommandContext = {
+      onNavigate,
+      onNewTab: onNewTab || ((url?: string) => onNavigate(url || 'blanc://newtab')),
+      onToggleVerticalTabs,
+      onClearHistory,
+      onSetTheme,
+    };
+    command.run(ctx);
+  };
+
+  // Fallback path: run a `/`-prefixed input as a command even when the picker
+  // has not rendered yet (e.g. Enter pressed before the effect settles).
+  // Returns true when a command actually ran so callers skip URL navigation.
+  const tryRunSlash = (raw: string): boolean => {
+    const cmds = matchSlashCommands(raw);
+    if (cmds.length === 0) return false;
+    runSlashCommand(cmds[0]);
+    setIsUserEditing(false);
+    setIsPickerVisible(false);
+    setIsFocused(false);
+    onSuggestionsOpenChange?.(false);
+    inputRef.current?.blur();
+    return true;
+  };
+
+  const commandItems: SuggestionItem[] = useMemo(() => {
+    if (!isSlashQuery) return [];
+    return matchSlashCommands(inputUrl.trim())
+      .slice(0, 8)
+      .map((c) => ({
+        id: `cmd-${c.cmd}`,
+        type: 'command' as SuggestionType,
+        title: c.cmd,
+        subtitle: `${c.title} — ${c.desc}`,
+        badge: 'Command',
+        action: () => runSlashCommand(c),
+      }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputUrl, isSlashQuery]);
+
+  // When the input is a `/` query the picker shows only commands; otherwise the
+  // normal search suggestions. Both share the same selection/Enter flow.
+  const displayItems: SuggestionItem[] = isSlashQuery ? commandItems : suggestions;
+
   useEffect(() => {
-    if (isFocused && inputUrl.trim().length > 0 && suggestions.length > 0) {
+    if (isFocused && inputUrl.trim().length > 0 && displayItems.length > 0) {
       setIsPickerVisible(true);
       setSelectedIndex(0);
       onSuggestionsOpenChange?.(true);
@@ -85,7 +142,7 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
       setIsPickerVisible(false);
       onSuggestionsOpenChange?.(false);
     }
-  }, [suggestions, isFocused, inputUrl, onSuggestionsOpenChange]);
+  }, [displayItems, isFocused, inputUrl, onSuggestionsOpenChange]);
 
   // Global listener to focus address bar (triggered by Ctrl+L / Alt+D)
   useEffect(() => {
@@ -125,7 +182,9 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
     setIsUserEditing(false);
     setIsFocused(false);
     onSuggestionsOpenChange?.(false);
-    if (item.url) {
+    if (item.action) {
+      item.action();
+    } else if (item.url) {
       onNavigate(item.url);
     } else if (item.query) {
       onNavigate(item.query);
@@ -136,20 +195,20 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (isPickerVisible && suggestions.length > 0) {
+    if (isPickerVisible && displayItems.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev + 1) % suggestions.length);
+        setSelectedIndex((prev) => (prev + 1) % displayItems.length);
         return;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+        setSelectedIndex((prev) => (prev - 1 + displayItems.length) % displayItems.length);
         return;
       }
       if (e.key === 'Enter') {
         e.preventDefault();
-        const selected = suggestions[selectedIndex];
+        const selected = displayItems[selectedIndex];
         if (selected) {
           handleSelectSuggestion(selected);
           return;
@@ -171,6 +230,7 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
 
     if (e.key === 'Enter') {
       if (inputUrl.trim()) {
+        if (tryRunSlash(inputUrl.trim())) return;
         setIsUserEditing(false);
         setIsPickerVisible(false);
         setIsFocused(false);
@@ -292,6 +352,7 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
             onSubmit={(e) => {
               e.preventDefault();
               if (inputUrl.trim()) {
+                if (tryRunSlash(inputUrl.trim())) return;
                 setIsUserEditing(false);
                 setIsFocused(false);
                 onSuggestionsOpenChange?.(false);
@@ -336,9 +397,9 @@ export const FloatingIsland: React.FC<FloatingIslandProps> = ({
                 outline-none border-none tracking-tight font-medium"
             />
 
-            {/* AUTOCOMPLETE / SUGGESTION PICKER */}
+            {/* AUTOCOMPLETE / SUGGESTION PICKER (search suggestions or slash commands) */}
             <SuggestionPicker
-              suggestions={suggestions}
+              suggestions={displayItems}
               selectedIndex={selectedIndex}
               onSelect={handleSelectSuggestion}
               onHoverIndex={setSelectedIndex}
